@@ -1,0 +1,13 @@
+/build/
+/.cmake/
+/bin/
+/out/
+
+/.vs/
+/.vscode/
+*.user
+*.sln
+*.vcxproj
+*.filters
+
+/_deps/
