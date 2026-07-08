@@ -23,7 +23,7 @@ void Game::Update(float dt) {
         }
         if (action == StateAction::ChangeToGameplay) {
             PopState();
-            PushState(std::make_unique<GamePlayState>());
+            PushState(std::make_unique<GamePlayState>(inputManager));
             // ChangeState(std::make_unique<GamePlayState>());
         }
     }

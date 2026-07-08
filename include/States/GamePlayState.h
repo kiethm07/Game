@@ -4,11 +4,11 @@
 #include <States/GameState.h>
 #include <Core/CameraController.h>
 #include <Core/InputManager.h>
-
+#include <memory>
 
 class GamePlayState : public GameState {
 public:
-    GamePlayState();
+    GamePlayState(const InputManager& input_manager);
     ~GamePlayState() override = default;
 
     void Enter() override;
@@ -19,5 +19,5 @@ public:
 private:
     std::unique_ptr<CameraController> cameraController;
     Vector3 testPlayerPos;
-    //InputManager &inputManager;
+    const InputManager& input_manager;
 };
