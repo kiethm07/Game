@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/InputManager.h>
 #include <States/GameState.h>
 #include <States/MainMenuState.h>
 #include <States/GamePlayState.h>
@@ -23,5 +24,6 @@ public:
     bool IsEmpty() const { return states.empty(); }
 
 private:
+    InputManager inputManager;
     std::vector<std::unique_ptr<GameState>> states;
 };
