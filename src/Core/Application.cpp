@@ -15,6 +15,7 @@ Application::~Application(){
 }
 
 void Application::run(){
+    DisableCursor();
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
         // 1. Process Update vectors and evaluate state transitions

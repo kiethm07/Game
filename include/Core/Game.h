@@ -1,6 +1,7 @@
 #pragma once
 #include <States/GameState.h>
 #include <States/MainMenuState.h>
+#include <States/GamePlayState.h>
 #include <memory>
 #include <vector>
 
