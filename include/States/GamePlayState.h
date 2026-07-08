@@ -3,7 +3,8 @@
 #include <Core/Game.h>
 #include <States/GameState.h>
 #include <Core/CameraController.h>
-#include <Core/InputManager.h>
+#include <memory>
+//#include <Core/InputManager.h>
 
 
 class GamePlayState : public GameState {

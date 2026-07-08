@@ -10,7 +10,6 @@ Game::~Game() {
 
 void Game::Update(float dt) {
     if (!states.empty()) {
-        inputManager.Update();
         StateAction action = states.back()->Update(dt);
         // // Handle state actions if needed
         if (action == StateAction::RequestQuit) {
