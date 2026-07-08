@@ -23,6 +23,8 @@ public:
 
     bool IsEmpty() const { return states.empty(); }
 
+    // InputManager& GetInputManager() { return inputManager; }
+
 private:
     InputManager inputManager;
     std::vector<std::unique_ptr<GameState>> states;

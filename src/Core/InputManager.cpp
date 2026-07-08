@@ -1,149 +1,72 @@
-#include <Core/InputManager.h>
-
-#include <cmath>
+#include "Core/InputManager.h"
 
 InputManager::InputManager() {
     RegisterDefaultBindings();
 
-    // Initialize all tracked gameplay actions to a known idle state.
-    actionStates[GameAction::JUMP] = InputState::IDLE;
-    actionStates[GameAction::ATTACK] = InputState::IDLE;
-    actionStates[GameAction::DEFLECT] = InputState::IDLE;
-    actionStates[GameAction::DODGE] = InputState::IDLE;
-    actionStates[GameAction::LOCK_ON] = InputState::IDLE;
+    actionStates[GameAction::MOVE_FORWARD]  = InputState::IDLE;
+    actionStates[GameAction::MOVE_BACKWARD] = InputState::IDLE;
+    actionStates[GameAction::MOVE_LEFT]     = InputState::IDLE;
+    actionStates[GameAction::MOVE_RIGHT]    = InputState::IDLE;
+    actionStates[GameAction::JUMP]          = InputState::IDLE;
+    actionStates[GameAction::ATTACK]        = InputState::IDLE;
+    actionStates[GameAction::DEFLECT]       = InputState::IDLE;
+    actionStates[GameAction::DODGE]         = InputState::IDLE;
+    actionStates[GameAction::LOCK_ON]       = InputState::IDLE;
+    
+    rawMouseDelta = { 0.0f, 0.0f };
 }
 
 void InputManager::RegisterDefaultBindings() {
-    // The raw hardware layer stays here. Game logic only sees GameAction values.
-    keyBindings[KEY_SPACE] = GameAction::JUMP;
+    keyBindings[KEY_W]          = GameAction::MOVE_FORWARD;
+    keyBindings[KEY_S]          = GameAction::MOVE_BACKWARD;
+    keyBindings[KEY_A]          = GameAction::MOVE_LEFT;
+    keyBindings[KEY_D]          = GameAction::MOVE_RIGHT;
+    keyBindings[KEY_SPACE]      = GameAction::JUMP;
     keyBindings[KEY_LEFT_SHIFT] = GameAction::DODGE;
-    keyBindings[KEY_F] = GameAction::LOCK_ON;
+    keyBindings[KEY_F]          = GameAction::LOCK_ON;
 
-    mouseBindings[MOUSE_BUTTON_LEFT] = GameAction::ATTACK;
+    mouseBindings[MOUSE_BUTTON_LEFT]  = GameAction::ATTACK;
     mouseBindings[MOUSE_BUTTON_RIGHT] = GameAction::DEFLECT;
 }
 
 void InputManager::Update() {
-    cameraDelta = GetMouseDelta();
-    UpdateMovementVector();
+    // Simply pass the raw hardware delta straight through. 
+    // It's not "camera delta" yet; it's just mouse speed.
+    rawMouseDelta = GetMouseDelta();
     PollBindings();
-    CleanupExpiredInputs();
 }
 
 void InputManager::PollBindings() {
-    for (const auto& binding : keyBindings) {
-        const int key = binding.first;
-        const GameAction action = binding.second;
-
+    for (const auto& [key, action] : keyBindings) {
         UpdateBindingState(action, IsKeyPressed(key), IsKeyDown(key), IsKeyReleased(key));
     }
-
-    for (const auto& binding : mouseBindings) {
-        const int button = binding.first;
-        const GameAction action = binding.second;
-
+    for (const auto& [button, action] : mouseBindings) {
         UpdateBindingState(action, IsMouseButtonPressed(button), IsMouseButtonDown(button), IsMouseButtonReleased(button));
     }
 }
 
 void InputManager::UpdateBindingState(GameAction action, bool pressed, bool down, bool released) {
-    InputState nextState = InputState::IDLE;
-
-    if (pressed) {
-        nextState = InputState::PRESSED;
-        inputBuffer.emplace_back(action, ActionData{InputState::PRESSED, static_cast<float>(GetTime())});
-        
-    } else if (down) {
-        nextState = InputState::HELD;
-    } else if (released) {
-        nextState = InputState::RELEASED;
-    }
-
-    actionStates[action] = nextState;
+    if (pressed)       actionStates[action] = InputState::PRESSED;
+    else if (down)     actionStates[action] = InputState::HELD;
+    else if (released) actionStates[action] = InputState::RELEASED;
+    else               actionStates[action] = InputState::IDLE;
 }
 
-void InputManager::UpdateMovementVector() {
-    Vector2 rawMovement{0.0f, 0.0f};
-
-    if (IsKeyDown(KEY_D)) {
-        rawMovement.x += 1.0f;
-    }
-
-    if (IsKeyDown(KEY_A)) {
-        rawMovement.x -= 1.0f;
-    }
-
-    if (IsKeyDown(KEY_W)) {
-        rawMovement.y += 1.0f;
-    }
-
-    if (IsKeyDown(KEY_S)) {
-        rawMovement.y -= 1.0f;
-    }
-
-    const float length = std::sqrt((rawMovement.x * rawMovement.x) + (rawMovement.y * rawMovement.y));
-    if (length > 0.0f) {
-        rawMovement.x /= length;
-        rawMovement.y /= length;
-    }
-
-    movementVector = rawMovement;
-}
-
-void InputManager::CleanupExpiredInputs() {
-    const float now = static_cast<float>(GetTime());
-
-    // The buffer is FIFO, so only the front can be stale first.
-    // Removing old entries here prevents a buffered action from firing long after the player intended it.
-    while (!inputBuffer.empty()) {
-        const auto& front = inputBuffer.front();
-        if ((now - front.second.timestamp) <= INPUT_BUFFER_TTL) {
-            break;
-        }
-
-        inputBuffer.pop_front();
-    }
-}
-
-bool InputManager::ConsumeAction(GameAction action) {
-    if (inputBuffer.empty()) {
-        return false;
-    }
-
-    const float now = static_cast<float>(GetTime());
-    const auto& front = inputBuffer.front();
-
-    // Only the front of the queue is eligible for consumption so input order stays deterministic.
-    if ((now - front.second.timestamp) > INPUT_BUFFER_TTL) {
-        inputBuffer.pop_front();
-        return false;
-    }
-
-    if (front.first != action) {
-        return false;
-    }
-
-    inputBuffer.pop_front();
-    return true;
+bool InputManager::IsActionPressed(GameAction action) const {
+    auto it = actionStates.find(action);
+    return (it != actionStates.end()) ? it->second == InputState::PRESSED : false;
 }
 
 bool InputManager::IsActionHeld(GameAction action) const {
-    const auto it = actionStates.find(action);
-    if (it == actionStates.end()) {
-        return false;
-    }
-
-    return it->second == InputState::HELD;
+    auto it = actionStates.find(action);
+    return (it != actionStates.end()) ? it->second == InputState::HELD : false;
 }
 
-void InputManager::Flush() {
-    inputBuffer.clear();
+bool InputManager::IsActionReleased(GameAction action) const {
+    auto it = actionStates.find(action);
+    return (it != actionStates.end()) ? it->second == InputState::RELEASED : false;
 }
 
-Vector2 InputManager::GetMovementVector() const {
-    return movementVector;
-}
-
-Vector2 InputManager::GetCameraDelta() const {
-    return cameraDelta;
+Vector2 InputManager::GetRawMouseDelta() const {
+    return rawMouseDelta;
 }
