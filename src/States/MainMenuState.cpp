@@ -12,8 +12,6 @@ void MainMenuState::Enter() {
 
 StateAction MainMenuState::Update(float dt) {
     if (IsKeyPressed(KEY_ENTER)) {
-        //Dbg purpose
-        std::cout << "Enter pressed, requesting transition to Gameplay State" << std::endl;
         return StateAction::ChangeToGameplay;
     }
 
@@ -27,9 +25,9 @@ StateAction MainMenuState::Update(float dt) {
 void MainMenuState::Draw() {
     ClearBackground(DARKBLUE);
     
-    DrawText("MENU STATE ACTIVE", 100, 200, 24, RAYWHITE);
-    DrawText("Press ENTER to request transition to Gameplay State", 100, 260, 16, LIGHTGRAY);
-    DrawText("Press ESC to request an absolute Windows application exit", 100, 290, 16, LIGHTGRAY);
+    DrawText("Main Menu", 100, 200, 24, RAYWHITE);
+    DrawText("Press ENTER to request transition to Gameplay State", 100, 260, 16, RAYWHITE);
+    DrawText("Press ESC to request an absolute Windows application exit", 100, 290, 16, RAYWHITE);
 }
 
 void MainMenuState::Exit() {

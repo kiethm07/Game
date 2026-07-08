@@ -10,7 +10,22 @@ Game::~Game() {
 
 void Game::Update(float dt) {
     if (!states.empty()) {
-        states.back()->Update(dt);
+        inputManager.Update();
+        StateAction action = states.back()->Update(dt);
+        // // Handle state actions if needed
+        if (action == StateAction::RequestQuit) {
+            // Handle quit request, e.g., exit the game loop
+        }
+        if (action == StateAction::ChangeToMenu) {
+            // ChangeState(std::make_unique<MainMenuState>());
+            PopState();
+            PushState(std::make_unique<MainMenuState>());
+        }
+        if (action == StateAction::ChangeToGameplay) {
+            PopState();
+            PushState(std::make_unique<GamePlayState>());
+            // ChangeState(std::make_unique<GamePlayState>());
+        }
     }
 }
 
