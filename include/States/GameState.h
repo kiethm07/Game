@@ -6,8 +6,8 @@ class GameState{
 public:
     virtual ~GameState() = default;
 
-    virtual void Enter() = 0;
-    virtual StateAction Update(float dt) = 0;
-    virtual void Draw() = 0;
-    virtual void Exit() = 0;
+    virtual void enter() = 0;
+    virtual StateAction update(float dt) = 0;
+    virtual void draw() = 0;
+    virtual void exit() = 0;
 };

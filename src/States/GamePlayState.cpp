@@ -1,47 +1,30 @@
-#include <States/GamePlayState.h>
+#include <States/GameplayState.h>
+#include <Core/Game.h>
 #include <iostream>
 #include <cmath> 
 #include "raylib.h"
-#include "Core/Game.h"
 
-GamePlayState::GamePlayState(const InputManager& input_manager):
+GameplayState::GameplayState(const InputManager& input_manager):
     input_manager(input_manager)
 {
-    cameraController = std::make_unique<CameraController>();
-    testPlayerPos = { 0.0f, 0.5f, 0.0f };
+    camera_controller = std::make_unique<CameraController>();
+    player = std::make_unique<Player>(input_manager);
 }
 
-void GamePlayState::Enter() {
+void GameplayState::enter() {
     // Load local menu-only graphics or titles here
 }
 
-StateAction GamePlayState::Update(float dt) {
-    // Access your central dumb InputManager instance
-    const InputManager& input = input_manager;
+StateAction GameplayState::update(float dt) {
+    // 1. Tick the player. The player internally reads input and shifts its own position safely.
+    player->update(dt, camera_controller->getCameraForward(), camera_controller->getCameraRight());
 
-    // 1. Update the camera using the raw mouse delta from our manager
-    Vector2 mouseDelta = input.GetRawMouseDelta();
-    cameraController->Update(testPlayerPos, mouseDelta);
+    // 2. Safely spy on the player's new position via the const getter
+    Vector3 current_player_pos = player->getPosition();
 
-    // 2. Resolve Directional Intent (The "Brain" layer)
-    Vector3 moveDir = { 0.0f, 0.0f, 0.0f };
-
-    if (input.IsActionHeld(GameAction::MOVE_FORWARD))  moveDir.z -= 1.0f; // -Z is forward in Raylib 3D
-    if (input.IsActionHeld(GameAction::MOVE_BACKWARD)) moveDir.z += 1.0f; // +Z is backward
-    if (input.IsActionHeld(GameAction::MOVE_LEFT))     moveDir.x -= 1.0f; // -X is left
-    if (input.IsActionHeld(GameAction::MOVE_RIGHT))    moveDir.x += 1.0f; // +X is right
-
-    // 3. Normalize the vector right here so diagonal running isn't faster
-    float length = std::sqrt((moveDir.x * moveDir.x) + (moveDir.z * moveDir.z));
-    if (length > 0.0f) {
-        moveDir.x /= length;
-        moveDir.z /= length;
-    }
-
-    // 4. Apply movement physics to our placeholder cube coordinates
-    const float speed = 5.0f;
-    testPlayerPos.x += moveDir.x * speed * dt;
-    testPlayerPos.z += moveDir.z * speed * dt;
+    // 3. Update the camera tracking matrix using that position
+    Vector2 mouse_delta = input_manager.getRawMouseDelta();
+    camera_controller->update(current_player_pos, mouse_delta);
 
     // State transition handling
     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
@@ -51,26 +34,26 @@ StateAction GamePlayState::Update(float dt) {
     return StateAction::KeepCurrent; 
 }
 
-void GamePlayState::Draw() {
+void GameplayState::draw() {
     ClearBackground(RAYWHITE);
-    BeginMode3D(cameraController->GetCamera());
+    
+    // Establish 3D Projection space
+    BeginMode3D(camera_controller->getCamera());
 
-        // 1. Draw the floor (Visual Map)
+        // 1. Draw static environment layout
         DrawGrid(300, 10.0f); 
 
-        // 2. Draw the player (Grey-boxing) - Notice NO physics logic here anymore!
-        DrawCube(testPlayerPos, 1.0f, 1.0f, 1.0f, BLUE);
-        
-        // Draws an outline around the cube to make it look 3D against the background
-        DrawCubeWires(testPlayerPos, 1.0f, 1.0f, 1.0f, BLACK); 
+        // 2. Command the player entity to draw itself!
+        // No hardcoded DrawCube offsets here anymore.
+        player->draw(); 
 
     EndMode3D();
 
     // --- 2D UI LAYER ---
     DrawFPS(10, 10);
-    DrawText("Phase 1: 3D Sandbox. Use Mouse to look around. WASD to move.", 10, 40, 20, DARKGRAY);
+    DrawText("Phase 1.5: Architecture Integrated. Player entity encapsulates movement logic.", 10, 40, 20, DARKGRAY);
 }
 
-void GamePlayState::Exit() {
+void GameplayState::exit() {
     // Clean up local menu resources here
 }
