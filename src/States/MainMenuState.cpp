@@ -6,11 +6,11 @@ MainMenuState::MainMenuState(){
 
 }
 
-void MainMenuState::Enter() {
+void MainMenuState::enter() {
     // Load local menu-only graphics or titles here
 }
 
-StateAction MainMenuState::Update(float dt) {
+StateAction MainMenuState::update(float dt) {
     if (IsKeyPressed(KEY_ENTER)) {
         return StateAction::ChangeToGameplay;
     }
@@ -22,7 +22,7 @@ StateAction MainMenuState::Update(float dt) {
     return StateAction::KeepCurrent; 
 }
 
-void MainMenuState::Draw() {
+void MainMenuState::draw() {
     ClearBackground(DARKBLUE);
     
     DrawText("Main Menu", 100, 200, 24, RAYWHITE);
@@ -30,6 +30,6 @@ void MainMenuState::Draw() {
     DrawText("Press ESC to request an absolute Windows application exit", 100, 290, 16, RAYWHITE);
 }
 
-void MainMenuState::Exit() {
+void MainMenuState::exit() {
     // Clean up local menu resources here
 }

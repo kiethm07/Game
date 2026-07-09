@@ -8,10 +8,12 @@ public:
     ~CameraController() = default;
 
     // Call this once per frame, passing the player's position and the mouse movement
-    void Update(Vector3 targetPosition, Vector2 mouseDelta);
+    void update(Vector3 targetPosition, Vector2 mouseDelta);
 
     // Returns the internal Raylib camera for drawing
-    Camera3D GetCamera() const;
+    Camera3D getCamera() const;
+    Vector3 getCameraForward() const;
+    Vector3 getCameraRight() const;
 
 private:
     Camera3D camera;

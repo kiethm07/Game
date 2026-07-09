@@ -26,24 +26,24 @@ public:
     InputManager();
     ~InputManager() = default;
 
-    void Update();
+    void update();
 
     // Pure current-frame snapshot queries
-    bool IsActionPressed(GameAction action) const;
-    bool IsActionHeld(GameAction action) const;
-    bool IsActionReleased(GameAction action) const;
+    bool isActionPressed(GameAction action) const;
+    bool isActionHeld(GameAction action) const;
+    bool isActionReleased(GameAction action) const;
 
     // Raw, unprocessed hardware mouse movement
-    Vector2 GetRawMouseDelta() const;
+    Vector2 getRawMouseDelta() const;
 
 private:
-    void RegisterDefaultBindings();
-    void PollBindings();
-    void UpdateBindingState(GameAction action, bool pressed, bool down, bool released);
+    void registerDefaultBindings();
+    void pollBindings();
+    void updateBindingState(GameAction action, bool pressed, bool down, bool released);
 
-    std::unordered_map<int, GameAction> keyBindings;
-    std::unordered_map<int, GameAction> mouseBindings;
-    std::unordered_map<GameAction, InputState> actionStates;
+    std::unordered_map<int, GameAction> key_bindings;
+    std::unordered_map<int, GameAction> mouse_bindings;
+    std::unordered_map<GameAction, InputState> action_states;
 
-    Vector2 rawMouseDelta;
+    Vector2 raw_mouse_delta;
 };

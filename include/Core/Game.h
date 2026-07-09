@@ -2,7 +2,7 @@
 #include <Core/InputManager.h>
 #include <States/GameState.h>
 #include <States/MainMenuState.h>
-#include <States/GamePlayState.h>
+#include <States/GameplayState.h>
 #include <memory>
 #include <vector>
 
@@ -14,18 +14,18 @@ public:
     Game(const Game&) = delete;
     Game& operator=(const Game&) = delete;
 
-    void Update(float dt);
-    void Draw();
+    void update(float dt);
+    void draw();
 
-    void PushState(std::unique_ptr<GameState> state);
-    void PopState();
-    void ChangeState(std::unique_ptr<GameState> state);
+    void pushState(std::unique_ptr<GameState> state);
+    void popState();
+    void changeState(std::unique_ptr<GameState> state);
 
-    bool IsEmpty() const { return states.empty(); }
+    bool isEmpty() const { return states.empty(); }
 
     // InputManager& GetInputManager() { return inputManager; }
 
 private:
-    InputManager inputManager;
+    InputManager input_manager;
     std::vector<std::unique_ptr<GameState>> states;
 };
