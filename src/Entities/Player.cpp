@@ -25,13 +25,22 @@ void Player::update(float dt, Vector3 camForward, Vector3 camRight) {
         // Calculate the target angle based on the horizontal direction vector
         float target_yaw = std::atan2(moveDirection.x, moveDirection.z) * RAD2DEG;
 
-        // Calculate the shortest angular distance to prevent erratic 360-degree spinning
+        // Calculate the shortest angular distance
         float angle_diff = target_yaw - rotation.y;
         while (angle_diff < -180.0f) angle_diff += 360.0f;
         while (angle_diff > 180.0f)  angle_diff -= 360.0f;
 
-        // Fluidly interpolate rotation alongside camera and input vector updates
-        rotation.y += angle_diff * ROTATION_SPEED * dt;
+        // FIX 1: Safeguard the interpolation factor (alpha) against dt spikes
+        float alpha = ROTATION_SPEED * dt;
+        if (alpha > 1.0f) alpha = 1.0f; // Ensures it never shoots past target_yaw mathematically
+
+        // Fluidly interpolate rotation safely
+        rotation.y += angle_diff * alpha;
+
+        // FIX 2: Keep rotation.y cleanly wrapped within a standard 0-360 range 
+        // to prevent floating-point inaccuracies over time
+        while (rotation.y < 0.0f) rotation.y += 360.0f;
+        while (rotation.y >= 360.0f) rotation.y -= 360.0f;
     }
 
     //Character::update(dt);
@@ -42,7 +51,15 @@ void Player::draw() const{
 }
 
 Vector3 Player::calculateCameraRelativeDirection(Vector3 camForward, Vector3 camRight) const {
+    camForward.y = 0.0f;
+    camRight.y = 0.0f;
+    
+    //Remove y for calculation
+    camForward = Vector3Normalize(camForward);
+    camRight = Vector3Normalize(camRight);
+
     Vector3 direction = { 0.0f, 0.0f, 0.0f };
+    
     if (input_manager.isActionHeld(GameAction::MOVE_FORWARD))  direction = Vector3Add(direction, camForward);
     if (input_manager.isActionHeld(GameAction::MOVE_BACKWARD)) direction = Vector3Subtract(direction, camForward);
     if (input_manager.isActionHeld(GameAction::MOVE_RIGHT))    direction = Vector3Add(direction, camRight);
