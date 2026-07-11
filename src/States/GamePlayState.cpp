@@ -1,55 +1,59 @@
-#include <States/GamePlayState.h>
+#include <States/GameplayState.h>
+#include <Core/Game.h>
 #include <iostream>
+#include <cmath> 
 #include "raylib.h"
 
-GamePlayState::GamePlayState(){
-    cameraController = std::make_unique<CameraController>();
-    testPlayerPos = { 0.0f, 0.5f, 0.0f };
+GameplayState::GameplayState(const InputManager& input_manager):
+    input_manager(input_manager)
+{
+    camera_controller = std::make_unique<CameraController>();
+    player = std::make_unique<Player>(input_manager);
 }
 
-void GamePlayState::Enter() {
+void GameplayState::enter() {
     // Load local menu-only graphics or titles here
 }
 
-StateAction GamePlayState::Update(float dt) {
-    // Update the camera based on the player's position and mouse movement
-    Vector2 mouseDelta = GetMouseDelta();
-    cameraController->Update(testPlayerPos, mouseDelta);
+StateAction GameplayState::update(float dt) {
+    // 1. Tick the player. The player internally reads input and shifts its own position safely.
+    player->update(dt, camera_controller->getCameraForward(), camera_controller->getCameraRight());
 
-    if (IsKeyPressed(KEY_ENTER)) {
+    // 2. Safely spy on the player's new position via the const getter
+    Vector3 current_player_pos = player->getPosition();
+
+    // 3. Update the camera tracking matrix using that position
+    Vector2 mouse_delta = input_manager.getRawMouseDelta();
+    camera_controller->update(current_player_pos, mouse_delta);
+
+    // State transition handling
+    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
         return StateAction::ChangeToMenu;
     }
-    if (IsKeyPressed(KEY_ESCAPE)) {
-        return StateAction::ChangeToMenu;
-    }
+    
     return StateAction::KeepCurrent; 
 }
 
-void GamePlayState::Draw() {
+void GameplayState::draw() {
     ClearBackground(RAYWHITE);
-    BeginMode3D(cameraController->GetCamera());
+    
+    // Establish 3D Projection space
+    BeginMode3D(camera_controller->getCamera());
 
-        // 1. Draw the floor (Visual Map)
-        // Creates a 20x20 grid with 1.0f spacing. 
+        // 1. Draw static environment layout
         DrawGrid(300, 10.0f); 
 
-        // update player position based on input (for testing purposes)
-        // testPlayerPos.x += GetGame().GetInputManager().GetMovementVector().x * 5.0f * GetFrameTime();
-        // testPlayerPos.z += GetGame().GetInputManager().GetMovementVector().y * 5.0f * GetFrameTime();
-        // 2. Draw the player (Grey-boxing)
-        DrawCube(testPlayerPos, 1.0f, 1.0f, 1.0f, BLUE);
-        
-        // Draws an outline around the cube to make it look 3D against the background
-        DrawCubeWires(testPlayerPos, 1.0f, 1.0f, 1.0f, BLACK); 
+        // 2. Command the player entity to draw itself!
+        // No hardcoded DrawCube offsets here anymore.
+        player->draw(); 
 
     EndMode3D();
-    // --------------------------
 
     // --- 2D UI LAYER ---
     DrawFPS(10, 10);
-    DrawText("Phase 1: 3D Sandbox. Use Mouse to look around.", 10, 40, 20, DARKGRAY);
+    DrawText("Phase 1.5: Architecture Integrated. Player entity encapsulates movement logic.", 10, 40, 20, DARKGRAY);
 }
 
-void GamePlayState::Exit() {
+void GameplayState::exit() {
     // Clean up local menu resources here
 }

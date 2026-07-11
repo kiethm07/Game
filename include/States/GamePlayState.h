@@ -3,22 +3,23 @@
 #include <Core/Game.h>
 #include <States/GameState.h>
 #include <Core/CameraController.h>
+#include <Core/InputManager.h>
+#include <Entities/Player.h>
 #include <memory>
-//#include <Core/InputManager.h>
 
-
-class GamePlayState : public GameState {
+class GameplayState : public GameState {
 public:
-    GamePlayState();
-    ~GamePlayState() override = default;
+    GameplayState(const InputManager& input_manager);
+    ~GameplayState() override = default;
 
-    void Enter() override;
-    StateAction Update(float dt) override;
-    void Draw() override;
-    void Exit() override;
+    void enter() override;
+    StateAction update(float dt) override;
+    void draw() override;
+    void exit() override;
 
 private:
-    std::unique_ptr<CameraController> cameraController;
-    Vector3 testPlayerPos;
-    //InputManager &inputManager;
+    std::unique_ptr<CameraController> camera_controller;
+    std::unique_ptr<Player> player;
+    
+    const InputManager& input_manager;
 };
