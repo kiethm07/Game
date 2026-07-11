@@ -8,8 +8,8 @@ public:
     MainMenuState();
     ~MainMenuState() override = default;
 
-    void Enter() override;
-    StateAction Update(float dt) override;
-    void Draw() override;
-    void Exit() override;
+    void enter() override;
+    StateAction update(float dt) override;
+    void draw() override;
+    void exit() override;
 };
