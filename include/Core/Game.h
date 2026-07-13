@@ -2,7 +2,7 @@
 #include <Core/InputManager.h>
 #include <States/GameState.h>
 #include <States/MainMenuState.h>
-#include <States/GameplayState.h>
+#include <States/GamePlayState.h>
 #include <memory>
 #include <vector>
 

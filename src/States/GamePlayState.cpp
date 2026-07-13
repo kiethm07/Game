@@ -1,4 +1,4 @@
-#include <States/GameplayState.h>
+#include "States/GamePlayState.h"
 #include <Core/Game.h>
 #include <iostream>
 #include <cmath> 
@@ -9,6 +9,7 @@ GameplayState::GameplayState(const InputManager& input_manager):
 {
     camera_controller = std::make_unique<CameraController>();
     player = std::make_unique<Player>(input_manager);
+    enemy = std::make_unique<Enemy>(input_manager);
 }
 
 void GameplayState::enter() {
@@ -18,9 +19,10 @@ void GameplayState::enter() {
 StateAction GameplayState::update(float dt) {
     // 1. Tick the player. The player internally reads input and shifts its own position safely.
     player->update(dt, camera_controller->getCameraForward(), camera_controller->getCameraRight());
-
+    enemy->update(dt, camera_controller->getCameraForward(), camera_controller->getCameraRight());
     // 2. Safely spy on the player's new position via the const getter
     Vector3 current_player_pos = player->getPosition();
+    Vector3 current_enemy_pos = enemy->getPosition();
 
     // 3. Update the camera tracking matrix using that position
     Vector2 mouse_delta = input_manager.getRawMouseDelta();
@@ -46,6 +48,7 @@ void GameplayState::draw() {
         // 2. Command the player entity to draw itself!
         // No hardcoded DrawCube offsets here anymore.
         player->draw(); 
+        enemy->draw();
 
     EndMode3D();
 

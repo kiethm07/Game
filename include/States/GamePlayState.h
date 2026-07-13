@@ -5,6 +5,7 @@
 #include <Core/CameraController.h>
 #include <Core/InputManager.h>
 #include <Entities/Player.h>
+#include <Entities/Enemy.h>
 #include <memory>
 
 class GameplayState : public GameState {
@@ -20,6 +21,7 @@ public:
 private:
     std::unique_ptr<CameraController> camera_controller;
     std::unique_ptr<Player> player;
+    std::unique_ptr<Enemy> enemy;
     
     const InputManager& input_manager;
 };
