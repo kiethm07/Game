@@ -1,8 +1,10 @@
 #pragma once
 #include <Core/InputManager.h>
+#include <Core/TimeManager.h>
 #include <States/GameState.h>
 #include <States/MainMenuState.h>
 #include <States/GameplayState.h>
+#include <CombatData/AttackRegistry.h>
 #include <memory>
 #include <vector>
 
@@ -14,7 +16,7 @@ public:
     Game(const Game&) = delete;
     Game& operator=(const Game&) = delete;
 
-    void update(float dt);
+    void update();
     void draw();
 
     void pushState(std::unique_ptr<GameState> state);
@@ -27,5 +29,7 @@ public:
 
 private:
     InputManager input_manager;
+    TimeManager time_manager;
+    AttackRegistry& attack_registry;
     std::vector<std::unique_ptr<GameState>> states;
 };
