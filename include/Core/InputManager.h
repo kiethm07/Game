@@ -3,22 +3,22 @@
 #include <unordered_map>
 
 enum class GameAction {
-    MOVE_FORWARD,
-    MOVE_BACKWARD,
-    MOVE_LEFT,
-    MOVE_RIGHT,
-    JUMP,
-    ATTACK,
-    DEFLECT,
-    DODGE,
-    LOCK_ON
+    MoveForward,
+    MoveBackward,
+    MoveLeft,
+    MoveRight,
+    Jump,
+    Attack,
+    Parry,
+    Dodge,
+    LockOn
 };
 
 enum class InputState {
-    IDLE,
-    PRESSED,
-    HELD,
-    RELEASED
+    Idle,
+    Pressed,
+    Held,
+    Released
 };
 
 class InputManager {
