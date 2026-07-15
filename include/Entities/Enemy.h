@@ -5,7 +5,7 @@
 
 class Enemy : public Character{
 public:
-    Enemy(const InputManager& input_manager);
+    Enemy();
     ~Enemy() = default;
 
     void update(float dt) override;
@@ -13,9 +13,9 @@ public:
     void draw() const override;
     
 private:
-    const InputManager& input_manager;
-    const float MOVEMENT_SPEED = 10.0f;
+    const float MOVEMENT_SPEED = 5.0f;
     const float ROTATION_SPEED = 100.0f;
+    int moveState = 0;
     
     Vector3 calculateCameraRelativeDirection(Vector3 camForward, Vector3 camRight) const;
     void handleCombatAndUtilityInputs();

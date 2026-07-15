@@ -9,7 +9,7 @@ GameplayState::GameplayState(const InputManager& input_manager):
 {
     camera_controller = std::make_unique<CameraController>();
     player = std::make_unique<Player>(input_manager);
-    enemy = std::make_unique<Enemy>(input_manager);
+    enemy = std::make_unique<Enemy>();
 }
 
 void GameplayState::enter() {
