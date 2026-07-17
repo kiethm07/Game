@@ -1,6 +1,7 @@
 #pragma once
 
 #include "raylib.h"
+#include <Rendering/RenderData.h>
 
 class Character {
 public:
@@ -8,7 +9,7 @@ public:
     virtual ~Character() = default;
 
     virtual void update(float dt) = 0;
-    virtual void draw() const;
+    virtual CharacterRenderData getRenderData() const = 0;
 
     Vector3 getPosition() const{
         return position;
