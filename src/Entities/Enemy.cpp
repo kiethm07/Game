@@ -1,7 +1,5 @@
 #include <Entities/Enemy.h>
-#include <cmath>
 #include <raymath.h>
-#include <random>
 
 Enemy::Enemy()
 { 
@@ -25,9 +23,15 @@ void Enemy::update(float dt, Vector3 camForward, Vector3 camRight) {
     //Character::update(dt);
 }
 
-void Enemy::draw() const{
-    DrawCube(position, 1.0f, 1.0f, 1.0f, RED);
-    DrawCubeWires(position, 1.0f, 1.0f, 1.0f, BLACK);
+CharacterRenderData Enemy::getRenderData() const {
+    return {
+        AssetID::ENEMY_ASHIGARU,
+        0,
+        0,
+        position,
+        rotation,
+        {1.0f, 1.0f, 1.0f}
+    };
 }
 
 Vector3 Enemy::calculateCameraRelativeDirection(Vector3 camForward, Vector3 camRight) const {

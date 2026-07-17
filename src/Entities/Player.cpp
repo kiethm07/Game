@@ -37,8 +37,15 @@ void Player::update(float dt, Vector3 camForward, Vector3 camRight) {
     //Character::update(dt);
 }
 
-void Player::draw() const{
-    Character::draw();
+CharacterRenderData Player::getRenderData() const {
+    return {
+        AssetID::PLAYER_WOLF,
+        0, // currentAnimationIndex
+        0, // currentAnimationFrame
+        position,
+        rotation,
+        {1.0f, 1.0f, 1.0f} // scale
+    };
 }
 
 Vector3 Player::calculateCameraRelativeDirection(Vector3 camForward, Vector3 camRight) const {

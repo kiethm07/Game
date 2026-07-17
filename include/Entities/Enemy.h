@@ -10,7 +10,7 @@ public:
 
     void update(float dt) override;
     void update(float dt, Vector3 camForward, Vector3 camRight);
-    void draw() const override;
+    CharacterRenderData getRenderData() const override;
     
 private:
     const float MOVEMENT_SPEED = 5.0f;
