@@ -28,17 +28,28 @@ void AssetManager::loadAnimations(AssetID id, const std::string &filePath) {
   animations[id] = data;
 }
 
+void AssetManager::shareModel(AssetID alias, AssetID source) {
+  if (models.find(source) == models.end()) {
+    std::cerr << "AssetManager Error: shareModel() called before the source "
+                 "AssetID has been loaded. Call loadModel(source) first.\n";
+    return;
+  }
+  modelAliases[alias] = source;
+}
+
 Model &AssetManager::getModel(AssetID id) {
-  auto it = models.find(id);
+  // Resolve alias transparently.
+  auto aliasIt = modelAliases.find(id);
+  AssetID resolvedId = (aliasIt != modelAliases.end()) ? aliasIt->second : id;
+
+  auto it = models.find(resolvedId);
   if (it != models.end()) {
     return it->second;
   }
 
   std::cerr << "AssetManager Error: Model not found for requested AssetID!\n";
-  // Fallback: If they request a missing model, this will insert a
-  // zero-initialized one and return it to prevent a hard C++ crash, though
-  // raylib might just draw nothing.
-  return models[id];
+  // Fallback: insert a zero-initialized model to avoid a hard crash.
+  return models[resolvedId];
 }
 
 ModelAnimation *AssetManager::getAnimations(AssetID id, int &outAnimCount) {
