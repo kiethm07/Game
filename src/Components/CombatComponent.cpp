@@ -23,54 +23,123 @@ void CombatComponent::resetToIdle() {
     state_timer = 0.0f;
     active_combo_ptr = nullptr;
     combo_index = 0;
+    is_guard_held = false;
 }
 
 void CombatComponent::update(float dt) {
-    if (current_state == CombatState::Idle || current_state == CombatState::Blocking) {
+    if (current_state == CombatState::Idle) {
+        return;
+    }
+    //Guard (Parry + Block)
+    if (current_state == CombatState::Parrying) {
+        state_timer -= dt;
+        
+        if (state_timer <= 0.0f) {
+            if (is_guard_held) {
+                current_state = CombatState::Blocking;
+            } else {
+                resetToIdle();
+            }
+        }
+        return; 
+    }
+
+    if (current_state == CombatState::Blocking) {
+        if (!is_guard_held) {
+            resetToIdle();
+        }
         return;
     }
 
+    //Attack
     state_timer -= dt;
 
     if (state_timer <= 0.0f) {
-            AttackID current_id = active_combo_ptr->getAttackID(combo_index);
-            const AttackData& frame_data = AttackRegistry::instance().getAttackData(current_id);
+        AttackID current_id = active_combo_ptr->getAttackID(combo_index);
+        const AttackData& frame_data = AttackRegistry::instance().getAttackData(current_id);
 
-            if (current_state == CombatState::AttackStartup) {
-                current_state = CombatState::AttackActive;
-                state_timer = frame_data.getActiveDuration();
-            } 
-            else if (current_state == CombatState::AttackActive) {
-                current_state = CombatState::AttackRecovery;
-                state_timer = frame_data.getRecoveryDuration();
-            } 
-            else if (current_state == CombatState::AttackRecovery) {
-                resetToIdle();
-            }
+        if (current_state == CombatState::AttackStartup) {
+            current_state = CombatState::AttackActive;
+            state_timer = frame_data.getActiveDuration();
+        } 
+        else if (current_state == CombatState::AttackActive) {
+            current_state = CombatState::AttackRecovery;
+            state_timer = frame_data.getRecoveryDuration();
+        } 
+        else if (current_state == CombatState::AttackRecovery) {
+            resetToIdle();
+        }
+        return;
     }
 }
 
 void CombatComponent::initiateCombo(const Combo& combo) {
     if (combo.isEmpty()) return;
 
+    // if (current_state == CombatState::Idle) {
+    //     active_combo_ptr = &combo; 
+    //     combo_index = 0;
+    //     startAttackPhase();
+    // } 
+    // else if (current_state == CombatState::AttackRecovery && active_combo_ptr == &combo) {
+    //     combo_index++;
+        
+    //     if (combo_index < active_combo_ptr->getAttackCount()) {
+    //         startAttackPhase();
+    //     } else {
+    //         resetToIdle();
+    //     }
+    // }
     if (current_state == CombatState::Idle) {
         active_combo_ptr = &combo; 
         combo_index = 0;
         startAttackPhase();
     } 
     else if (current_state == CombatState::AttackRecovery && active_combo_ptr == &combo) {
-        combo_index++;
-        
-        if (combo_index < active_combo_ptr->getAttackCount()) {
+        if (combo_index + 1 < active_combo_ptr->getAttackCount()) {
+            combo_index++;
             startAttackPhase();
-        } else {
-            resetToIdle();
         }
     }
 }
 
+void CombatComponent::startGuard() {
+    if (!canGuard()) {
+        is_guard_held = false;
+        return;
+    }
+
+    is_guard_held = true;
+
+    if (current_state == CombatState::AttackStartup) {
+        active_combo_ptr = nullptr;
+        combo_index = 0;
+    }
+
+    current_state = CombatState::Parrying;
+    state_timer = DEFAULT_PARRY_WINDOW;
+}
+
+void CombatComponent::stopGuard() {
+    is_guard_held = false;
+    if (current_state == CombatState::Parrying) {
+        //Do nothing
+    }
+    else if (current_state == CombatState::Blocking) {
+        resetToIdle();
+    }  
+}
+
 bool CombatComponent::canMove() const {
-    return current_state == CombatState::Idle || current_state == CombatState::Blocking;
+    return current_state == CombatState::Idle 
+        || current_state == CombatState::Blocking;
+}
+
+bool CombatComponent::canGuard() const {
+    return current_state == CombatState::Idle 
+        || current_state == CombatState::Parrying
+        || current_state == CombatState::Blocking
+        || current_state == CombatState::AttackStartup;
 }
 
 bool CombatComponent::isHitboxActive() const {

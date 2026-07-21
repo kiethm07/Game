@@ -2,8 +2,10 @@
 #include <cmath>
 #include <raymath.h>
 #include <rlgl.h>
+#include <iostream>
 
 Player::Player(const InputManager& input_manager):
+    Character(Faction::Player),
     input_manager(input_manager)
 { 
     combo = {AttackID::PlayerLight1, AttackID::PlayerLight2};
@@ -12,17 +14,18 @@ Player::Player(const InputManager& input_manager):
 }
 
 void Player::update(float dt) {
-    // Vector3 camForward = {0.0f, 0.0f, 1.0f};
-    // Vector3 camRight = {1.0f, 0.0f, 0.0f};
-    // update(dt, camForward, camRight);
+    //Update combat component
+    combat_component.update(dt);
+    //Update stats component
+    stats.update(dt);
+
+    handleCombatAndUtilityInputs();
 }
 
 void Player::update(float dt, Vector3 camForward, Vector3 camRight) {
+    update(dt);
+
     Vector3 moveDirection = calculateCameraRelativeDirection(camForward, camRight);
-
-    combat_component.update(dt);
-
-    handleCombatAndUtilityInputs();
 
     if (!combat_component.canMove()) return;
 
@@ -126,6 +129,75 @@ void Player::draw() const{
     rlPopMatrix(); 
 }
 
+HurtBox Player::getHurtBox() const {
+    // Since DrawCube uses {0,0,0} in local space, 'position' is the center of the 1x1x1 player body.
+    // A radius of 0.75f comfortably encompasses the cube.
+    // return HurtBox(position, 0.75f, getFaction(), getId());
+    return HurtBox(position, 0.75f, this->faction, this->id);
+}
+
+std::vector<HitBox> Player::getActiveHitBoxes() const {
+    std::vector<HitBox> active_hitboxes;
+
+    // Only output a damage shape during the AttackActive phase
+    if (combat_component.getCurrentState() == CombatState::AttackActive) {
+        
+        // Convert rotation.y (yaw in degrees) to radians
+        float yaw_rad = rotation.y * DEG2RAD;
+
+        // Matches your atan2(x, z) logic:
+        // yaw 0 = +Z forward, yaw 90 = +X forward
+        Vector3 forward = { std::sin(yaw_rad), 0.0f, std::cos(yaw_rad) };
+
+        // Project the attack sphere 1.2 units in front of the player's center
+        float reach = 1.2f;
+        Vector3 hitbox_center = {
+            position.x + forward.x * reach,
+            position.y,
+            position.z + forward.z * reach
+        };
+
+        float attack_radius = 0.8f;
+        float health_damage = 25.0f;
+        float posture_damage = 15.0f;
+
+        active_hitboxes.emplace_back(
+            hitbox_center,
+            attack_radius,
+            health_damage,
+            posture_damage,
+            getFaction(),
+            getId()
+        );
+    }
+
+    return active_hitboxes;
+}
+
+void Player::takeDamage(float health_damage, float posture_damage) {
+    // 1. Guard check state machine windows
+    if (combat_component.getCurrentState() == CombatState::Parrying) {
+        // Perfect deflect window: Ignore damage entirely!
+        return;
+    }
+
+    if (combat_component.getCurrentState() == CombatState::Blocking) {
+        // Blocking cuts HP damage in half, but takes full posture damage
+        health_damage = 0.0f;
+    }
+
+    // 2. Pass straight to Stats!
+    bool hit_applied = stats.applyDamage(health_damage, posture_damage);
+
+    if (hit_applied) {
+        if (stats.isPostureBroken()) {
+            // Stance broken state!
+        } else if (stats.isDead()) {
+            // Player death state!
+        }
+    }
+}
+
 Vector3 Player::calculateCameraRelativeDirection(Vector3 camForward, Vector3 camRight) const {
     camForward.y = 0.0f;
     camRight.y = 0.0f;
@@ -152,7 +224,10 @@ void Player::handleCombatAndUtilityInputs() {
         combat_component.initiateCombo(combo);
     }
     if (input_manager.isActionPressed(GameAction::Parry)) {
-
+        combat_component.startGuard();
+    }
+    if (input_manager.isActionReleased(GameAction::Parry)) {
+        combat_component.stopGuard();
     }
     if (input_manager.isActionPressed(GameAction::Dodge)) {
     }
