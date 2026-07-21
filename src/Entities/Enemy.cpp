@@ -26,11 +26,8 @@ void Enemy::update(float dt, Vector3 camForward, Vector3 camRight) {
 CharacterRenderData Enemy::getRenderData() const {
     return {
         AssetID::ENEMY_ASHIGARU,
-        0,
-        0,
-        position,
-        rotation,
-        {1.0f, 1.0f, 1.0f}
+        /*transform*/ { position, rotation, {1.0f, 1.0f, 1.0f} },
+        /*animation*/ { 0, 0 }
     };
 }
 
