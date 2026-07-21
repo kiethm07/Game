@@ -19,16 +19,27 @@ public:
     
     void update(float dt);
     void initiateCombo(const Combo& combo);
+    void startGuard();
+    void stopGuard();
 
     bool canMove() const;
     bool isHitboxActive() const;
     CombatState getCurrentState() const;
-private:
-    CombatState current_state;
-    float state_timer;
+    
+    private:
+    //Core
+    CombatState current_state = CombatState::Idle;
+    float state_timer = 0;
+    
+    //Guard
+    bool is_guard_held = false;
+    bool canGuard() const;
+    const float DEFAULT_PARRY_WINDOW = 0.20f;
+    //const float PARRY_PENALTY_WINDOW = 0.10f;
+
+    //Attack
     const Combo* active_combo_ptr;
     int combo_index;
-
     void startAttackPhase();
     void resetToIdle();
 };
