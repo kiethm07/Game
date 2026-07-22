@@ -2,13 +2,18 @@
 #include <Core/Game.h>
 #include <iostream>
 #include <cmath> 
+#include <cassert>
 #include "raylib.h"
 
-GameplayState::GameplayState(const InputManager& input_manager):
+GameplayState::GameplayState(const InputManager& input_manager) :
     input_manager(input_manager)
 {
     camera_controller = std::make_unique<CameraController>();
     player = std::make_unique<Player>(input_manager);
+
+    // Spawn test enemies via factory
+    enemies.push_back(EnemyFactory::createEnemy(EnemyType::Swordman, { 0.0f, 0.0f, 5.0f }));
+    enemies.push_back(EnemyFactory::createEnemy(EnemyType::Swordman, { 3.0f, 0.0f, 8.0f }));
 }
 
 void GameplayState::enter() {
@@ -16,36 +21,61 @@ void GameplayState::enter() {
 }
 
 StateAction GameplayState::update(float dt) {
-    // 1. Tick the player. The player internally reads input and shifts its own position safely.
+    // 1. Tick Entities
     player->update(dt, camera_controller->getCameraForward(), camera_controller->getCameraRight());
 
-    // 2. Safely spy on the player's new position via the const getter
-    Vector3 current_player_pos = player->getPosition();
+    Vector3 player_pos = player->getPosition();
+    for (auto& enemy : enemies) {
+        enemy->update(dt, player_pos);
+    }
 
-    // 3. Update the camera tracking matrix using that position
-    Vector2 mouse_delta = input_manager.getRawMouseDelta();
-    camera_controller->update(current_player_pos, mouse_delta);
+    // 2. Gather Invariant Characters
+    std::vector<Character*> active_characters;
+    active_characters.reserve(1 + enemies.size());
 
-    // State transition handling
+    active_characters.push_back(player.get());
+    for (auto& enemy : enemies) {
+        active_characters.push_back(enemy.get());
+    }
+
+    // 3. Resolve Combat
+    combat_manager.update(active_characters);
+
+    // 4. Update Camera & Transitions
+    camera_controller->update(player_pos, input_manager.getRawMouseDelta());
+
     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
         return StateAction::ChangeToMenu;
     }
-    
-    return StateAction::KeepCurrent; 
+
+    return StateAction::KeepCurrent;
 }
 
 void GameplayState::draw() {
     ClearBackground(RAYWHITE);
-    
+
     // Establish 3D Projection space
     BeginMode3D(camera_controller->getCamera());
 
-        // 1. Draw static environment layout
-        DrawGrid(300, 10.0f); 
+    // 1. Draw static environment layout
+    DrawGrid(300, 10.0f);
 
-        // 2. Command the player entity to draw itself!
-        // No hardcoded DrawCube offsets here anymore.
-        player->draw(); 
+    // 2. Draw Entities
+    player->draw();
+    for (const auto& enemy : enemies) {
+        enemy->draw();
+    }
+
+    // Gather active characters for debug drawing
+    std::vector<Character*> active_characters;
+    active_characters.reserve(1 + enemies.size());
+    active_characters.push_back(player.get());
+    for (const auto& enemy : enemies) {
+        active_characters.push_back(enemy.get());
+    }
+
+    // --- DRAW HITBOX & HURTBOX WIREFRAMES ---
+    combat_manager.drawDebug(active_characters);
 
     EndMode3D();
 
