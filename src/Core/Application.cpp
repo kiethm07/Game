@@ -10,8 +10,12 @@ Application::Application(){
 }
 
 Application::~Application(){
-    CloseAudioDevice();
-    CloseWindow();
+    if (IsAudioDeviceReady()) {
+        CloseAudioDevice();
+    }
+    if (IsWindowReady()) {
+        CloseWindow();
+    }
 }
 
 void Application::run(){
@@ -24,5 +28,4 @@ void Application::run(){
         game.draw();
         EndDrawing();
     }
-    CloseWindow();
 }
