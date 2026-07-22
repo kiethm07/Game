@@ -1,32 +1,33 @@
-#include "Core/InputManager.h"
+#include <Core/InputManager.h>
+#include <raylib.h>
 
 InputManager::InputManager() {
     registerDefaultBindings();
 
-    action_states[GameAction::MOVE_FORWARD]  = InputState::IDLE;
-    action_states[GameAction::MOVE_BACKWARD] = InputState::IDLE;
-    action_states[GameAction::MOVE_LEFT]     = InputState::IDLE;
-    action_states[GameAction::MOVE_RIGHT]    = InputState::IDLE;
-    action_states[GameAction::JUMP]          = InputState::IDLE;
-    action_states[GameAction::ATTACK]        = InputState::IDLE;
-    action_states[GameAction::DEFLECT]       = InputState::IDLE;
-    action_states[GameAction::DODGE]         = InputState::IDLE;
-    action_states[GameAction::LOCK_ON]       = InputState::IDLE;
+    action_states[GameAction::MoveForward]  = InputState::Idle;
+    action_states[GameAction::MoveBackward] = InputState::Idle;
+    action_states[GameAction::MoveLeft]     = InputState::Idle;
+    action_states[GameAction::MoveRight]    = InputState::Idle;
+    action_states[GameAction::Jump]         = InputState::Idle;
+    action_states[GameAction::Attack]       = InputState::Idle;
+    action_states[GameAction::Parry]        = InputState::Idle;
+    action_states[GameAction::Dodge]        = InputState::Idle;
+    action_states[GameAction::LockOn]       = InputState::Idle;
     
     raw_mouse_delta = { 0.0f, 0.0f };
 }
 
 void InputManager::registerDefaultBindings() {
-    key_bindings[KEY_W]          = GameAction::MOVE_FORWARD;
-    key_bindings[KEY_S]          = GameAction::MOVE_BACKWARD;
-    key_bindings[KEY_A]          = GameAction::MOVE_LEFT;
-    key_bindings[KEY_D]          = GameAction::MOVE_RIGHT;
-    key_bindings[KEY_SPACE]      = GameAction::JUMP;
-    key_bindings[KEY_LEFT_SHIFT] = GameAction::DODGE;
-    key_bindings[KEY_F]          = GameAction::LOCK_ON;
+    key_bindings[KEY_W]          = GameAction::MoveForward;
+    key_bindings[KEY_S]          = GameAction::MoveBackward;
+    key_bindings[KEY_A]          = GameAction::MoveLeft;
+    key_bindings[KEY_D]          = GameAction::MoveRight;
+    key_bindings[KEY_SPACE]      = GameAction::Jump;
+    key_bindings[KEY_LEFT_SHIFT] = GameAction::Dodge;
+    key_bindings[KEY_F]          = GameAction::LockOn;
 
-    mouse_bindings[MOUSE_BUTTON_LEFT]  = GameAction::ATTACK;
-    mouse_bindings[MOUSE_BUTTON_RIGHT] = GameAction::DEFLECT;
+    mouse_bindings[MOUSE_BUTTON_LEFT]  = GameAction::Attack;
+    mouse_bindings[MOUSE_BUTTON_RIGHT] = GameAction::Parry;
 }
 
 void InputManager::update() {
@@ -44,25 +45,25 @@ void InputManager::pollBindings() {
 }
 
 void InputManager::updateBindingState(GameAction action, bool pressed, bool down, bool released) {
-    if (pressed)       action_states[action] = InputState::PRESSED;
-    else if (down)     action_states[action] = InputState::HELD;
-    else if (released) action_states[action] = InputState::RELEASED;
-    else               action_states[action] = InputState::IDLE;
+    if (pressed)       action_states[action] = InputState::Pressed;
+    else if (down)     action_states[action] = InputState::Held;
+    else if (released) action_states[action] = InputState::Released;
+    else               action_states[action] = InputState::Idle;
 }
 
 bool InputManager::isActionPressed(GameAction action) const {
     auto it = action_states.find(action);
-    return (it != action_states.end()) ? it->second == InputState::PRESSED : false;
+    return (it != action_states.end()) ? it->second == InputState::Pressed : false;
 }
 
 bool InputManager::isActionHeld(GameAction action) const {
     auto it = action_states.find(action);
-    return (it != action_states.end()) ? it->second == InputState::HELD : false;
+    return (it != action_states.end()) ? it->second == InputState::Held : false;
 }
 
 bool InputManager::isActionReleased(GameAction action) const {
     auto it = action_states.find(action);
-    return (it != action_states.end()) ? it->second == InputState::RELEASED : false;
+    return (it != action_states.end()) ? it->second == InputState::Released : false;
 }
 
 Vector2 InputManager::getRawMouseDelta() const {
