@@ -1,6 +1,7 @@
 #include <Core/Game.h>
 
-Game::Game(){}
+Game::Game()
+    : attack_registry(AttackRegistry::instance()) {}
 
 Game::~Game() {
     while (!states.empty()) {
@@ -8,9 +9,12 @@ Game::~Game() {
     }
 }
 
-void Game::update(float dt) {
+void Game::update() {
     if (!states.empty()) {
+        time_manager.update();
         input_manager.update();
+
+        float dt = time_manager.getDeltaTime();
         StateAction action = states.back()->update(dt);
         // // Handle state actions if needed
         if (action == StateAction::RequestQuit) {

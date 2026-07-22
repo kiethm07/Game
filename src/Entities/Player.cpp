@@ -1,21 +1,33 @@
 #include <Entities/Player.h>
 #include <cmath>
 #include <raymath.h>
+#include <rlgl.h>
+#include <iostream>
 
 Player::Player(const InputManager& input_manager):
+    Character(Faction::Player),
     input_manager(input_manager)
 { 
+    combo = {AttackID::PlayerLight1, AttackID::PlayerLight2};
     position = {0, 0, 0};
+    rotation = {0, 180.0f, 0};
 }
 
 void Player::update(float dt) {
-    // Vector3 camForward = {0.0f, 0.0f, 1.0f};
-    // Vector3 camRight = {1.0f, 0.0f, 0.0f};
-    // update(dt, camForward, camRight);
+    //Update combat component
+    combat_component.update(dt);
+    //Update stats component
+    stats.update(dt);
+
+    handleCombatAndUtilityInputs();
 }
 
 void Player::update(float dt, Vector3 camForward, Vector3 camRight) {
+    update(dt);
+
     Vector3 moveDirection = calculateCameraRelativeDirection(camForward, camRight);
+
+    if (!combat_component.canMove()) return;
 
     if (moveDirection.x != 0.0f || moveDirection.z != 0.0f) {
         // Apply position displacement
@@ -47,7 +59,143 @@ void Player::update(float dt, Vector3 camForward, Vector3 camRight) {
 }
 
 void Player::draw() const{
-    Character::draw();
+    Color cube_color = BLUE; // Default to Idle
+    
+    switch (combat_component.getCurrentState()) {
+        case CombatState::Idle:
+            cube_color = BLUE;
+            break;
+        case CombatState::AttackStartup:
+            cube_color = GOLD;       // Windup/Telegraphing phase
+            break;
+        case CombatState::AttackActive:
+            cube_color = RED;        // Damage frames active
+            break;
+        case CombatState::AttackRecovery:
+            cube_color = LIME;       // The open combo linking window
+            break;
+        case CombatState::Parrying:
+            cube_color = PURPLE;     // Active deflect window
+            break;
+        case CombatState::Blocking:
+            cube_color = DARKGRAY;   // Standing guard
+            break;
+    }
+
+    // 2. Perform matrix transformations in local space
+    rlPushMatrix(); 
+    
+    rlTranslatef(position.x, position.y, position.z);
+    rlRotatef(rotation.y, 0.0f, 1.0f, 0.0f);
+    
+    // Draw the main body with our dynamic state color
+    DrawCube({0.0f, 0.0f, 0.0f}, 1.0f, 1.0f, 1.0f, cube_color);
+    DrawCubeWires({0.0f, 0.0f, 0.0f}, 1.0f, 1.0f, 1.0f, BLACK);
+
+    // --- DEBUG: Draw numbers 1-6 on faces using 3D lines ---
+    auto drawDebugNum = [](Vector3 center, Vector3 right, Vector3 up, int num) {
+        float w = 0.15f; 
+        float h = 0.25f; 
+        Color c = RED;   
+
+        auto pt = [&](float x, float y) -> Vector3 {
+            return {
+                center.x + right.x * x * w + up.x * y * h,
+                center.y + right.y * x * w + up.y * y * h,
+                center.z + right.z * x * w + up.z * y * h
+            };
+        };
+
+        Vector3 tl = pt(-1,  1); Vector3 tr = pt( 1,  1);
+        Vector3 ml = pt(-1,  0); Vector3 mr = pt( 1,  0);
+        Vector3 bl = pt(-1, -1); Vector3 br = pt( 1, -1);
+        
+        if (num == 1) { DrawLine3D(pt(0, 1), pt(0, -1), c); }
+        if (num == 2) { DrawLine3D(tl, tr, c); DrawLine3D(tr, mr, c); DrawLine3D(mr, ml, c); DrawLine3D(ml, bl, c); DrawLine3D(bl, br, c); }
+        if (num == 3) { DrawLine3D(tl, tr, c); DrawLine3D(tr, br, c); DrawLine3D(ml, mr, c); DrawLine3D(bl, br, c); }
+        if (num == 4) { DrawLine3D(tl, ml, c); DrawLine3D(ml, mr, c); DrawLine3D(tr, br, c); }
+        if (num == 5) { DrawLine3D(tr, tl, c); DrawLine3D(tl, ml, c); DrawLine3D(ml, mr, c); DrawLine3D(mr, br, c); DrawLine3D(br, bl, c); }
+        if (num == 6) { DrawLine3D(tr, tl, c); DrawLine3D(tl, bl, c); DrawLine3D(bl, br, c); DrawLine3D(br, mr, c); DrawLine3D(mr, ml, c); }
+    };
+
+    // Draw numbers on all 6 faces unchanged
+    drawDebugNum({ 0.0f,  0.0f,  0.51f}, { 1.0f, 0.0f,  0.0f}, {0.0f, 1.0f,  0.0f}, 1); // Front
+    drawDebugNum({ 0.0f,  0.0f, -0.51f}, {-1.0f, 0.0f,  0.0f}, {0.0f, 1.0f,  0.0f}, 2); // Back
+    drawDebugNum({ 0.0f,  0.51f, 0.0f},  { 1.0f, 0.0f,  0.0f}, {0.0f, 0.0f, -1.0f}, 3); // Top
+    drawDebugNum({ 0.0f, -0.51f, 0.0f},  { 1.0f, 0.0f,  0.0f}, {0.0f, 0.0f,  1.0f}, 4); // Bottom
+    drawDebugNum({ 0.51f, 0.0f,  0.0f},  { 0.0f, 0.0f, -1.0f}, {0.0f, 1.0f,  0.0f}, 5); // Right
+    drawDebugNum({-0.51f, 0.0f,  0.0f},  { 0.0f, 0.0f,  1.0f}, {0.0f, 1.0f,  0.0f}, 6); // Left
+    
+    rlPopMatrix(); 
+}
+
+HurtBox Player::getHurtBox() const {
+    // Since DrawCube uses {0,0,0} in local space, 'position' is the center of the 1x1x1 player body.
+    // A radius of 0.75f comfortably encompasses the cube.
+    // return HurtBox(position, 0.75f, getFaction(), getId());
+    return HurtBox(position, 0.75f, this->faction, this->id);
+}
+
+std::vector<HitBox> Player::getActiveHitBoxes() const {
+    std::vector<HitBox> active_hitboxes;
+
+    // Only output a damage shape during the AttackActive phase
+    if (combat_component.getCurrentState() == CombatState::AttackActive) {
+        
+        // Convert rotation.y (yaw in degrees) to radians
+        float yaw_rad = rotation.y * DEG2RAD;
+
+        // Matches your atan2(x, z) logic:
+        // yaw 0 = +Z forward, yaw 90 = +X forward
+        Vector3 forward = { std::sin(yaw_rad), 0.0f, std::cos(yaw_rad) };
+
+        // Project the attack sphere 1.2 units in front of the player's center
+        float reach = 1.2f;
+        Vector3 hitbox_center = {
+            position.x + forward.x * reach,
+            position.y,
+            position.z + forward.z * reach
+        };
+
+        float attack_radius = 0.8f;
+        float health_damage = 25.0f;
+        float posture_damage = 15.0f;
+
+        active_hitboxes.emplace_back(
+            hitbox_center,
+            attack_radius,
+            health_damage,
+            posture_damage,
+            getFaction(),
+            getId()
+        );
+    }
+
+    return active_hitboxes;
+}
+
+void Player::takeDamage(float health_damage, float posture_damage) {
+    // 1. Guard check state machine windows
+    if (combat_component.getCurrentState() == CombatState::Parrying) {
+        // Perfect deflect window: Ignore damage entirely!
+        return;
+    }
+
+    if (combat_component.getCurrentState() == CombatState::Blocking) {
+        // Blocking cuts HP damage in half, but takes full posture damage
+        health_damage = 0.0f;
+    }
+
+    // 2. Pass straight to Stats!
+    bool hit_applied = stats.applyDamage(health_damage, posture_damage);
+
+    if (hit_applied) {
+        if (stats.isPostureBroken()) {
+            // Stance broken state!
+        } else if (stats.isDead()) {
+            // Player death state!
+        }
+    }
 }
 
 Vector3 Player::calculateCameraRelativeDirection(Vector3 camForward, Vector3 camRight) const {
@@ -60,10 +208,10 @@ Vector3 Player::calculateCameraRelativeDirection(Vector3 camForward, Vector3 cam
 
     Vector3 direction = { 0.0f, 0.0f, 0.0f };
     
-    if (input_manager.isActionHeld(GameAction::MOVE_FORWARD))  direction = Vector3Add(direction, camForward);
-    if (input_manager.isActionHeld(GameAction::MOVE_BACKWARD)) direction = Vector3Subtract(direction, camForward);
-    if (input_manager.isActionHeld(GameAction::MOVE_RIGHT))    direction = Vector3Add(direction, camRight);
-    if (input_manager.isActionHeld(GameAction::MOVE_LEFT))     direction = Vector3Subtract(direction, camRight);
+    if (input_manager.isActionHeld(GameAction::MoveForward))  direction = Vector3Add(direction, camForward);
+    if (input_manager.isActionHeld(GameAction::MoveBackward)) direction = Vector3Subtract(direction, camForward);
+    if (input_manager.isActionHeld(GameAction::MoveRight))    direction = Vector3Add(direction, camRight);
+    if (input_manager.isActionHeld(GameAction::MoveLeft))     direction = Vector3Subtract(direction, camRight);
 
     if (direction.x != 0.0f || direction.z != 0.0f) {
         direction = Vector3Normalize(direction);
@@ -72,12 +220,17 @@ Vector3 Player::calculateCameraRelativeDirection(Vector3 camForward, Vector3 cam
 }
 
 void Player::handleCombatAndUtilityInputs() {
-    if (input_manager.isActionPressed(GameAction::ATTACK)) {
+    if (input_manager.isActionPressed(GameAction::Attack)) {
+        combat_component.initiateCombo(combo);
     }
-    if (input_manager.isActionPressed(GameAction::DEFLECT)) {
+    if (input_manager.isActionPressed(GameAction::Parry)) {
+        combat_component.startGuard();
     }
-    if (input_manager.isActionPressed(GameAction::DODGE)) {
+    if (input_manager.isActionReleased(GameAction::Parry)) {
+        combat_component.stopGuard();
     }
-    if (input_manager.isActionPressed(GameAction::LOCK_ON)) {
+    if (input_manager.isActionPressed(GameAction::Dodge)) {
+    }
+    if (input_manager.isActionPressed(GameAction::LockOn)) {
     }
 }
