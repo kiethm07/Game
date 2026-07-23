@@ -12,3 +12,4 @@
 
 /_deps/
 /.agents/
+*.tree_structure.txt
