@@ -129,43 +129,46 @@ void Player::draw() const{
     rlPopMatrix(); 
 }
 
-HurtBox Player::getHurtBox() const {
-    // Since DrawCube uses {0,0,0} in local space, 'position' is the center of the 1x1x1 player body.
-    // A radius of 0.75f comfortably encompasses the cube.
-    // return HurtBox(position, 0.75f, getFaction(), getId());
-    return HurtBox(position, 0.75f, this->faction, this->id);
+void Player::drawHPBar2D() const {
+    float bar_width = 200.0f;
+    float bar_height = 16.0f;
+    
+    int x = 20;
+    int y = GetScreenHeight() - 40; 
+
+    float fill = stats.getHealthPercentage();
+
+    DrawRectangle(x, y, (int)bar_width, (int)bar_height, DARKGRAY);
+    DrawRectangle(x, y, (int)(bar_width * fill), (int)bar_height, LIME);
+    DrawRectangleLines(x, y, (int)bar_width, (int)bar_height, WHITE);
+}
+
+std::vector<HurtBox> Player::getHurtBoxes() const {
+    // Generate an upright 3D body capsule centered at position
+    Capsule body_capsule = Capsule::createUpright(position, BODY_HEIGHT, BODY_RADIUS);
+    return { HurtBox(body_capsule, getFaction(), getId()) };
 }
 
 std::vector<HitBox> Player::getActiveHitBoxes() const {
     std::vector<HitBox> active_hitboxes;
 
-    // Only output a damage shape during the AttackActive phase
     if (combat_component.getCurrentState() == CombatState::AttackActive) {
-        
-        // Convert rotation.y (yaw in degrees) to radians
         float yaw_rad = rotation.y * DEG2RAD;
-
-        // Matches your atan2(x, z) logic:
-        // yaw 0 = +Z forward, yaw 90 = +X forward
         Vector3 forward = { std::sin(yaw_rad), 0.0f, std::cos(yaw_rad) };
 
-        // Project the attack sphere 1.2 units in front of the player's center
-        float reach = 1.2f;
+        // Position attack sphere in front of the player at chest height
         Vector3 hitbox_center = {
-            position.x + forward.x * reach,
-            position.y,
-            position.z + forward.z * reach
+            position.x + forward.x * ATTACK_REACH,
+            position.y + (BODY_HEIGHT * 0.5f), 
+            position.z + forward.z * ATTACK_REACH
         };
 
-        float attack_radius = 0.8f;
-        float health_damage = 25.0f;
-        float posture_damage = 15.0f;
+        Sphere attack_sphere(hitbox_center, ATTACK_RADIUS);
 
         active_hitboxes.emplace_back(
-            hitbox_center,
-            attack_radius,
-            health_damage,
-            posture_damage,
+            attack_sphere,
+            25.0f, // Health damage
+            15.0f, // Posture damage
             getFaction(),
             getId()
         );

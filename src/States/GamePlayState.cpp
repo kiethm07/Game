@@ -82,6 +82,12 @@ void GameplayState::draw() {
     // --- 2D UI LAYER ---
     DrawFPS(10, 10);
     DrawText("Phase 1.5: Architecture Integrated. Player entity encapsulates movement logic.", 10, 40, 20, DARKGRAY);
+
+    // --- HEALTH BARS ---
+    player->drawHPBar2D();
+    for (const auto& enemy : enemies) {
+        enemy->drawHPBar(camera_controller->getCamera());
+    }
 }
 
 void GameplayState::exit() {

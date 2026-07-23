@@ -18,7 +18,7 @@ public:
         return position;
     }
 
-    Vector3 getRoration() const{
+    Vector3 getRotation() const{
         return rotation;
     }
 
@@ -26,7 +26,7 @@ public:
     Faction getFaction() const { return faction; }
     unsigned int getId() const { return id; }
 
-    virtual HurtBox getHurtBox() const = 0;
+    virtual std::vector<HurtBox> getHurtBoxes() const = 0;
     virtual std::vector<HitBox> getActiveHitBoxes() const = 0;
     virtual void takeDamage(float health_damage, float posture_damage) = 0;
     

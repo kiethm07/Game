@@ -1,6 +1,8 @@
 #include <GameManager/CombatManager.h>
 #include <algorithm>
 #include "raylib.h"
+#include <Util/CollisionMath.h>
+#include <cassert>
 
 void CombatManager::clearHitsForAttacker(unsigned int attacker_id) {
     for (size_t i = 0; i < active_hits.size(); ) {
@@ -15,23 +17,26 @@ void CombatManager::clearHitsForAttacker(unsigned int attacker_id) {
 
 void CombatManager::drawDebug(const std::vector<Character*>& characters) const {
     for (const auto* character : characters) {
-        if (!character) continue;
+        assert(character);
+        // 1. Draw HurtBoxes (Green Capsule Wireframes)
+        auto hurtboxes = character->getHurtBoxes();
+        for (const auto& hurtbox : hurtboxes) {
+            Capsule capsule = hurtbox.getShape();
+            DrawCapsuleWires(capsule.getBase(), capsule.getTip(), capsule.getRadius(), 8, 8, GREEN);
+        }
 
-        // 1. Draw HurtBoxes (Green wireframes)
-        HurtBox hurtbox = character->getHurtBox();
-        DrawSphereWires(hurtbox.getCenter(), hurtbox.getRadius(), 8, 8, GREEN);
-
-        // 2. Draw Active HitBoxes (Red wireframes)
+        // 2. Draw Active HitBoxes (Red Sphere Wireframes)
         std::vector<HitBox> hitboxes = character->getActiveHitBoxes();
         for (const auto& hitbox : hitboxes) {
-            DrawSphereWires(hitbox.getCenter(), hitbox.getRadius(), 10, 10, RED);
+            Sphere sphere = hitbox.getShape();
+            DrawSphereWires(sphere.getCenter(), sphere.getRadius(), 10, 10, RED);
         }
     }
 }
 
 void CombatManager::update(const std::vector<Character*>& characters) {
     for (Character* attacker : characters) {
-        if (!attacker) continue;
+        assert(attacker);
 
         auto hitboxes = attacker->getActiveHitBoxes();
 
@@ -52,12 +57,17 @@ void CombatManager::update(const std::vector<Character*>& characters) {
                     });
                 if (already_hit) continue;
 
-                // Sphere collision check
-                if (CheckCollisionSpheres(hitbox.getCenter(), hitbox.getRadius(),
-                    defender->getHurtBox().getCenter(), defender->getHurtBox().getRadius())) {
+                // Sphere (HitBox) vs Capsule (HurtBox) collision check
+                auto hurtboxes = defender->getHurtBoxes();
+                for (const auto& hurtbox : hurtboxes) {
+                    if (CollisionMath::checkSphereCapsule(hitbox.getShape(), hurtbox.getShape())) {
 
-                    defender->takeDamage(hitbox.getHealthDamage(), hitbox.getPostureDamage());
-                    active_hits.push_back({ attacker->getId(), defender->getId() });
+                        defender->takeDamage(hitbox.getHealthDamage(), hitbox.getPostureDamage());
+                        active_hits.push_back({ attacker->getId(), defender->getId() });
+
+                        //Only process one hit at a time for this specific hitbox
+                        break;
+                    }
                 }
             }
         }
