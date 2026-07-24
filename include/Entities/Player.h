@@ -13,6 +13,8 @@ public:
     void draw() const override;
     void drawHPBar2D() const;
 
+    float getColliderRadius() const override;
+    float getColliderHeight() const override;
     std::vector<HurtBox> getHurtBoxes() const override;
     std::vector<HitBox> getActiveHitBoxes() const override;
     void takeDamage(float health_damage, float posture_damage) override;

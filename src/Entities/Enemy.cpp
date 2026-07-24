@@ -26,8 +26,10 @@ void Enemy::draw() const {
     rlTranslatef(position.x, position.y, position.z);
     rlRotatef(rotation.y, 0.0f, 1.0f, 0.0f);
 
-    DrawCube({ 0.0f, 0.0f, 0.0f }, visual_size.x, visual_size.y, visual_size.z, cube_color);
-    DrawCubeWires({ 0.0f, 0.0f, 0.0f }, visual_size.x, visual_size.y, visual_size.z, BLACK);
+    float half_h = visual_size.y * 0.5f;
+
+    DrawCube({ 0.0f, half_h, 0.0f }, visual_size.x, visual_size.y, visual_size.z, cube_color);
+    DrawCubeWires({ 0.0f, half_h, 0.0f }, visual_size.x, visual_size.y, visual_size.z, BLACK);
 
     // Debug numbers 1-6 on cube faces
     auto drawDebugNum = [](Vector3 center, Vector3 right, Vector3 up, int num) {
@@ -54,12 +56,12 @@ void Enemy::draw() const {
         if (num == 6) { DrawLine3D(tr, tl, c); DrawLine3D(tl, bl, c); DrawLine3D(bl, br, c); DrawLine3D(br, mr, c); DrawLine3D(mr, ml, c); }
     };
 
-    drawDebugNum({ 0.0f,  0.0f,  0.51f }, { 1.0f, 0.0f,  0.0f }, { 0.0f, 1.0f,  0.0f }, 1);
-    drawDebugNum({ 0.0f,  0.0f, -0.51f }, { -1.0f, 0.0f,  0.0f }, { 0.0f, 1.0f,  0.0f }, 2);
-    drawDebugNum({ 0.0f,  0.51f, 0.0f }, { 1.0f, 0.0f,  0.0f }, { 0.0f, 0.0f, -1.0f }, 3);
-    drawDebugNum({ 0.0f, -0.51f, 0.0f }, { 1.0f, 0.0f,  0.0f }, { 0.0f, 0.0f,  1.0f }, 4);
-    drawDebugNum({ 0.51f, 0.0f,  0.0f }, { 0.0f, 0.0f, -1.0f }, { 0.0f, 1.0f,  0.0f }, 5);
-    drawDebugNum({ -0.51f, 0.0f,  0.0f }, { 0.0f, 0.0f,  1.0f }, { 0.0f, 1.0f,  0.0f }, 6);
+    drawDebugNum({ 0.0f,  half_h,  0.51f }, { 1.0f, 0.0f,  0.0f }, { 0.0f, 1.0f,  0.0f }, 1);
+    drawDebugNum({ 0.0f,  half_h, -0.51f }, { -1.0f, 0.0f,  0.0f }, { 0.0f, 1.0f,  0.0f }, 2);
+    drawDebugNum({ 0.0f,  half_h + 0.51f, 0.0f }, { 1.0f, 0.0f,  0.0f }, { 0.0f, 0.0f, -1.0f }, 3);
+    drawDebugNum({ 0.0f, half_h - 0.51f, 0.0f }, { 1.0f, 0.0f,  0.0f }, { 0.0f, 0.0f,  1.0f }, 4);
+    drawDebugNum({ 0.51f, half_h,  0.0f }, { 0.0f, 0.0f, -1.0f }, { 0.0f, 1.0f,  0.0f }, 5);
+    drawDebugNum({ -0.51f, half_h,  0.0f }, { 0.0f, 0.0f,  1.0f }, { 0.0f, 1.0f,  0.0f }, 6);
 
     rlPopMatrix();
 }
@@ -89,6 +91,14 @@ void Enemy::drawHPBar(const Camera3D& camera) const {
     DrawRectangle(x, y, (int)width, (int)height, RED);
     DrawRectangle(x, y, (int)(width * stats.getHealthPercentage()), (int)height, LIME);
     DrawRectangleLines(x, y, (int)width, (int)height, BLACK);
+}
+
+float Enemy::getColliderRadius() const {
+    return body_radius;
+}
+
+float Enemy::getColliderHeight() const {
+    return body_height;
 }
 
 std::vector<HurtBox> Enemy::getHurtBoxes() const {

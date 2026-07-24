@@ -88,9 +88,9 @@ void Player::draw() const{
     rlTranslatef(position.x, position.y, position.z);
     rlRotatef(rotation.y, 0.0f, 1.0f, 0.0f);
     
-    // Draw the main body with our dynamic state color
-    DrawCube({0.0f, 0.0f, 0.0f}, 1.0f, 1.0f, 1.0f, cube_color);
-    DrawCubeWires({0.0f, 0.0f, 0.0f}, 1.0f, 1.0f, 1.0f, BLACK);
+    // Draw the main body with our dynamic state color (centered at Y = 0.5f so bottom touches ground)
+    DrawCube({0.0f, 0.5f, 0.0f}, 1.0f, 1.0f, 1.0f, cube_color);
+    DrawCubeWires({0.0f, 0.5f, 0.0f}, 1.0f, 1.0f, 1.0f, BLACK);
 
     // --- DEBUG: Draw numbers 1-6 on faces using 3D lines ---
     auto drawDebugNum = [](Vector3 center, Vector3 right, Vector3 up, int num) {
@@ -118,13 +118,13 @@ void Player::draw() const{
         if (num == 6) { DrawLine3D(tr, tl, c); DrawLine3D(tl, bl, c); DrawLine3D(bl, br, c); DrawLine3D(br, mr, c); DrawLine3D(mr, ml, c); }
     };
 
-    // Draw numbers on all 6 faces unchanged
-    drawDebugNum({ 0.0f,  0.0f,  0.51f}, { 1.0f, 0.0f,  0.0f}, {0.0f, 1.0f,  0.0f}, 1); // Front
-    drawDebugNum({ 0.0f,  0.0f, -0.51f}, {-1.0f, 0.0f,  0.0f}, {0.0f, 1.0f,  0.0f}, 2); // Back
-    drawDebugNum({ 0.0f,  0.51f, 0.0f},  { 1.0f, 0.0f,  0.0f}, {0.0f, 0.0f, -1.0f}, 3); // Top
-    drawDebugNum({ 0.0f, -0.51f, 0.0f},  { 1.0f, 0.0f,  0.0f}, {0.0f, 0.0f,  1.0f}, 4); // Bottom
-    drawDebugNum({ 0.51f, 0.0f,  0.0f},  { 0.0f, 0.0f, -1.0f}, {0.0f, 1.0f,  0.0f}, 5); // Right
-    drawDebugNum({-0.51f, 0.0f,  0.0f},  { 0.0f, 0.0f,  1.0f}, {0.0f, 1.0f,  0.0f}, 6); // Left
+    // Draw numbers on all 6 faces (shifted by +0.5f in Y to match cube position)
+    drawDebugNum({ 0.0f,  0.5f,  0.51f}, { 1.0f, 0.0f,  0.0f}, {0.0f, 1.0f,  0.0f}, 1); // Front
+    drawDebugNum({ 0.0f,  0.5f, -0.51f}, {-1.0f, 0.0f,  0.0f}, {0.0f, 1.0f,  0.0f}, 2); // Back
+    drawDebugNum({ 0.0f,  1.01f, 0.0f},  { 1.0f, 0.0f,  0.0f}, {0.0f, 0.0f, -1.0f}, 3); // Top
+    drawDebugNum({ 0.0f, -0.01f, 0.0f},  { 1.0f, 0.0f,  0.0f}, {0.0f, 0.0f,  1.0f}, 4); // Bottom
+    drawDebugNum({ 0.51f, 0.5f,  0.0f},  { 0.0f, 0.0f, -1.0f}, {0.0f, 1.0f,  0.0f}, 5); // Right
+    drawDebugNum({-0.51f, 0.5f,  0.0f},  { 0.0f, 0.0f,  1.0f}, {0.0f, 1.0f,  0.0f}, 6); // Left
     
     rlPopMatrix(); 
 }
@@ -141,6 +141,14 @@ void Player::drawHPBar2D() const {
     DrawRectangle(x, y, (int)bar_width, (int)bar_height, DARKGRAY);
     DrawRectangle(x, y, (int)(bar_width * fill), (int)bar_height, LIME);
     DrawRectangleLines(x, y, (int)bar_width, (int)bar_height, WHITE);
+}
+
+float Player::getColliderRadius() const {
+    return BODY_RADIUS;
+}
+
+float Player::getColliderHeight() const {
+    return BODY_HEIGHT;
 }
 
 std::vector<HurtBox> Player::getHurtBoxes() const {

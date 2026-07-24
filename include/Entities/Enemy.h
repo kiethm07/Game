@@ -13,6 +13,8 @@ public:
     virtual void draw() const override;
     void drawHPBar(const Camera3D& camera) const;
     
+    float getColliderRadius() const override;
+    float getColliderHeight() const override;
     std::vector<HurtBox> getHurtBoxes() const override;
     void takeDamage(float health_damage, float posture_damage) override;
 
