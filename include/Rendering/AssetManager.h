@@ -24,6 +24,11 @@ public:
     // Only 'source' owns the model — do NOT call shareModel before loading source.
     void shareModel(AssetID alias, AssetID source);
 
+    // Register 'alias' as a reference to the animations already loaded for 'source'.
+    // Both IDs will return the same ModelAnimation array.
+    // Only 'source' owns the animation data — do NOT call shareAnimations before loading source.
+    void shareAnimations(AssetID alias, AssetID source);
+
     // --- Retrieval ---
     Model& getModel(AssetID id);
     ModelAnimation* getAnimations(AssetID id, int& outAnimCount);
@@ -36,6 +41,9 @@ private:
 
     // Alias → owning AssetID. Resolved transparently in getModel().
     std::unordered_map<AssetID, AssetID> modelAliases;
+
+    // Alias → owning AssetID. Resolved transparently in getAnimations().
+    std::unordered_map<AssetID, AssetID> animAliases;
 
     struct AnimationData {
         ModelAnimation* anims = nullptr;

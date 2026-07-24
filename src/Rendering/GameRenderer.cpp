@@ -13,22 +13,23 @@
 namespace {
 struct AssetEntry {
   AssetID id;
-  const char *modelPath;             ///< nullptr → no model to load
-  const char *animPath;              ///< nullptr → no animations to load
-  const AssetID *sharedModelId = nullptr; ///< if set, alias this ID's model to the pointed-to source
+  const char *modelPath; ///< nullptr → no model to load
+  const char *animPath;  ///< nullptr → no animations to load
+  const AssetID *sharedModelId =
+      nullptr; ///< if set, alias model to pointed-to source
+  const AssetID *sharedAnimId =
+      nullptr; ///< if set, alias animations to pointed-to source
 };
 
 // Shared source IDs referenced by entries below.
 constexpr AssetID kPlayerWolfId = AssetID::PLAYER_WOLF;
 
 static const AssetEntry kAssets[] = {
-    {AssetID::PLAYER_WOLF,    ASSET_DIR "/UAL2_Standard.glb", ASSET_DIR "/UAL2_Standard.glb", nullptr},
-    // ENEMY_ASHIGARU currently uses a debug cube renderer, so no model is
-    // loaded for it. When it gets a real model, set modelPath and remove
-    // sharedModelId — OR point sharedModelId at another entry to reuse that
-    // model without a second GPU upload:
-    //   {AssetID::ENEMY_ASHIGARU, nullptr, nullptr, &kPlayerWolfId},
-    {AssetID::ENEMY_ASHIGARU, nullptr, nullptr, nullptr},
+    {AssetID::PLAYER_WOLF, ASSET_DIR "/test.glb",
+     ASSET_DIR "/test.glb", nullptr, nullptr},
+    // Sharing PLAYER_WOLF's model AND animations for testing — no extra GPU/CPU
+    // allocation.
+    {AssetID::ENEMY_ASHIGARU, nullptr, nullptr, &kPlayerWolfId, &kPlayerWolfId},
 };
 } // namespace
 
@@ -46,10 +47,13 @@ void GameRenderer::initializeAssets() {
       assetManager.loadAnimations(entry.id, entry.animPath);
   }
 
-  // 2. Register model aliases (sharing). Must run after all loads above.
+  // 2. Register model and animation aliases (sharing). Must run after all loads
+  // above.
   for (const auto &entry : kAssets) {
     if (entry.sharedModelId)
       assetManager.shareModel(entry.id, *entry.sharedModelId);
+    if (entry.sharedAnimId)
+      assetManager.shareAnimations(entry.id, *entry.sharedAnimId);
   }
 
   // 3. Register a rendering strategy for each AssetID.
@@ -58,7 +62,7 @@ void GameRenderer::initializeAssets() {
   entityRenderers[AssetID::PLAYER_WOLF] =
       std::make_unique<SkinnedEntityRenderer>();
   entityRenderers[AssetID::ENEMY_ASHIGARU] =
-      std::make_unique<DebugCubeRenderer>(BLUE, BLACK);
+      std::make_unique<SkinnedEntityRenderer>(); // shares PLAYER_WOLF's model
 }
 
 void GameRenderer::renderGameplay(

@@ -24,7 +24,8 @@ void SkinnedEntityRenderer::draw(AssetManager &assets,
             drawPosition  = AnimUtils::cancelRootMotion(
                 anims[safeAnimIndex], safeFrame,
                 renderData.transform.position,
-                renderData.transform.rotation.y);
+                renderData.transform.rotation.y,
+                renderData.transform.scale.x);
         }
     }
 

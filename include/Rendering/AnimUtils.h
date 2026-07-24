@@ -23,8 +23,9 @@ void applyAnimationFrame(Model &model, ModelAnimation *anims, int animCount,
 /// @param frame      Current keyframe index (already bounds-checked by caller).
 /// @param entityPos  The authoritative physics position of the entity.
 /// @param yawDeg     Y-axis rotation of the entity in degrees.
+/// @param modelScale Uniform scale factor applied to the model at draw time.
 /// @return           Adjusted world-space draw position.
 Vector3 cancelRootMotion(const ModelAnimation &anim, int frame,
-                         Vector3 entityPos, float yawDeg);
+                         Vector3 entityPos, float yawDeg, float modelScale = 1.0f);
 
 } // namespace AnimUtils

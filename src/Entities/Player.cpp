@@ -54,7 +54,7 @@ void Player::update(float dt, Vector3 camForward, Vector3 camRight) {
 CharacterRenderData Player::getRenderData() const {
   return {
       AssetID::PLAYER_WOLF,
-      /*transform*/ { position, rotation, {1.0f, 1.0f, 1.0f} },
+      /*transform*/ { position, rotation, {0.01f, 0.01f, 0.01f} },
       /*animation*/ { currentAnimIndex, currentAnimFrame }
   };
 }
