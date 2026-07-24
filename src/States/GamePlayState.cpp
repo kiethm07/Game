@@ -15,12 +15,12 @@ void GameplayState::enter() {
 }
 
 StateAction GameplayState::update(float dt) {
-  // 1. Tick the player. The player internally reads input and shifts its own
-  // position safely.
-  player->update(dt, camera_controller->getCameraForward(),
-                 camera_controller->getCameraRight());
-  enemy->update(dt, camera_controller->getCameraForward(),
-                camera_controller->getCameraRight());
+  // 1. Tick entities through the shared polymorphic update path. Each reads
+  // input/AI internally and shifts its own position safely.
+  const UpdateContext ctx{dt, camera_controller->getCameraForward(),
+                          camera_controller->getCameraRight()};
+  player->update(ctx);
+  enemy->update(ctx);
   // 2. Safely spy on the player's new position via the const getter
   Vector3 current_player_pos = player->getPosition();
   Vector3 current_enemy_pos = enemy->getPosition();
@@ -38,7 +38,7 @@ StateAction GameplayState::update(float dt) {
 }
 
 void GameplayState::draw() {
-  std::vector<CharacterRenderData> renderList;
+  renderList.clear();
   renderList.push_back(player->getRenderData());
   renderList.push_back(enemy->getRenderData());
 

@@ -24,7 +24,46 @@ void AssetManager::loadModel(AssetID id, const std::string &filePath) {
     }
   }
 
+  // Route skinned meshes through the GPU skinning shader.
+  setupGpuSkinning(model);
+
   models[id] = model;
+}
+
+void AssetManager::ensureSkinningShader() {
+  if (skinningShaderLoaded) return;
+  // Desktop raylib uses OpenGL 3.3 → GLSL 330.
+  skinningShader = LoadShader(ASSET_DIR "/shaders/glsl330/skinning.vs",
+                              ASSET_DIR "/shaders/glsl330/skinning.fs");
+  skinningShaderLoaded = true; // guard the load attempt even if compile fails
+  if (skinningShader.id == 0) {
+    TraceLog(LOG_ERROR,
+             "AssetManager: failed to load GPU skinning shader; skinned "
+             "models will fall back to CPU skinning.");
+  }
+}
+
+void AssetManager::setupGpuSkinning(Model &model) {
+  bool hasSkin = false;
+  for (int m = 0; m < model.meshCount; m++) {
+    if (model.meshes[m].boneCount > 0 &&
+        model.meshes[m].boneIndices != nullptr) {
+      hasSkin = true;
+      break;
+    }
+  }
+  if (!hasSkin) return;
+
+  ensureSkinningShader();
+  if (skinningShader.id == 0) return; // shader unavailable — keep CPU skinning
+
+  // With SUPPORT_GPU_SKINNING enabled (see CMakeLists), raylib uploads the
+  // per-vertex bone index/weight VBOs and the position VBO holds the bind pose.
+  // Attaching the skinning shader is all that's left; UpdateModelAnimation
+  // refreshes the bone-matrix uniform each frame at draw time.
+  for (int i = 0; i < model.materialCount; i++) {
+    model.materials[i].shader = skinningShader;
+  }
 }
 
 void AssetManager::loadAnimations(AssetID id, const std::string &filePath) {
@@ -61,9 +100,13 @@ Model &AssetManager::getModel(AssetID id) {
     return it->second;
   }
 
-  std::cerr << "AssetManager Error: Model not found for requested AssetID!\n";
-  // Fallback: insert a zero-initialized model to avoid a hard crash.
-  return models[resolvedId];
+  // Miss: return a shared zero-initialized sentinel. It is NEVER inserted into
+  // `models`, so unloadAll() can never feed this garbage Model to UnloadModel.
+  // DrawModelEx on a zero Model (meshCount == 0) is a harmless no-op.
+  static Model kNullModel{};
+  TraceLog(LOG_ERROR, "AssetManager: no model loaded for AssetID %d",
+           static_cast<int>(id));
+  return kNullModel;
 }
 
 void AssetManager::shareAnimations(AssetID alias, AssetID source) {
@@ -102,4 +145,12 @@ void AssetManager::unloadAll() {
     }
   }
   animations.clear();
+
+  // We own the skinning shader (UnloadModel never unloads material shaders),
+  // so unload it exactly once here.
+  if (skinningShaderLoaded && skinningShader.id != 0) {
+    UnloadShader(skinningShader);
+  }
+  skinningShaderLoaded = false;
+  skinningShader = Shader{};
 }

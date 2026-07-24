@@ -8,25 +8,25 @@ void SkinnedEntityRenderer::draw(AssetManager &assets,
     int animCount  = 0;
     ModelAnimation *anims = assets.getAnimations(renderData.assetId, animCount);
 
-    const int animIndex = renderData.animation.animIndex;
-    const int animFrame = renderData.animation.animFrame;
+    const int   animIndex = renderData.animation.animIndex;
+    // Derive the (fractional) keyframe from framerate-independent playback time.
+    const float frame = renderData.animation.animTime * AnimUtils::ANIM_SAMPLE_RATE;
 
-    // 2. Drive the skeleton to the current frame.
-    AnimUtils::applyAnimationFrame(model, anims, animCount, animIndex, animFrame);
-
-    // 3. Compute draw position with root motion cancelled.
+    // 2. Drive the skeleton. With SUPPORT_GPU_SKINNING enabled (see CMakeLists),
+    //    UpdateModelAnimation only refreshes bone matrices — no CPU vertex
+    //    skinning — and the skinning shader (attached by AssetManager) does the
+    //    vertex work on the GPU, so entities can share one Model cheaply.
     Vector3 drawPosition = renderData.transform.position;
     if (anims != nullptr && animCount > 0) {
-        int safeAnimIndex    = animIndex % animCount;
-        int keyframeCount    = anims[safeAnimIndex].keyframeCount;
-        if (keyframeCount > 0) {
-            int safeFrame = animFrame % keyframeCount;
-            drawPosition  = AnimUtils::cancelRootMotion(
-                anims[safeAnimIndex], safeFrame,
-                renderData.transform.position,
-                renderData.transform.rotation.y,
-                renderData.transform.scale.x);
-        }
+        const ModelAnimation &anim = anims[animIndex % animCount];
+        UpdateModelAnimation(model, anim, frame);
+
+        // 3. Cancel root motion (self-guards the frame index).
+        drawPosition = AnimUtils::cancelRootMotion(
+            anim, static_cast<int>(frame),
+            renderData.transform.position,
+            renderData.transform.rotation.y,
+            renderData.transform.scale.x);
     }
 
     // 4. Draw.

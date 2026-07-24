@@ -15,6 +15,13 @@ FetchContent_Declare(raylib
 )
 FetchContent_MakeAvailable(raylib)
 
+# Enable raylib's GPU skinning path. Without this, raylib's config.h defaults
+# SUPPORT_GPU_SKINNING to 0, so it never uploads per-vertex bone index/weight
+# VBOs — a skinning shader then skins every vertex by bone 0, freezing the mesh
+# in its bind pose (T-pose) while only root motion animates. config.h guards the
+# flag with #ifndef, so this compile definition wins.
+target_compile_definitions(raylib PUBLIC SUPPORT_GPU_SKINNING=1)
+
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS src/*.cpp)
 file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS include/*.h)
 

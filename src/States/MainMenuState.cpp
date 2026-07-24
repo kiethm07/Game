@@ -11,6 +11,7 @@ void MainMenuState::enter() {
 }
 
 StateAction MainMenuState::update(float dt) {
+    return StateAction::ChangeToGameplay; // TEMP smoke-test auto-transition
     if (IsKeyPressed(KEY_ENTER)) {
         return StateAction::ChangeToGameplay;
     }
