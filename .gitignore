@@ -9,6 +9,8 @@
 *.sln
 *.vcxproj
 *.filters
+*.idx
+.cache/
 
 /_deps/
 /.agents/

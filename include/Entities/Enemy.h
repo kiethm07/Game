@@ -1,30 +1,38 @@
 #pragma once
 
-#include <Entities/Character.h>
 #include <Components/CombatComponent.h>
+#include <Core/InputManager.h>
+#include <Entities/Character.h>
 #include <raylib.h>
 
 class Enemy : public Character {
 public:
-    Enemy(Vector3 start_position, Faction faction = Faction::Enemy);
-    virtual ~Enemy() = default;
+  Enemy(Vector3 start_position, Faction faction = Faction::Enemy);
+  virtual ~Enemy() = default;
 
-    virtual void update(float dt, const Vector3& player_position) = 0;
-    virtual void draw() const override;
-    void drawHPBar(const Camera3D& camera) const;
-    
-    float getColliderRadius() const override;
-    float getColliderHeight() const override;
-    std::vector<HurtBox> getHurtBoxes() const override;
-    void takeDamage(float health_damage, float posture_damage) override;
+  virtual void update(const UpdateContext &ctx) override = 0;
+  virtual CharacterRenderData getRenderData() const override = 0;
+  void drawHPBar(const Camera3D &camera) const;
 
-    const CombatComponent& getCombatComponent() const { return combat_component; }
+  float getColliderRadius() const override;
+  float getColliderHeight() const override;
+  std::vector<HurtBox> getHurtBoxes() const override;
+  void takeDamage(float health_damage, float posture_damage) override;
+
+  const CombatComponent &getCombatComponent() const { return combat_component; }
 
 protected:
-    CombatComponent combat_component;
+  CombatComponent combat_component;
+  int moveState = 0;
 
-    float body_height = 2.0f;
-    float body_radius = 0.5f;
-    Vector3 visual_size = { 1.0f, 1.0f, 1.0f };
-    Color base_color = BLUE;
+  enum class AnimState {
+    IDLE = 6, // UnarmedIdle
+    WALK = 23 // UnarmedRunForward
+  };
+
+  int currentAnimIndex = static_cast<int>(AnimState::IDLE);
+  float animTime = 0.0f; ///< seconds elapsed in the current clip
+  float body_height = 2.0f;
+  float body_radius = 0.5f;
+  Vector3 visual_size = {1.0f, 1.0f, 1.0f};
 };
