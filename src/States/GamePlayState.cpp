@@ -14,6 +14,16 @@ GameplayState::GameplayState(const InputManager& input_manager) :
     // Spawn test enemies via factory
     enemies.push_back(EnemyFactory::createEnemy(EnemyType::Swordman, { 0.0f, 0.0f, 5.0f }));
     enemies.push_back(EnemyFactory::createEnemy(EnemyType::Swordman, { 3.0f, 0.0f, 8.0f }));
+
+    // Spawn sample walls
+    walls.emplace_back(Vector3{ -10.0f, 0.0f, 15.0f }, Vector3{ 10.0f, 3.0f, 16.0f }, DARKGRAY);
+    walls.emplace_back(Vector3{ 5.0f, 0.0f, -3.0f }, Vector3{ 7.0f, 3.0f, -1.0f }, GRAY);
+    walls.emplace_back(Vector3{ -7.0f, 0.0f, 3.0f }, Vector3{ -5.0f, 3.0f, 5.0f }, GRAY);
+
+    // Spawn sample terrain (Slope / Ramp, Cliff Plateau, Stepped Platform)
+    terrain.addRamp(TerrainRamp({ -3.0f, 2.0f }, { 3.0f, 10.0f }, 0.0f, 3.0f, BEIGE));
+    terrain.addPlatform(TerrainPlatform({ -5.0f, 0.0f, 10.0f }, { 5.0f, 3.0f, 18.0f }, BROWN));
+    terrain.addPlatform(TerrainPlatform({ -12.0f, 0.0f, -6.0f }, { -6.0f, 1.5f, -2.0f }, DARKBROWN));
 }
 
 void GameplayState::enter() {
@@ -38,11 +48,14 @@ StateAction GameplayState::update(float dt) {
         active_characters.push_back(enemy.get());
     }
 
-    // 3. Resolve Combat
+    // 3. Resolve Physics Pipeline (4-Step: Gravity -> Integration -> Ejection Loop -> Ground Snap)
+    physics_manager.updatePhysics(active_characters, terrain, walls, dt);
+
+    // 4. Resolve Combat
     combat_manager.update(active_characters);
 
-    // 4. Update Camera & Transitions
-    camera_controller->update(player_pos, input_manager.getRawMouseDelta());
+    // 5. Update Camera & Transitions
+    camera_controller->update(player->getPosition(), input_manager.getRawMouseDelta());
 
     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
         return StateAction::ChangeToMenu;
@@ -57,8 +70,9 @@ void GameplayState::draw() {
     // Establish 3D Projection space
     BeginMode3D(camera_controller->getCamera());
 
-    // 1. Draw static environment layout
+    // 1. Draw static environment layout & terrain
     DrawGrid(300, 10.0f);
+    terrain.draw();
 
     // 2. Draw Entities
     player->draw();
@@ -74,7 +88,8 @@ void GameplayState::draw() {
         active_characters.push_back(enemy.get());
     }
 
-    // --- DRAW HITBOX & HURTBOX WIREFRAMES ---
+    // --- DRAW PHYSICS & COMBAT DEBUG WIREFRAMES ---
+    physics_manager.drawDebug(active_characters, walls);
     combat_manager.drawDebug(active_characters);
 
     EndMode3D();
