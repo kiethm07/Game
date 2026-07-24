@@ -1,3 +1,4 @@
+#include <Rendering/AnimUtils.h>
 #include <Rendering/AssetManager.h>
 #include <iostream>
 
@@ -10,6 +11,19 @@ void AssetManager::loadModel(AssetID id, const std::string &filePath) {
     return;
   }
   Model model = LoadModel(filePath.c_str());
+
+  // GLB files (e.g. from Mixamo) may lack embedded textures, leaving the
+  // material albedo map empty. Without a texture, raylib renders the mesh
+  // using the material's diffuse color — which defaults to {0,0,0,0}
+  // (transparent), making the model invisible.  Assign a visible fallback.
+  for (int i = 0; i < model.materialCount; i++) {
+    Texture2D albedo = model.materials[i].maps[MATERIAL_MAP_DIFFUSE].texture;
+    if (albedo.id == 0) {
+      // No texture — set a neutral gray so the mesh is always visible.
+      model.materials[i].maps[MATERIAL_MAP_DIFFUSE].color = GRAY;
+    }
+  }
+
   models[id] = model;
 }
 
@@ -52,8 +66,22 @@ Model &AssetManager::getModel(AssetID id) {
   return models[resolvedId];
 }
 
+void AssetManager::shareAnimations(AssetID alias, AssetID source) {
+  if (animations.find(source) == animations.end()) {
+    std::cerr
+        << "AssetManager Error: shareAnimations() called before the source "
+           "AssetID has been loaded. Call loadAnimations(source) first.\n";
+    return;
+  }
+  animAliases[alias] = source;
+}
+
 ModelAnimation *AssetManager::getAnimations(AssetID id, int &outAnimCount) {
-  auto it = animations.find(id);
+  // Resolve alias transparently.
+  auto aliasIt = animAliases.find(id);
+  AssetID resolvedId = (aliasIt != animAliases.end()) ? aliasIt->second : id;
+
+  auto it = animations.find(resolvedId);
   if (it != animations.end()) {
     outAnimCount = it->second.count;
     return it->second.anims;

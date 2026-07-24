@@ -14,12 +14,12 @@ public:
 
 private:
   const InputManager &input_manager;
-  const float MOVEMENT_SPEED = 15.0f;
+  const float MOVEMENT_SPEED = 2.0f;
   const float ROTATION_SPEED = 10.0f;
 
   enum class AnimState {
-      IDLE = 8,  // Idle_FoldArms_Loop
-      WALK = 38  // Walk_Carry_Loop
+    IDLE = 0, // Idle_FoldArms_Loop
+    WALK = 0  // Walk_Carry_Loop
   };
 
   int currentAnimIndex = static_cast<int>(AnimState::IDLE);

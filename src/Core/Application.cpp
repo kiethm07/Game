@@ -25,5 +25,6 @@ void Application::run(){
         game.draw();
         EndDrawing();
     }
-    CloseWindow();
+    // Window is closed by ~Application() after all game objects (including
+    // AssetManager) are fully destroyed. Do NOT call CloseWindow() here.
 }

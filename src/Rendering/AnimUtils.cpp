@@ -15,7 +15,7 @@ void applyAnimationFrame(Model &model, ModelAnimation *anims, int animCount,
 }
 
 Vector3 cancelRootMotion(const ModelAnimation &anim, int frame,
-                         Vector3 entityPos, float yawDeg) {
+                         Vector3 entityPos, float yawDeg, float modelScale) {
     if (anim.boneCount <= 0 || anim.keyframeCount <= 0) return entityPos;
 
     // Bone 0 carries the forward root motion in local model space.
@@ -23,8 +23,8 @@ Vector3 cancelRootMotion(const ModelAnimation &anim, int frame,
     Vector3 rootFrame0 = anim.keyframePoses[0][0].translation;
     Vector3 rootFrameN = anim.keyframePoses[frame][0].translation;
 
-    float localDeltaX = rootFrameN.x - rootFrame0.x;
-    float localDeltaZ = rootFrameN.z - rootFrame0.z;
+    float localDeltaX = (rootFrameN.x - rootFrame0.x) * modelScale;
+    float localDeltaZ = (rootFrameN.z - rootFrame0.z) * modelScale;
 
     // Rotate the local offset into world space by the character's facing angle.
     float yawRad   = yawDeg * DEG2RAD;
