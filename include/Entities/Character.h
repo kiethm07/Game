@@ -1,33 +1,38 @@
 #pragma once
 
 #include "raylib.h"
-#include <Rendering/RenderData.h>
-
-/// Everything an entity needs to advance one tick. Passed through the virtual
-/// update() so subclasses share a single polymorphic entry point.
-struct UpdateContext {
-    float   dt         = 0.0f;
-    Vector3 camForward = {0.0f, 0.0f, 1.0f};
-    Vector3 camRight   = {1.0f, 0.0f, 0.0f};
-};
+#include <Components/Faction.h>
+#include <Components/HitBox.h>
+#include <Components/HurtBox.h>
+#include <Components/Stats.h>
 
 class Character {
 public:
-    Character();
-    virtual ~Character() = default;
+  Character(Faction faction);
+  virtual ~Character() = default;
 
-    virtual void update(const UpdateContext &ctx) = 0;
-    virtual CharacterRenderData getRenderData() const = 0;
+  virtual void update(float dt) = 0;
+  virtual void draw() const;
 
-    Vector3 getPosition() const{
-        return position;
-    }
+  Vector3 getPosition() const { return position; }
 
-    Vector3 getRotation() const{
-        return rotation;
-    }
-    
+  Vector3 getRotation() const { return rotation; }
+
+  const Stats &getStats() const { return stats; }
+  Faction getFaction() const { return faction; }
+  unsigned int getId() const { return id; }
+
+  virtual HurtBox getHurtBox() const = 0;
+  virtual std::vector<HitBox> getActiveHitBoxes() const = 0;
+  virtual void takeDamage(float health_damage, float posture_damage) = 0;
+
 protected:
-    Vector3 position;
-    Vector3 rotation;
+  unsigned int id;
+  Faction faction;
+  Vector3 position;
+  Vector3 rotation;
+  Stats stats;
+
+private:
+  inline static unsigned int next_id = 1;
 };

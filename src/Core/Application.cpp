@@ -17,9 +17,8 @@ Application::~Application(){
 void Application::run(){
     DisableCursor();
     while (!WindowShouldClose()) {
-        float dt = GetFrameTime();
         // 1. Process Update vectors and evaluate state transitions
-        game.update(dt);
+        game.update();
         // 2. Clear buffers and execute paint matrices
         BeginDrawing();
         game.draw();

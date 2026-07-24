@@ -13,3 +13,4 @@
 .cache/
 
 /_deps/
+/.agents/

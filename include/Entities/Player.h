@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Components/CombatComponent.h>
 #include <Core/InputManager.h>
 #include <Entities/Character.h>
 
@@ -10,6 +11,10 @@ public:
 
   void update(const UpdateContext &ctx) override;
   CharacterRenderData getRenderData() const override;
+
+  HurtBox getHurtBox() const override;
+  std::vector<HitBox> getActiveHitBoxes() const override;
+  void takeDamage(float health_damage, float posture_damage) override;
 
 private:
   const InputManager &input_manager;
@@ -24,4 +29,6 @@ private:
   Vector3 calculateCameraRelativeDirection(Vector3 camForward,
                                            Vector3 camRight) const;
   void handleCombatAndUtilityInputs();
+  CombatComponent combat_component;
+  Combo combo;
 };
