@@ -4,19 +4,12 @@
 
 namespace AnimUtils {
 
-void applyAnimationFrame(Model &model, ModelAnimation *anims, int animCount,
-                         int animIndex, int frame) {
-    if (anims == nullptr || animCount <= 0) return;
-    int safeAnimIndex = animIndex % animCount;
-    int keyframeCount = anims[safeAnimIndex].keyframeCount;
-    if (keyframeCount <= 0) return;
-    int safeFrame = frame % keyframeCount;
-    UpdateModelAnimation(model, anims[safeAnimIndex], safeFrame);
-}
-
 Vector3 cancelRootMotion(const ModelAnimation &anim, int frame,
                          Vector3 entityPos, float yawDeg, float modelScale) {
     if (anim.boneCount <= 0 || anim.keyframeCount <= 0) return entityPos;
+    // Self-guard the frame index so callers can't index keyframePoses OOB.
+    frame %= anim.keyframeCount;
+    if (frame < 0) frame += anim.keyframeCount;
 
     // Bone 0 carries the forward root motion in local model space.
     // We cancel its XZ translation so the entity stays at its physics position.

@@ -6,10 +6,10 @@
 /// These are stateless helpers with no dependency on any game class.
 namespace AnimUtils {
 
-/// Calls UpdateModelAnimation with fully bounds-checked indices.
-/// Does nothing if anims is null, animCount is 0, or the keyframe count is 0.
-void applyAnimationFrame(Model &model, ModelAnimation *anims, int animCount,
-                         int animIndex, int frame);
+/// Keyframes-per-second the exported clips are sampled at. Playback time in
+/// seconds is multiplied by this to derive the (fractional) keyframe to display.
+/// Kept at 60 to preserve the original tick-locked playback speed.
+constexpr float ANIM_SAMPLE_RATE = 60.0f;
 
 /// Returns the corrected draw position for an entity whose animation contains
 /// root motion baked into bone 0.
@@ -20,7 +20,7 @@ void applyAnimationFrame(Model &model, ModelAnimation *anims, int animCount,
 /// skeleton animates forward.
 ///
 /// @param anim       The active ModelAnimation.
-/// @param frame      Current keyframe index (already bounds-checked by caller).
+/// @param frame      Current keyframe index (bounds-checked internally).
 /// @param entityPos  The authoritative physics position of the entity.
 /// @param yawDeg     Y-axis rotation of the entity in degrees.
 /// @param modelScale Uniform scale factor applied to the model at draw time.

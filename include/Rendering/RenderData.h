@@ -12,8 +12,8 @@ struct TransformData {
 
 /// Current skeletal animation playback state.
 struct AnimationState {
-    int animIndex = 0; ///< Index into the ModelAnimation array
-    int animFrame = 0; ///< Current keyframe number
+    int   animIndex = 0;   ///< Index into the ModelAnimation array
+    float animTime  = 0.0f; ///< Elapsed playback time in seconds (framerate-independent)
 };
 
 /// All data the renderer needs to draw one entity per frame.

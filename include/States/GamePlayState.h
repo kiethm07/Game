@@ -7,7 +7,9 @@
 #include <Entities/Player.h>
 #include <Entities/Enemy.h>
 #include <Rendering/GameRenderer.h>
+#include <Rendering/RenderData.h>
 #include <memory>
+#include <vector>
 
 class GameplayState : public GameState {
 public:
@@ -24,6 +26,9 @@ private:
     std::unique_ptr<Player> player;
     std::unique_ptr<Enemy> enemy;
     std::unique_ptr<GameRenderer> renderer;
-    
+
+    /// Reused across frames to avoid a per-frame heap allocation.
+    std::vector<CharacterRenderData> renderList;
+
     const InputManager& input_manager;
 };

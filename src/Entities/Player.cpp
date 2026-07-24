@@ -7,25 +7,20 @@ Player::Player(const InputManager &input_manager)
   position = {0, 0, 0};
 }
 
-void Player::update(float dt) {
-  // Vector3 camForward = {0.0f, 0.0f, 1.0f};
-  // Vector3 camRight = {1.0f, 0.0f, 0.0f};
-  // update(dt, camForward, camRight);
-}
-
-void Player::update(float dt, Vector3 camForward, Vector3 camRight) {
-  // Advance the animation frame by 1 each tick (assuming game runs at 60fps)
-  currentAnimFrame++;
+void Player::update(const UpdateContext &ctx) {
+  const float dt = ctx.dt;
+  // Advance framerate-independent playback time.
+  animTime += dt;
 
   Vector3 moveDirection =
-      calculateCameraRelativeDirection(camForward, camRight);
+      calculateCameraRelativeDirection(ctx.camForward, ctx.camRight);
 
   bool isMoving = (moveDirection.x != 0.0f || moveDirection.z != 0.0f);
   int targetAnimIndex = isMoving ? static_cast<int>(Player::AnimState::WALK) : static_cast<int>(Player::AnimState::IDLE);
 
   if (currentAnimIndex != targetAnimIndex) {
       currentAnimIndex = targetAnimIndex;
-      currentAnimFrame = 0; // Reset animation when transitioning
+      animTime = 0.0f; // Reset animation when transitioning
   }
 
   if (isMoving) {
@@ -47,15 +42,13 @@ void Player::update(float dt, Vector3 camForward, Vector3 camRight) {
     // Fluidly interpolate rotation alongside camera and input vector updates
     rotation.y += angle_diff * ROTATION_SPEED * dt;
   }
-
-  // Character::update(dt);
 }
 
 CharacterRenderData Player::getRenderData() const {
   return {
       AssetID::PLAYER_WOLF,
-      /*transform*/ { position, rotation, {0.01f, 0.01f, 0.01f} },
-      /*animation*/ { currentAnimIndex, currentAnimFrame }
+      /*transform*/ { position, rotation, {1.0f, 1.0f, 1.0f} },
+      /*animation*/ { currentAnimIndex, animTime }
   };
 }
 

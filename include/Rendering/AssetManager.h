@@ -37,6 +37,14 @@ public:
     void unloadAll();
 
 private:
+    // Shared GPU skinning shader, lazily loaded and attached to skinned models'
+    // materials so animation runs on the GPU (bone-matrix uniform) instead of
+    // re-skinning + re-uploading the whole mesh on the CPU each frame.
+    Shader skinningShader{};
+    bool skinningShaderLoaded = false;
+    void ensureSkinningShader();
+    void setupGpuSkinning(Model &model);
+
     std::unordered_map<AssetID, Model> models;
 
     // Alias → owning AssetID. Resolved transparently in getModel().

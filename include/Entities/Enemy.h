@@ -8,8 +8,7 @@ public:
   Enemy();
   ~Enemy() = default;
 
-  void update(float dt) override;
-  void update(float dt, Vector3 camForward, Vector3 camRight);
+  void update(const UpdateContext &ctx) override;
   CharacterRenderData getRenderData() const override;
 
 private:
@@ -18,12 +17,12 @@ private:
   int moveState = 0;
 
   enum class AnimState {
-    IDLE = 40, // Zombie_Scratch
-    WALK = 41  // Zombie_Walk_Fwd_Loop
+    IDLE = 6, // UnarmedIdle
+    WALK = 23 // UnarmedRunForward
   };
 
-  int currentAnimIndex = static_cast<int>(AnimState::IDLE);
-  int currentAnimFrame = 0; ///< incremented each tick to drive animation
+  int   currentAnimIndex = static_cast<int>(AnimState::IDLE);
+  float animTime         = 0.0f; ///< seconds elapsed in the current clip
 
   Vector3 calculateCameraRelativeDirection(Vector3 camForward,
                                            Vector3 camRight) const;

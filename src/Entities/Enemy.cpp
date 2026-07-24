@@ -6,13 +6,10 @@ Enemy::Enemy()
     position = {5, 0, 5};
 }
 
-void Enemy::update(float dt) {
-
-}
-
-void Enemy::update(float dt, Vector3 camForward, Vector3 camRight) {
-    // Advance the animation frame every tick (matches 60fps playback).
-    currentAnimFrame++;
+void Enemy::update(const UpdateContext &ctx) {
+    const float dt = ctx.dt;
+    // Advance framerate-independent playback time.
+    animTime += dt;
 
     moveState++;
     bool isMoving = false;
@@ -33,17 +30,15 @@ void Enemy::update(float dt, Vector3 camForward, Vector3 camRight) {
     
     if (currentAnimIndex != targetAnimIndex) {
         currentAnimIndex = targetAnimIndex;
-        currentAnimFrame = 0;
+        animTime = 0.0f;
     }
-
-    //Character::update(dt);
 }
 
 CharacterRenderData Enemy::getRenderData() const {
     return {
         AssetID::ENEMY_ASHIGARU,
-        /*transform*/ { position, rotation, {0.01f, 0.01f, 0.01f} },
-        /*animation*/ { currentAnimIndex, currentAnimFrame }
+        /*transform*/ { position, rotation, {1.0f, 1.0f, 1.0f} },
+        /*animation*/ { currentAnimIndex, animTime }
     };
 }
 

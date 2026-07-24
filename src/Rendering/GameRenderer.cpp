@@ -7,30 +7,43 @@
 // ---------------------------------------------------------------------------
 // To add a new entity:
 //   1. Add its AssetID to AssetID.h
-//   2. Add one row here (modelPath may be nullptr for non-modelled entities)
-//   3. Create and register its IEntityRenderer in initializeAssets() below
+//   2. Add one row here — model/anim paths (or nullptr) AND the renderer kind.
+//      Loading, sharing, and renderer registration all flow from this table.
 // ---------------------------------------------------------------------------
 namespace {
+/// Which IEntityRenderer strategy an asset is drawn with.
+enum class RendererKind {
+  SkinnedCharacter, ///< SkinnedEntityRenderer (GPU-skinned GLB)
+  DebugCube,        ///< DebugCubeRenderer (placeholder proxy)
+};
+
 struct AssetEntry {
   AssetID id;
   const char *modelPath; ///< nullptr → no model to load
   const char *animPath;  ///< nullptr → no animations to load
+  RendererKind renderer = RendererKind::SkinnedCharacter;
   const AssetID *sharedModelId =
       nullptr; ///< if set, alias model to pointed-to source
   const AssetID *sharedAnimId =
       nullptr; ///< if set, alias animations to pointed-to source
 };
 
-// Shared source IDs referenced by entries below.
-constexpr AssetID kPlayerWolfId = AssetID::PLAYER_WOLF;
-
 static const AssetEntry kAssets[] = {
-    {AssetID::PLAYER_WOLF, ASSET_DIR "/test.glb",
-     ASSET_DIR "/test.glb", nullptr, nullptr},
-    // Sharing PLAYER_WOLF's model AND animations for testing — no extra GPU/CPU
-    // allocation.
-    {AssetID::ENEMY_ASHIGARU, nullptr, nullptr, &kPlayerWolfId, &kPlayerWolfId},
+    {AssetID::PLAYER_WOLF, ASSET_DIR "/UAL2_Standard.glb",
+     ASSET_DIR "/UAL2_Standard.glb", RendererKind::SkinnedCharacter},
+    {AssetID::ENEMY_ASHIGARU, ASSET_DIR "/Walk.glb", ASSET_DIR "/Walk.glb",
+     RendererKind::SkinnedCharacter},
 };
+
+std::unique_ptr<IEntityRenderer> makeRenderer(RendererKind kind) {
+  switch (kind) {
+  case RendererKind::DebugCube:
+    return std::make_unique<DebugCubeRenderer>();
+  case RendererKind::SkinnedCharacter:
+  default:
+    return std::make_unique<SkinnedEntityRenderer>();
+  }
+}
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -56,20 +69,23 @@ void GameRenderer::initializeAssets() {
       assetManager.shareAnimations(entry.id, *entry.sharedAnimId);
   }
 
-  // 3. Register a rendering strategy for each AssetID.
-  //    Swap DebugCubeRenderer for SkinnedEntityRenderer once an entity
-  //    gets a real model and animations.
-  entityRenderers[AssetID::PLAYER_WOLF] =
-      std::make_unique<SkinnedEntityRenderer>();
-  entityRenderers[AssetID::ENEMY_ASHIGARU] =
-      std::make_unique<SkinnedEntityRenderer>(); // shares PLAYER_WOLF's model
+  // 3. Register a rendering strategy for each AssetID, straight from the table.
+  for (const auto &entry : kAssets) {
+    entityRenderers[entry.id] = makeRenderer(entry.renderer);
+  }
 }
 
 void GameRenderer::renderGameplay(
     const CameraController &camera,
     const std::vector<CharacterRenderData> &entitiesToDraw) {
-
   ClearBackground(RAYWHITE);
+  drawWorld(camera, entitiesToDraw);
+  drawUI();
+}
+
+void GameRenderer::drawWorld(
+    const CameraController &camera,
+    const std::vector<CharacterRenderData> &entitiesToDraw) {
   BeginMode3D(camera.getCamera());
 
   drawEnvironment();
@@ -82,8 +98,9 @@ void GameRenderer::renderGameplay(
   }
 
   EndMode3D();
+}
 
-  // 2D UI overlay
+void GameRenderer::drawUI() {
   DrawFPS(10, 10);
   DrawText("Architecture Phase 2: Decoupled Renderer", 10, 40, 20, DARKGRAY);
 }
