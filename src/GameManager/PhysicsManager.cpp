@@ -187,6 +187,9 @@ void PhysicsManager::updatePhysics(const std::vector<Character*>& characters, co
         // -------------------------------------------------------------
         // STEP 2: Add velocity * deltaTime to position
         // -------------------------------------------------------------
+        Vector3 hv = character->getHorizontalVelocity();
+        pos.x += hv.x * dt;
+        pos.z += hv.z * dt;
         pos.y += v_y * dt;
 
         // -------------------------------------------------------------

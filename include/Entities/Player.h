@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Components/CombatComponent.h>
+#include <Components/MovementComponent.h>
 #include <Core/InputManager.h>
 #include <Entities/Character.h>
 
@@ -22,14 +23,13 @@ public:
 
 private:
   const InputManager &input_manager;
-  const float MOVEMENT_SPEED = 20.0f;
-  const float ROTATION_SPEED = 10.0f;
   const float BODY_HEIGHT = 1.8f;
   const float BODY_RADIUS = 0.5f;
   const float ATTACK_REACH = 1.2f;
   const float ATTACK_RADIUS = 0.8f;
 
   CombatComponent combat_component;
+  MovementComponent movement_component;
   Combo combo;
 
   enum class AnimState {
