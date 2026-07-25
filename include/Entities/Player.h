@@ -22,7 +22,7 @@ public:
 
 private:
   const InputManager &input_manager;
-  const float MOVEMENT_SPEED = 20.0f;
+  const float MOVEMENT_SPEED = 10.0f;
   const float ROTATION_SPEED = 10.0f;
   const float BODY_HEIGHT = 1.8f;
   const float BODY_RADIUS = 0.5f;

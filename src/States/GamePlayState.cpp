@@ -14,20 +14,25 @@ GameplayState::GameplayState(const InputManager &input_manager)
   enemies.push_back(
       EnemyFactory::createEnemy(EnemyType::Swordman, {3.0f, 0.0f, 8.0f}));
 
-  // Spawn sample walls
-  walls.emplace_back(Vector3{-10.0f, 0.0f, 15.0f}, Vector3{10.0f, 3.0f, 16.0f},
-                     DARKGRAY);
-  walls.emplace_back(Vector3{5.0f, 0.0f, -3.0f}, Vector3{7.0f, 3.0f, -1.0f},
-                     GRAY);
-  walls.emplace_back(Vector3{-7.0f, 0.0f, 3.0f}, Vector3{-5.0f, 3.0f, 5.0f},
-                     GRAY);
+  // --- MULTI-LEVEL BUILDING EXAMPLE ---
+  
+  // Floor 1 (Ceiling for Ground)
+  // Walk under this (Z=5 to 15) to test flat overhead ceilings!
+  obstacles.emplace_back(Vector3{-6.0f, 3.0f, 5.0f}, Vector3{6.0f, 3.5f, 15.0f}, 0.0f, DARKBLUE);
 
-  // Spawn sample terrain (Slope / Ramp, Cliff Plateau, Stepped Platform)
-  terrain.addRamp(TerrainRamp({-3.0f, 2.0f}, {3.0f, 10.0f}, 0.0f, 3.0f, BEIGE));
-  terrain.addPlatform(
-      TerrainPlatform({-5.0f, 0.0f, 10.0f}, {5.0f, 3.0f, 18.0f}, BROWN));
-  terrain.addPlatform(
-      TerrainPlatform({-12.0f, 0.0f, -6.0f}, {-6.0f, 1.5f, -2.0f}, DARKBROWN));
+  // Staircase 1: Ground (Y=0) to Floor 1 (Y=3.5)
+  // Placed on the left side. Walk under this to test slanted ramp ceilings!
+  obstacles.emplace_back(Vector2{-9.0f, -2.0f}, Vector2{-6.0f, 8.0f}, 0.0f, 3.5f, 0.0f, SKYBLUE);
+
+  // Floor 2 (Ceiling for Floor 1)
+  obstacles.emplace_back(Vector3{-6.0f, 7.0f, 5.0f}, Vector3{6.0f, 7.5f, 15.0f}, 0.0f, DARKGREEN);
+
+  // Staircase 2: Floor 1 (Y=3.5) to Floor 2 (Y=7.5)
+  // Placed on the right side. 
+  obstacles.emplace_back(Vector2{6.0f, 5.0f}, Vector2{9.0f, 15.0f}, 3.5f, 7.5f, 0.0f, LIME);
+
+  // Rotated Pillar supporting the center
+  obstacles.emplace_back(Vector3{-2.0f, 0.0f, 8.0f}, Vector3{2.0f, 7.0f, 12.0f}, 45.0f, RED);
 
   renderer = std::make_unique<GameRenderer>();
 }
@@ -55,14 +60,14 @@ StateAction GameplayState::update(float dt) {
     active_characters.push_back(enemy.get());
   }
 
-  // 3. Resolve Physics Pipeline (4-Step: Gravity -> Integration -> Ejection
+  // 2. Resolve Physics Pipeline (4-Step: Gravity -> Integration -> Ejection
   // Loop -> Ground Snap)
-  physics_manager.updatePhysics(active_characters, terrain, walls, dt);
+  physics_manager.updatePhysics(active_characters, obstacles, dt);
 
-  // 4. Resolve Combat
+  // 3. Resolve Combat
   combat_manager.update(active_characters);
 
-  // 3. Update the camera tracking matrix using that position
+  // 4. Update the camera tracking matrix using that position
   Vector2 mouse_delta = input_manager.getRawMouseDelta();
   camera_controller->update(player_pos, mouse_delta);
 
@@ -77,7 +82,10 @@ void GameplayState::draw() {
   ClearBackground(RAYWHITE);
   BeginMode3D(camera_controller->getCamera());
 
-  terrain.draw();
+  // Draw all obstacles (walls, ramps, platforms)
+  for (const PhysicsObstacle &obs : obstacles) {
+    obs.draw();
+  }
 
   renderList.clear();
   renderList.push_back(player->getRenderData());
@@ -96,7 +104,7 @@ void GameplayState::draw() {
   }
 
   // Collision debug wireframes — must stay inside the 3D scope.
-  physics_manager.drawDebug(active_characters, walls);
+  physics_manager.drawDebug(active_characters, obstacles);
   combat_manager.drawDebug(active_characters);
 
   EndMode3D();
