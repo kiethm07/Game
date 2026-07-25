@@ -77,7 +77,6 @@ void GameplayState::draw() {
   ClearBackground(RAYWHITE);
   BeginMode3D(camera_controller->getCamera());
 
-  DrawGrid(300, 10.0f);
   terrain.draw();
 
   renderList.clear();
@@ -86,6 +85,7 @@ void GameplayState::draw() {
     renderList.push_back(enemy->getRenderData());
   }
 
+  // World + entities, drawn into the 3D scope opened above.
   renderer->renderGameplay(*camera_controller, renderList);
 
   std::vector<Character *> active_characters;
@@ -95,14 +95,14 @@ void GameplayState::draw() {
     active_characters.push_back(enemy.get());
   }
 
+  // Collision debug wireframes — must stay inside the 3D scope.
   physics_manager.drawDebug(active_characters, walls);
   combat_manager.drawDebug(active_characters);
 
   EndMode3D();
-  DrawFPS(10, 10);
-  DrawText("Phase 1.5: Architecture Integrated. Player entity encapsulates "
-           "movement logic.",
-           10, 40, 20, DARKGRAY);
+
+  // 2D overlay pass (after the 3D scope is closed).
+  renderer->drawUI();
 
   // --- HEALTH BARS ---
   player->drawHPBar2D();

@@ -78,16 +78,14 @@ void GameRenderer::initializeAssets() {
 void GameRenderer::renderGameplay(
     const CameraController &camera,
     const std::vector<CharacterRenderData> &entitiesToDraw) {
-  ClearBackground(RAYWHITE);
+  // Draws into the caller's active 3D scope. The caller owns
+  // ClearBackground / BeginMode3D / EndMode3D and calls drawUI() afterwards.
   drawWorld(camera, entitiesToDraw);
-  drawUI();
 }
 
 void GameRenderer::drawWorld(
     const CameraController &camera,
     const std::vector<CharacterRenderData> &entitiesToDraw) {
-  BeginMode3D(camera.getCamera());
-
   drawEnvironment();
 
   for (const auto &renderData : entitiesToDraw) {
@@ -96,8 +94,6 @@ void GameRenderer::drawWorld(
       it->second->draw(assetManager, renderData);
     }
   }
-
-  EndMode3D();
 }
 
 void GameRenderer::drawUI() {
