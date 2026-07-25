@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Components/Terrain.h>
+#include <Components/PhysicsObstacle.h>
 #include <Core/CameraController.h>
 #include <Core/Game.h>
 #include <Core/InputManager.h>
@@ -34,8 +34,7 @@ private:
   std::unique_ptr<GameRenderer> renderer;
   CombatManager combat_manager;
   PhysicsManager physics_manager;
-  std::vector<WallObstacle> walls;
-  Terrain terrain;
+  std::vector<PhysicsObstacle> obstacles;
   std::vector<CharacterRenderData> renderList;
 
   const InputManager &input_manager;

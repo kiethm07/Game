@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Components/WallObstacle.h>
-#include <Components/Terrain.h>
+#include <Components/PhysicsObstacle.h>
 #include <Entities/Character.h>
 #include <Util/CollisionMath.h>
 #include <raylib.h>
@@ -9,25 +8,42 @@
 #include <cassert>
 
 enum class SurfaceType {
-    Ground,
-    Wall,
-    Ceiling
+    GROUND_SURF,
+    WALL_SURF,
+    CEILING_SURF
 };
 
 class PhysicsManager {
 public:
-    PhysicsManager() = default;
+    PhysicsManager()  = default;
     ~PhysicsManager() = default;
 
     SurfaceType classifySurfaceNormal(const Vector3& normal) const;
 
-    void updatePhysics(const std::vector<Character*>& characters, const Terrain& terrain, const std::vector<WallObstacle>& walls, float dt);
+    void updatePhysics(
+        const std::vector<Character*>& characters,
+        const std::vector<PhysicsObstacle>& obstacles,
+        float dt);
 
     void resolveCharacterCollisions(const std::vector<Character*>& characters);
-    void resolveEnvironmentCollisions(const std::vector<Character*>& characters, const std::vector<WallObstacle>& walls, const Terrain& terrain);
-    void resolveGroundCollisions(const std::vector<Character*>& characters, const Terrain& terrain, const std::vector<WallObstacle>& walls, float dt);
 
-    bool checkHeadroomClearance(const Character* character, float target_y, const std::vector<WallObstacle>& walls, const Terrain& terrain) const;
+    void resolveEnvironmentCollisions(
+        const std::vector<Character*>& characters,
+        const std::vector<PhysicsObstacle>& obstacles);
 
-    void drawDebug(const std::vector<Character*>& characters, const std::vector<WallObstacle>& walls) const;
+    void resolveGroundCollisions(
+        const std::vector<Character*>& characters,
+        const std::vector<PhysicsObstacle>& obstacles,
+        float dt);
+
+    bool checkHeadroomClearance(
+        Vector3 current_pos,
+        float   radius,
+        float   height,
+        float   target_y,
+        const std::vector<PhysicsObstacle>& obstacles) const;
+
+    void drawDebug(
+        const std::vector<Character*>& characters,
+        const std::vector<PhysicsObstacle>& obstacles) const;
 };
