@@ -1,6 +1,10 @@
 #include <GameManager/PhysicsManager.h>
 #include <raymath.h>
+#include <limits>
 
+// ---------------------------------------------------------------------------
+// Character-vs-Character push-out (XZ plane only)
+// ---------------------------------------------------------------------------
 void PhysicsManager::resolveCharacterCollisions(const std::vector<Character*>& characters) {
     size_t count = characters.size();
     if (count < 2) return;
@@ -17,10 +21,10 @@ void PhysicsManager::resolveCharacterCollisions(const std::vector<Character*>& c
                 continue;
             }
 
-            Vector3 pos_a = char_a->getPosition();
-            Vector3 pos_b = char_b->getPosition();
-            float radius_a = char_a->getColliderRadius();
-            float radius_b = char_b->getColliderRadius();
+            Vector3 pos_a    = char_a->getPosition();
+            Vector3 pos_b    = char_b->getPosition();
+            float   radius_a = char_a->getColliderRadius();
+            float   radius_b = char_b->getColliderRadius();
 
             bool resolved = CollisionMath::resolveCylinderCylinder(pos_a, radius_a, pos_b, radius_b);
             if (resolved) {
@@ -31,30 +35,31 @@ void PhysicsManager::resolveCharacterCollisions(const std::vector<Character*>& c
     }
 }
 
-bool PhysicsManager::checkHeadroomClearance(const Character* character, float target_y, const std::vector<WallObstacle>& walls, const Terrain& terrain) const {
-    assert(character != nullptr);
-
-    float radius = character->getColliderRadius();
-    float height = character->getColliderHeight();
-    Vector3 pos = character->getPosition();
-
+// ---------------------------------------------------------------------------
+// Headroom clearance — checks whether snapping feet to target_y would bury
+// the character's head inside an obstacle.
+//
+// Fix (Bug 3 Root Cause 2): accepts the live integrated pos, radius, and
+// height instead of pulling the stale pre-frame position from character->getPosition().
+// ---------------------------------------------------------------------------
+bool PhysicsManager::checkHeadroomClearance(
+    Vector3 current_pos,
+    float   radius,
+    float   height,
+    float   target_y,
+    const std::vector<PhysicsObstacle>& obstacles) const
+{
     BoundingBox target_box;
-    target_box.min = { pos.x - radius, target_y + 0.1f, pos.z - radius };
-    target_box.max = { pos.x + radius, target_y + height, pos.z + radius };
+    target_box.min = { current_pos.x - radius, target_y + 0.1f,  current_pos.z - radius };
+    target_box.max = { current_pos.x + radius, target_y + height, current_pos.z + radius };
 
-    for (const WallObstacle& wall : walls) {
-        BoundingBox wbox = wall.getBox();
-        if (CheckCollisionBoxes(target_box, wbox)) {
-            if (wbox.min.y >= pos.y + 0.1f) {
-                return false;
-            }
-        }
-    }
-
-    for (const TerrainPlatform& platform : terrain.getPlatforms()) {
-        BoundingBox pbox = platform.getBox();
-        if (CheckCollisionBoxes(target_box, pbox)) {
-            if (pbox.min.y >= pos.y + 0.1f) {
+    for (const PhysicsObstacle& obs : obstacles) {
+        BoundingBox obox = obs.getApproxBox();
+        if (CheckCollisionBoxes(target_box, obox)) {
+            // Only block if the obstacle is genuinely above the current feet level
+            // (i.e. it would press down on the character's head, not something the
+            // character is already standing on top of).
+            if (obox.min.y >= current_pos.y + 0.1f) {
                 return false;
             }
         }
@@ -63,17 +68,23 @@ bool PhysicsManager::checkHeadroomClearance(const Character* character, float ta
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// Classify the surface type from an outward-facing surface normal.
+// ---------------------------------------------------------------------------
 SurfaceType PhysicsManager::classifySurfaceNormal(const Vector3& normal) const {
-    if (normal.y > 0.5f) {
-        return SurfaceType::Ground;
-    }
-    if (normal.y < -0.2f) {
-        return SurfaceType::Ceiling;
-    }
-    return SurfaceType::Wall;
+    if (normal.y >  0.5f) return SurfaceType::GROUND_SURF;
+    if (normal.y < -0.2f) return SurfaceType::CEILING_SURF;
+    return SurfaceType::WALL_SURF;
 }
 
-void PhysicsManager::resolveEnvironmentCollisions(const std::vector<Character*>& characters, const std::vector<WallObstacle>& walls, const Terrain& terrain) {
+// ---------------------------------------------------------------------------
+// resolveEnvironmentCollisions — ceiling push-back and XZ wall ejection.
+// Used outside the main physics loop (e.g. post-teleport corrections).
+// ---------------------------------------------------------------------------
+void PhysicsManager::resolveEnvironmentCollisions(
+    const std::vector<Character*>& characters,
+    const std::vector<PhysicsObstacle>& obstacles)
+{
     for (Character* character : characters) {
         assert(character != nullptr);
         if (character->getStats().isDead()) {
@@ -81,21 +92,20 @@ void PhysicsManager::resolveEnvironmentCollisions(const std::vector<Character*>&
         }
 
         Vector3 char_pos = character->getPosition();
-        float radius = character->getColliderRadius();
-        float height = character->getColliderHeight();
+        float   radius   = character->getColliderRadius();
+        float   height   = character->getColliderHeight();
 
-        // 1. Resolve Wall & Ceiling AABB collisions
-        for (const WallObstacle& wall : walls) {
-            BoundingBox wbox = wall.getBox();
-            Vector3 char_center = { char_pos.x, char_pos.y + height * 0.5f, char_pos.z };
+        for (const PhysicsObstacle& obs : obstacles) {
+            BoundingBox obox        = obs.getApproxBox();
+            Vector3     char_center = { char_pos.x, char_pos.y + height * 0.5f, char_pos.z };
 
             Vector3 closest_point;
-            closest_point.x = std::clamp(char_center.x, wbox.min.x, wbox.max.x);
-            closest_point.y = std::clamp(char_center.y, wbox.min.y, wbox.max.y);
-            closest_point.z = std::clamp(char_center.z, wbox.min.z, wbox.max.z);
+            closest_point.x = std::clamp(char_center.x, obox.min.x, obox.max.x);
+            closest_point.y = std::clamp(char_center.y, obox.min.y, obox.max.y);
+            closest_point.z = std::clamp(char_center.z, obox.min.z, obox.max.z);
 
             Vector3 diff = Vector3Subtract(char_center, closest_point);
-            float len = Vector3Length(diff);
+            float   len  = Vector3Length(diff);
 
             Vector3 hit_normal = { 0.0f, 1.0f, 0.0f };
             if (len > 0.0001f) {
@@ -104,57 +114,17 @@ void PhysicsManager::resolveEnvironmentCollisions(const std::vector<Character*>&
 
             SurfaceType surface_type = classifySurfaceNormal(hit_normal);
 
-            if (surface_type == SurfaceType::Ceiling) {
-                if (char_pos.y + height > wbox.min.y && char_pos.y < wbox.min.y) {
-                    char_pos.y = wbox.min.y - height;
+            if (surface_type == SurfaceType::CEILING_SURF) {
+                if (char_pos.y + height > obox.min.y && char_pos.y < obox.min.y) {
+                    char_pos.y = obox.min.y - height;
                     if (character->getVerticalVelocity() > 0.0f) {
                         character->setVerticalVelocity(0.0f);
                     }
                     character->setPosition(char_pos);
                 }
-            } else if (surface_type == SurfaceType::Wall) {
-                bool resolved = CollisionMath::resolveCylinderAABB(char_pos, radius, wbox);
+            } else if (surface_type == SurfaceType::WALL_SURF) {
+                bool resolved = CollisionMath::resolveCylinderAABB(char_pos, radius, obox);
                 if (resolved) {
-                    character->setPosition(char_pos);
-                }
-            }
-        }
-
-        // 2. Resolve Terrain Platform Ceilings
-        for (const TerrainPlatform& platform : terrain.getPlatforms()) {
-            BoundingBox pbox = platform.getBox();
-            if (char_pos.x + radius > pbox.min.x && char_pos.x - radius < pbox.max.x &&
-                char_pos.z + radius > pbox.min.z && char_pos.z - radius < pbox.max.z) {
-
-                Vector3 ceiling_normal = { 0.0f, -1.0f, 0.0f };
-                SurfaceType surface_type = classifySurfaceNormal(ceiling_normal);
-
-                if (surface_type == SurfaceType::Ceiling) {
-                    if (char_pos.y + height > pbox.min.y && char_pos.y < pbox.min.y) {
-                        char_pos.y = pbox.min.y - height;
-                        if (character->getVerticalVelocity() > 0.0f) {
-                            character->setVerticalVelocity(0.0f);
-                        }
-                        character->setPosition(char_pos);
-                    }
-                }
-            }
-        }
-
-        // 3. Resolve Ramp Overhead / Ceilings
-        for (const TerrainRamp& ramp : terrain.getRamps()) {
-            if (ramp.contains(char_pos)) {
-                float ramp_y = ramp.getHeightAt(char_pos);
-                Vector3 ramp_normal = ramp.getNormal();
-                Vector3 overhead_normal = { -ramp_normal.x, -ramp_normal.y, -ramp_normal.z };
-
-                SurfaceType surface_type = classifySurfaceNormal(overhead_normal);
-
-                if (surface_type == SurfaceType::Ceiling && char_pos.y + height > ramp_y && char_pos.y < ramp_y) {
-                    char_pos.y = ramp_y - height;
-                    if (character->getVerticalVelocity() > 0.0f) {
-                        character->setVerticalVelocity(0.0f);
-                    }
                     character->setPosition(char_pos);
                 }
             }
@@ -162,9 +132,21 @@ void PhysicsManager::resolveEnvironmentCollisions(const std::vector<Character*>&
     }
 }
 
-void PhysicsManager::updatePhysics(const std::vector<Character*>& characters, const Terrain& terrain, const std::vector<WallObstacle>& walls, float dt) {
-    const float GRAVITY = 9.81f;
-    const float MAX_STEP_HEIGHT = 0.3f;
+// ---------------------------------------------------------------------------
+// Main physics update — 4-step pipeline:
+//   1. Gravity accumulation
+//   2. Vertical integration  (pos.y += v_y * dt)
+//   3. Overlap / Depenetration ejection  (2-iteration solver)
+//   4. Ground snapping / isGrounded classification
+// ---------------------------------------------------------------------------
+void PhysicsManager::updatePhysics(
+    const std::vector<Character*>& characters,
+    const std::vector<PhysicsObstacle>& obstacles,
+    float dt)
+{
+    const float GRAVITY       = 9.81f;
+    const float MAX_STEP      = 0.3f;
+    const float SNAP_BAND     = 0.35f;
     const float COS_MAX_SLOPE = std::cos(45.0f * DEG2RAD);
 
     for (Character* character : characters) {
@@ -175,132 +157,228 @@ void PhysicsManager::updatePhysics(const std::vector<Character*>& characters, co
 
         Vector3 pos = character->getPosition();
 
-        // -------------------------------------------------------------
-        // STEP 1: Apply gravity to velocity
-        // -------------------------------------------------------------
+        // -----------------------------------------------------------------
+        // STEP 1: Gravity
+        // -----------------------------------------------------------------
         float v_y = character->getVerticalVelocity();
         if (!character->isGrounded()) {
             v_y -= GRAVITY * dt;
             character->setVerticalVelocity(v_y);
         }
 
-        // -------------------------------------------------------------
-        // STEP 2: Add velocity * deltaTime to position
-        // -------------------------------------------------------------
+        // -----------------------------------------------------------------
+        // STEP 2: Vertical integration
+        // -----------------------------------------------------------------
         pos.y += v_y * dt;
 
-        // -------------------------------------------------------------
-        // STEP 3: Run Overlap/Depenetration Ejection loop (with Upward Bias)
-        // -------------------------------------------------------------
-        float radius = character->getColliderRadius();
-        float height = character->getColliderHeight();
+        // -----------------------------------------------------------------
+        // STEP 3: Overlap / Depenetration — 2-iteration solver
+        //
+        // Running two passes ensures that a corner between a ramp and a wall
+        // is resolved cleanly: the first pass may push the character into the
+        // adjacent obstacle; the second pass corrects that residual overlap.
+        // (Fix: Bug 3 Root Cause 3)
+        // -----------------------------------------------------------------
+        const float radius = character->getColliderRadius();
+        const float height = character->getColliderHeight();
 
-        // 3a. Wall & Ceiling AABB Depenetration
-        for (const WallObstacle& wall : walls) {
-            BoundingBox wbox = wall.getBox();
-            Vector3 char_center = { pos.x, pos.y + height * 0.5f, pos.z };
+        for (int iter = 0; iter < 2; ++iter) {
+            for (const PhysicsObstacle& obs : obstacles) {
+                BoundingBox obox = obs.getApproxBox();
 
-            Vector3 closest_point;
-            closest_point.x = std::clamp(char_center.x, wbox.min.x, wbox.max.x);
-            closest_point.y = std::clamp(char_center.y, wbox.min.y, wbox.max.y);
-            closest_point.z = std::clamp(char_center.z, wbox.min.z, wbox.max.z);
+                // ---- RAMP_SHAPE dispatch ----
+                BoundingBox local_box = obs.getLocalBox();
+                Vector3 local_pos = Vector3Transform(pos, obs.getWorldToLocal());
 
-            Vector3 diff = Vector3Subtract(char_center, closest_point);
-            float len = Vector3Length(diff);
+                // A ramp has three distinct contact zones:
+                if (obs.getShape() == ObstacleShape::RAMP_SHAPE) {
+                    // Explicitly ignore collision if character is completely beneath the base of the Half-Box
+                    if (local_pos.y + height <= local_box.min.y) {
+                        continue;
+                    }
 
-            Vector3 hit_normal = { 0.0f, 1.0f, 0.0f };
-            if (len > 0.0001f) {
-                hit_normal = Vector3Scale(diff, 1.0f / len);
+                    Vector3 local_clamped;
+                    local_clamped.x = std::clamp(local_pos.x, local_box.min.x, local_box.max.x);
+                    local_clamped.y = local_pos.y;
+                    local_clamped.z = std::clamp(local_pos.z, local_box.min.z, local_box.max.z);
+
+                    Vector3 world_clamped = Vector3Transform(local_clamped, obs.getLocalToWorld());
+                    float slope_y = obs.getHeightAt(world_clamped);
+
+                    if (slope_y <= pos.y + MAX_STEP) {
+                        // Character can step up / is on top of slope. Skip XZ push.
+                        continue;
+                    }
+
+                    if (obs.containsXZ(pos, 0.0f)) {
+                        // Center is inside! They must have fallen onto the ramp, or glitched through the side.
+                        // Snap them UP to the surface to prevent falling through the solid half-box!
+                        pos.y = slope_y;
+                        if (v_y < 0.0f) {
+                            v_y = 0.0f;
+                            character->setVerticalVelocity(0.0f);
+                        }
+                        continue;
+                    }
+
+                    // Otherwise, they are hitting the side or the tall back wall.
+                    // Treat it as a solid vertical wall (Half Box) and push out in XZ.
+                    CollisionMath::resolveCylinderAABB(local_pos, radius, local_box);
+                    pos = Vector3Transform(local_pos, obs.getLocalToWorld());
+                    continue;
+                }
+
+                // ---- BOX_SHAPE: normal-based dispatch in local space ----
+                Vector3 local_center;
+                local_center.x = local_pos.x;
+                local_center.y = local_pos.y + height * 0.5f;
+                local_center.z = local_pos.z;
+
+                Vector3 local_closest;
+                local_closest.x = std::clamp(local_center.x, local_box.min.x, local_box.max.x);
+                local_closest.y = std::clamp(local_center.y, local_box.min.y, local_box.max.y);
+                local_closest.z = std::clamp(local_center.z, local_box.min.z, local_box.max.z);
+
+                Vector3 local_diff = Vector3Subtract(local_center, local_closest);
+                float   len  = Vector3Length(local_diff);
+
+                Vector3 hit_normal = { 0.0f, 1.0f, 0.0f };
+                if (len > 0.0001f) {
+                    hit_normal = Vector3Scale(local_diff, 1.0f / len);
+                }
+
+                if (hit_normal.y > 0.1f) {
+                    if (local_box.max.y - local_pos.y > MAX_STEP) {
+                        CollisionMath::resolveCylinderAABB(local_pos, radius, local_box);
+                        pos = Vector3Transform(local_pos, obs.getLocalToWorld());
+                    } else {
+                        bool feet_below_top    = local_pos.y  < local_box.max.y;
+                        bool head_above_bottom = local_pos.y + height > local_box.min.y;
+                        bool approaching_from_below = local_pos.y < local_box.min.y; 
+                        if (feet_below_top && head_above_bottom && approaching_from_below) {
+                            local_pos.y = local_box.max.y;
+                            pos = Vector3Transform(local_pos, obs.getLocalToWorld());
+                        }
+                    }
+                } else if (hit_normal.y < -0.2f) {
+                    if (local_pos.y + height > local_box.min.y && local_pos.y < local_box.min.y) {
+                        local_pos.y = std::min(local_pos.y, local_box.min.y - height);
+                        pos = Vector3Transform(local_pos, obs.getLocalToWorld());
+                        if (v_y > 0.0f) {
+                            v_y = 0.0f;
+                            character->setVerticalVelocity(0.0f);
+                        }
+                    }
+                } else {
+                    CollisionMath::resolveCylinderAABB(local_pos, radius, local_box);
+                    pos = Vector3Transform(local_pos, obs.getLocalToWorld());
+                }
+            }
+        } // end solver iterations
+
+        // -----------------------------------------------------------------
+        // STEP 4: Ground snapping & isGrounded classification
+        //
+        // Scan all obstacles to find the highest valid supporting surface at or
+        // below (pos.y + MAX_STEP). Rejects surfaces above that ceiling so a
+        // character walking under an elevated ramp is not snapped up to it.
+        //
+        // Fix (Bug 1): ground_y is initialised to -infinity so the base world
+        // floor at Y=0 is NOT the implicit fallback. Characters in open air
+        // with no ground below them correctly become airborne instead of
+        // sticking to an invisible floor.
+        // -----------------------------------------------------------------
+        bool    found_surface  = false;
+        float   ground_y       = -std::numeric_limits<float>::infinity();
+        Vector3 surface_normal = { 0.0f, 1.0f, 0.0f };
+
+        for (const PhysicsObstacle& obs : obstacles) {
+            if (!obs.containsXZ(pos, radius)) {
+                continue;
             }
 
-            // Upward Bias for Ground Ejection (REQUIREMENT 1)
-            if (hit_normal.y > 0.1f) {
-                // Force positive Y ejection (NEVER push downward)
-                if (pos.y < wbox.max.y && pos.y + height > wbox.min.y) {
-                    pos.y = std::max(pos.y, wbox.max.y);
-                }
-            } else if (hit_normal.y < -0.2f) {
-                // Ceiling hitNormal: push Y downward only, zero upward velocity
-                if (pos.y + height > wbox.min.y && pos.y < wbox.min.y) {
-                    pos.y = std::min(pos.y, wbox.min.y - height);
-                    if (v_y > 0.0f) {
-                        v_y = 0.0f;
-                        character->setVerticalVelocity(0.0f);
-                    }
-                }
+            float   candidate_y      = obs.getHeightAt(pos);
+            Vector3 candidate_normal = obs.getNormal();
+
+            // Reject surfaces that are too steep to stand on.
+            if (candidate_normal.y < COS_MAX_SLOPE) {
+                continue;
+            }
+
+            // Reject surfaces above the step-up ceiling.
+            // This is the key gate that prevents an overhead ramp surface from
+            // being selected as the floor when walking underneath it.
+            if (candidate_y > pos.y + MAX_STEP) {
+                continue;
+            }
+
+            if (candidate_y > ground_y) {
+                ground_y       = candidate_y;
+                surface_normal = candidate_normal;
+                found_surface  = true;
+            }
+        }
+
+        // Only grounded logic runs when a real surface was found below the character.
+        // If found_surface == false there is nothing underfoot; gravity takes over.
+        if (!found_surface) {
+            // No obstacle surface detected — character is airborne.
+            // Clamp at world origin to avoid falling to -infinity, but do not snap.
+            // The world floor at Y=0 is handled as a hard floor only if pos.y < 0.
+            if (pos.y < 0.0f) {
+                pos.y = 0.0f;
+                v_y   = 0.0f;
+                character->setVerticalVelocity(0.0f);
+                character->setGrounded(true);
             } else {
-                // Wall hitNormal: depenetrate horizontally
-                bool resolved = CollisionMath::resolveCylinderAABB(pos, radius, wbox);
-                if (resolved) {
-                    // Pos updated horizontally
-                }
+                character->setGrounded(false);
             }
+            character->setPosition(pos);
+            continue;
         }
 
-        // 3b. Terrain Platform Ceilings & Floors
-        for (const TerrainPlatform& platform : terrain.getPlatforms()) {
-            BoundingBox pbox = platform.getBox();
-            if (pos.x + radius > pbox.min.x && pos.x - radius < pbox.max.x &&
-                pos.z + radius > pbox.min.z && pos.z - radius < pbox.max.z) {
+        bool is_walkable = (classifySurfaceNormal(surface_normal) == SurfaceType::GROUND_SURF);
 
-                // Ceiling hit check
-                if (pos.y + height > pbox.min.y && pos.y < pbox.min.y) {
-                    pos.y = std::min(pos.y, pbox.min.y - height);
-                    if (v_y > 0.0f) {
-                        v_y = 0.0f;
-                        character->setVerticalVelocity(0.0f);
-                    }
-                }
-            }
+        // --- Downhill snap: hold character to slope while descending ---
+        // Fires only when a real surface is sampled (found_surface == true),
+        // preventing ground_y=-inf or a stale 0.0 from dragging the character down.
+        if (is_walkable && v_y <= 0.0f &&
+            pos.y >= ground_y && (pos.y - ground_y) <= SNAP_BAND)
+        {
+            pos.y = ground_y;
+            v_y   = 0.0f;
+            character->setVerticalVelocity(0.0f);
+            character->setGrounded(true);
+            character->setPosition(pos);
+            continue;
         }
 
-        // -------------------------------------------------------------
-        // STEP 4: Final Ground Snapping / Y-Axis Override & isGrounded checks
-        // -------------------------------------------------------------
-        float ground_y = terrain.getHeightAt(pos);
+        // --- Standard upward step snap ---
+        bool can_snap  = is_walkable;
         float step_diff = ground_y - pos.y;
 
-        Vector3 surface_normal = { 0.0f, 1.0f, 0.0f };
-        SurfaceType surface_type = SurfaceType::Ground;
-
-        for (const TerrainRamp& ramp : terrain.getRamps()) {
-            if (ramp.contains(pos)) {
-                surface_normal = ramp.getNormal();
-                surface_type = classifySurfaceNormal(surface_normal);
-                break;
-            }
-        }
-
-        bool is_slope_walkable = (surface_type == SurfaceType::Ground);
-        bool can_snap = true;
-
-        // Snapping condition: only snap if player is within 0.3m of floor surface
-        if (step_diff > MAX_STEP_HEIGHT || step_diff < -MAX_STEP_HEIGHT) {
+        if (step_diff > MAX_STEP || step_diff < -MAX_STEP) {
             can_snap = false;
         }
-
-        if (!is_slope_walkable) {
-            can_snap = false;
-        }
-
+        // Headroom check uses the live integrated pos, not character->getPosition().
         if (can_snap && step_diff > 0.001f) {
-            bool headroom_ok = checkHeadroomClearance(character, ground_y, walls, terrain);
-            if (!headroom_ok) {
+            if (!checkHeadroomClearance(pos, radius, height, ground_y, obstacles)) {
                 can_snap = false;
             }
         }
 
         if (can_snap) {
-            // Y-Axis Override: snap exact position.y to ground surface mesh
             pos.y = ground_y;
             character->setVerticalVelocity(0.0f);
             character->setGrounded(true);
         } else {
             if (pos.y <= ground_y) {
+                // Character has fallen to or below the detected surface — hard floor.
                 pos.y = ground_y;
                 character->setVerticalVelocity(0.0f);
                 character->setGrounded(true);
             } else {
+                // Character is airborne above the surface.
                 character->setGrounded(false);
             }
         }
@@ -308,44 +386,51 @@ void PhysicsManager::updatePhysics(const std::vector<Character*>& characters, co
         character->setPosition(pos);
     }
 
-    // Resolve Character-to-Character push-out
     resolveCharacterCollisions(characters);
 }
 
-void PhysicsManager::drawDebug(const std::vector<Character*>& characters, const std::vector<WallObstacle>& walls) const {
-    // 1. Draw Wall Bounding Boxes & Wireframes
-    for (const WallObstacle& wall : walls) {
-        BoundingBox box = wall.getBox();
-        DrawBoundingBox(box, DARKBLUE);
-
-        Vector3 size = Vector3Subtract(box.max, box.min);
-        Vector3 center = Vector3Add(box.min, Vector3Scale(size, 0.5f));
-
-        DrawCube(center, size.x, size.y, size.z, wall.getColor());
-        DrawCubeWires(center, size.x, size.y, size.z, BLACK);
+// ---------------------------------------------------------------------------
+// Debug drawing — obstacles + character colliders
+// ---------------------------------------------------------------------------
+void PhysicsManager::drawDebug(
+    const std::vector<Character*>& characters,
+    const std::vector<PhysicsObstacle>& obstacles) const
+{
+    for (const PhysicsObstacle& obs : obstacles) {
+        BoundingBox obox = obs.getApproxBox();
+        DrawBoundingBox(obox, DARKBLUE);
+        obs.draw();
     }
 
-    // 2. Draw Character Physics Bounding Boxes & Cylinder Colliders
     for (const Character* character : characters) {
         assert(character != nullptr);
         if (character->getStats().isDead()) {
             continue;
         }
 
-        // Draw character's Axis-Aligned Bounding Box (AABB)
         BoundingBox char_box = character->getBoundingBox();
         DrawBoundingBox(char_box, GREEN);
 
-        // Draw character's cylinder collider wireframe
-        Vector3 pos = character->getPosition();
-        float radius = character->getColliderRadius();
-        float height = character->getColliderHeight();
+        Vector3 pos    = character->getPosition();
+        float   radius = character->getColliderRadius();
+        float   height = character->getColliderHeight();
 
-        Vector3 base_center = { pos.x, pos.y, pos.z };
-        Vector3 top_center = { pos.x, pos.y + height, pos.z };
+        Vector3 base_center = { pos.x, pos.y,          pos.z };
+        Vector3 top_center  = { pos.x, pos.y + height, pos.z };
 
         DrawCylinderWires(base_center, radius, radius, height, 12, LIME);
         DrawCircle3D(base_center, radius, { 1.0f, 0.0f, 0.0f }, 90.0f, GREEN);
-        DrawCircle3D(top_center, radius, { 1.0f, 0.0f, 0.0f }, 90.0f, GREEN);
+        DrawCircle3D(top_center,  radius, { 1.0f, 0.0f, 0.0f }, 90.0f, GREEN);
     }
+}
+
+// ---------------------------------------------------------------------------
+// resolveGroundCollisions — legacy helper, delegates to updatePhysics pipeline.
+// ---------------------------------------------------------------------------
+void PhysicsManager::resolveGroundCollisions(
+    const std::vector<Character*>& characters,
+    const std::vector<PhysicsObstacle>& obstacles,
+    float dt)
+{
+    updatePhysics(characters, obstacles, dt);
 }
