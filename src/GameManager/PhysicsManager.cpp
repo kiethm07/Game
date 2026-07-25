@@ -254,55 +254,49 @@ void PhysicsManager::updatePhysics(const std::vector<Character*>& characters, co
             }
         }
 
-        // -------------------------------------------------------------
-        // STEP 4: Final Ground Snapping / Y-Axis Override & isGrounded checks
-        // -------------------------------------------------------------
-        float ground_y = terrain.getHeightAt(pos);
-        float step_diff = ground_y - pos.y;
-
-        Vector3 surface_normal = { 0.0f, 1.0f, 0.0f };
-        SurfaceType surface_type = SurfaceType::Ground;
-
+        // 3c. Ramp Walls: block the solid part of ramps that rise higher than we
+        //     can step onto, so characters can't clip through a ramp face/side.
         for (const TerrainRamp& ramp : terrain.getRamps()) {
-            if (ramp.contains(pos)) {
-                surface_normal = ramp.getNormal();
-                surface_type = classifySurfaceNormal(surface_normal);
-                break;
-            }
+            ramp.resolveWall(pos, radius, pos.y, MAX_STEP_HEIGHT);
         }
 
-        bool is_slope_walkable = (surface_type == SurfaceType::Ground);
-        bool can_snap = true;
+        // -------------------------------------------------------------
+        // STEP 4: Layer-aware ground detection & normal-driven snapping
+        // -------------------------------------------------------------
+        // Resolve WHICH surface supports us (handles stacked layers correctly)
+        // and its normal (tells floor from slope from too-steep wall).
+        const float SNAP_BAND = 0.35f;   // stick to floor within this band while descending
 
-        // Snapping condition: only snap if player is within 0.3m of floor surface
-        if (step_diff > MAX_STEP_HEIGHT || step_diff < -MAX_STEP_HEIGHT) {
-            can_snap = false;
+        GroundSample ground = terrain.sampleGround(pos, MAX_STEP_HEIGHT, height, character->getGroundReferenceY());
+        float ground_y = ground.height;
+        bool walkable = (ground.normal.y >= COS_MAX_SLOPE);
+
+        bool falling = (v_y <= 0.0f);
+        // Only pull down onto the surface when at/below it (plus a snap band while
+        // descending, so running downhill sticks instead of launching).
+        bool within_snap = pos.y <= ground_y + (falling ? SNAP_BAND : 0.0f);
+
+        bool headroom_ok = true;
+        if (within_snap && ground_y > pos.y + 0.001f) {
+            headroom_ok = checkHeadroomClearance(character, ground_y, walls, terrain);
         }
 
-        if (!is_slope_walkable) {
-            can_snap = false;
-        }
-
-        if (can_snap && step_diff > 0.001f) {
-            bool headroom_ok = checkHeadroomClearance(character, ground_y, walls, terrain);
-            if (!headroom_ok) {
-                can_snap = false;
-            }
-        }
-
-        if (can_snap) {
-            // Y-Axis Override: snap exact position.y to ground surface mesh
+        if (within_snap && headroom_ok) {
+            // Never let the collider sink below the surface -> this is what stops
+            // the clip-through: the ramp/floor is now always resolved on the Y axis.
             pos.y = ground_y;
-            character->setVerticalVelocity(0.0f);
-            character->setGrounded(true);
-        } else {
-            if (pos.y <= ground_y) {
-                pos.y = ground_y;
+            character->setGroundReferenceY(ground_y);
+
+            if (walkable) {
                 character->setVerticalVelocity(0.0f);
                 character->setGrounded(true);
             } else {
+                // Too steep to stand on: rest against the surface but stay
+                // "ungrounded" (no jump); gravity keeps pulling for a slide.
                 character->setGrounded(false);
             }
+        } else {
+            character->setGrounded(false);
         }
 
         character->setPosition(pos);

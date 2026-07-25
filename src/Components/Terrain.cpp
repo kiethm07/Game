@@ -26,6 +26,16 @@ bool TerrainRamp::contains(Vector3 position) const {
     return true;
 }
 
+bool TerrainRamp::containsXZ(Vector3 position) const {
+    if (position.x < min_xz.x || position.x > max_xz.x) {
+        return false;
+    }
+    if (position.z < min_xz.y || position.z > max_xz.y) {
+        return false;
+    }
+    return true;
+}
+
 float TerrainRamp::getHeightAt(Vector3 position) const {
     if (position.x < min_xz.x || position.x > max_xz.x || position.z < min_xz.y || position.z > max_xz.y) {
         return 0.0f;
@@ -63,6 +73,54 @@ Vector3 TerrainRamp::getNormal() const {
         normal = Vector3Normalize(n);
     }
     return normal;
+}
+
+bool TerrainRamp::resolveWall(Vector3& char_pos, float radius, float feet_y, float step_height) const {
+    const float diff_z = max_xz.y - min_xz.y;
+    const float diff_x = max_xz.x - min_xz.x;
+    const float rise = end_y - start_y;
+    if (std::fabs(rise) < 0.0001f) {
+        return false;   // flat ramp: no wall
+    }
+
+    const bool rises_along_z = (diff_z >= diff_x);
+
+    // Must overlap the ramp's XZ footprint (with a radius margin) to be blocked.
+    // Both axes must be checked -- otherwise the ramp acts as an infinite strip
+    // and yanks far-away characters toward it.
+    if (char_pos.x < min_xz.x - radius || char_pos.x > max_xz.x + radius) return false;
+    if (char_pos.z < min_xz.y - radius || char_pos.z > max_xz.y + radius) return false;
+
+    // Sample the surface at the character's column (clamped into the footprint).
+    Vector3 sample = char_pos;
+    sample.x = std::clamp(sample.x, min_xz.x, max_xz.x);
+    sample.z = std::clamp(sample.z, min_xz.y, max_xz.y);
+    float surface = getHeightAt(sample);
+
+    const float target = feet_y + step_height;   // highest surface we can stand on
+    if (surface <= target) {
+        return false;   // reachable: it's floor here, not a wall
+    }
+
+    // Contour along the rising axis where surface == target (the stand line).
+    float t_b = std::clamp((target - start_y) / rise, 0.0f, 1.0f);
+
+    if (rises_along_z) {
+        float z_b = min_xz.y + t_b * diff_z;
+        if (rise > 0.0f) {
+            char_pos.z = std::min(char_pos.z, z_b - radius);   // surface higher toward +z
+        } else {
+            char_pos.z = std::max(char_pos.z, z_b + radius);
+        }
+    } else {
+        float x_b = min_xz.x + t_b * diff_x;
+        if (rise > 0.0f) {
+            char_pos.x = std::min(char_pos.x, x_b - radius);
+        } else {
+            char_pos.x = std::max(char_pos.x, x_b + radius);
+        }
+    }
+    return true;
 }
 
 bool TerrainRamp::isWalkable(float max_slope_angle) const {
@@ -143,6 +201,54 @@ float Terrain::getHeightAt(Vector3 position) const {
     }
 
     return highest_y;
+}
+
+GroundSample Terrain::sampleGround(Vector3 position, float step_height, float head_room, float prev_ground_y) const {
+    const float feet = position.y;
+    const float HYSTERESIS_EPS = 0.05f;   // "same layer as last frame" window
+
+    GroundSample best{ base_ground_y, { 0.0f, 1.0f, 0.0f } };
+    float best_score = -1e30f;
+
+    // Rank candidates by top-height, but give a large bonus to whichever surface
+    // matches the layer we were grounded on last frame so we don't flip layers.
+    // `ceiling` is how far above the feet this surface may sit and still count as
+    // floor: head_room for continuous ground (climb freely), step_height for
+    // discrete ledges (only small step-ups).
+    auto consider = [&](float top, Vector3 normal, float ceiling) {
+        if (top > feet + ceiling) {
+            return;   // too far above the feet -> ceiling or unclimbable ledge
+        }
+        float score = top;
+        if (std::fabs(top - prev_ground_y) < HYSTERESIS_EPS) {
+            score += 1000.0f;
+        }
+        if (score > best_score) {
+            best_score = score;
+            best.height = top;
+            best.normal = normal;
+        }
+    };
+
+    // The base ground plane is always the fallback candidate.
+    consider(base_ground_y, { 0.0f, 1.0f, 0.0f }, head_room);
+
+    for (const TerrainPlatform& platform : platforms) {
+        if (platform.containsXZ(position)) {
+            consider(platform.getTopY(), { 0.0f, 1.0f, 0.0f }, step_height);
+        }
+    }
+
+    for (const TerrainRamp& ramp : ramps) {
+        if (ramp.containsXZ(position)) {
+            // A ramp is only floor where its surface is within a step of the
+            // feet. Where it rises higher than that it is a wall, handled
+            // separately by resolveWall() -- so it uses step_height here too.
+            consider(ramp.getHeightAt(position), ramp.getNormal(), step_height);
+        }
+    }
+
+    return best;
 }
 
 void Terrain::draw() const {

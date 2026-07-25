@@ -42,6 +42,11 @@ public:
   bool isGrounded() const { return is_grounded; }
   void setGrounded(bool grounded) { is_grounded = grounded; }
 
+  // Top-Y of the surface the character was last resting on. Used by the physics
+  // step to keep it on the same layer across frames (anti-flicker at seams).
+  float getGroundReferenceY() const { return ground_reference_y; }
+  void setGroundReferenceY(float y) { ground_reference_y = y; }
+
   virtual float getColliderRadius() const = 0;
   virtual float getColliderHeight() const = 0;
 
@@ -70,6 +75,7 @@ protected:
 
   float vertical_velocity = 0.0f;
   bool is_grounded = true;
+  float ground_reference_y = 0.0f;
 
 private:
   inline static unsigned int next_id = 1;

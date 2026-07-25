@@ -29,6 +29,22 @@ GameplayState::GameplayState(const InputManager &input_manager)
   terrain.addPlatform(
       TerrainPlatform({-12.0f, 0.0f, -6.0f}, {-6.0f, 1.5f, -2.0f}, DARKBROWN));
 
+  // Plant every entity on the terrain surface at its spawn column so nobody
+  // starts embedded inside a ramp/platform (which the wall solver would eject).
+  auto snapToGround = [this](Character *c) {
+    Vector3 p = c->getPosition();
+    // Large step/head-room so spawn picks up whatever surface is in the column,
+    // however far below the feet it currently sits.
+    GroundSample g = terrain.sampleGround(p, 1e6f, 1e6f, p.y);
+    p.y = g.height;
+    c->setPosition(p);
+    c->setGroundReferenceY(g.height);
+  };
+  snapToGround(player.get());
+  for (auto &enemy : enemies) {
+    snapToGround(enemy.get());
+  }
+
   renderer = std::make_unique<GameRenderer>();
 }
 
