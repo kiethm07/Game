@@ -23,7 +23,7 @@ void SkinnedEntityRenderer::draw(AssetManager &assets,
 
         // 3. Cancel root motion (self-guards the frame index).
         drawPosition = AnimUtils::cancelRootMotion(
-            anim, static_cast<int>(frame),
+            anim, frame,
             renderData.transform.position,
             renderData.transform.rotation.y,
             renderData.transform.scale.x);

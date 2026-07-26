@@ -33,8 +33,8 @@ private:
   Combo combo;
 
   enum class AnimState {
-    IDLE = 10, // UnarmedIdle
-    WALK = 42  // UnarmedRunForward
+    IDLE = 0, // UnarmedIdle
+    WALK = 1  // UnarmedRunForward
   };
 
   int currentAnimIndex = static_cast<int>(AnimState::IDLE);
