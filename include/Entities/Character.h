@@ -39,6 +39,13 @@ public:
   float getVerticalVelocity() const { return vertical_velocity; }
   void setVerticalVelocity(float velocity) { vertical_velocity = velocity; }
 
+  // Desired horizontal (x,z) velocity produced by the movement layer and
+  // integrated by PhysicsManager. PhysicsManager is the sole writer of position.
+  Vector3 getHorizontalVelocity() const { return horizontal_velocity; }
+  void setHorizontalVelocity(const Vector3 &velocity) {
+    horizontal_velocity = velocity;
+  }
+
   bool isGrounded() const { return is_grounded; }
   void setGrounded(bool grounded) { is_grounded = grounded; }
 
@@ -69,6 +76,7 @@ protected:
   Stats stats;
 
   float vertical_velocity = 0.0f;
+  Vector3 horizontal_velocity = {0.0f, 0.0f, 0.0f}; // x,z used; y unused
   bool is_grounded = true;
 
 private:
