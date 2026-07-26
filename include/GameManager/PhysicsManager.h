@@ -20,12 +20,12 @@ public:
 
     SurfaceType classifySurfaceNormal(const Vector3& normal) const;
 
-    void updatePhysics(
+    std::vector<Vector3> updatePhysics(
         const std::vector<Character*>& characters,
         const std::vector<PhysicsObstacle>& obstacles,
         float dt);
 
-    void resolveCharacterCollisions(const std::vector<Character*>& characters);
+    void resolveCharacterCollisions(const std::vector<Character*>& characters, std::vector<Vector3>& positions);
 
     void resolveEnvironmentCollisions(
         const std::vector<Character*>& characters,
