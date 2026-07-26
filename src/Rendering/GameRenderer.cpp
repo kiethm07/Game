@@ -29,8 +29,8 @@ struct AssetEntry {
 };
 
 static const AssetEntry kAssets[] = {
-    {AssetID::PLAYER_WOLF, ASSET_DIR "/UAL2_Standard.glb",
-     ASSET_DIR "/UAL2_Standard.glb", RendererKind::SkinnedCharacter},
+    {AssetID::PLAYER_WOLF, ASSET_DIR "/Alpha_Character.glb",
+     ASSET_DIR "/Alpha_Character.glb", RendererKind::SkinnedCharacter},
     {AssetID::ENEMY_ASHIGARU, ASSET_DIR "/Walk.glb", ASSET_DIR "/Walk.glb",
      RendererKind::SkinnedCharacter},
 };
