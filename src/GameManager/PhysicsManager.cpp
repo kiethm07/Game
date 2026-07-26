@@ -167,9 +167,12 @@ void PhysicsManager::updatePhysics(
         }
 
         // -----------------------------------------------------------------
-        // STEP 2: Vertical integration
+        // STEP 2: Position integration (vertical + horizontal)
         // -----------------------------------------------------------------
         pos.y += v_y * dt;
+        Vector3 h_vel = character->getHorizontalVelocity();
+        pos.x += h_vel.x * dt;
+        pos.z += h_vel.z * dt;
 
         // -----------------------------------------------------------------
         // STEP 3: Overlap / Depenetration — 2-iteration solver
