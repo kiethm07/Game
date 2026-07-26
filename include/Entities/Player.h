@@ -23,6 +23,7 @@ public:
 
 private:
   const InputManager &input_manager;
+
   const float BODY_HEIGHT = 1.8f;
   const float BODY_RADIUS = 0.5f;
   const float ATTACK_REACH = 1.2f;
