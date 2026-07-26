@@ -25,10 +25,18 @@ void Player::update(const UpdateContext &ctx) {
   Vector3 moveDirection =
       calculateCameraRelativeDirection(ctx.camForward, ctx.camRight);
 
-  if (!combat_component.canMove())
+  if (!combat_component.canMove()) {
+    // Gated (e.g. mid-attack): request no movement. Physics still applies
+    // gravity/collisions this frame.
+    setHorizontalVelocity({0.0f, 0.0f, 0.0f});
     return;
+  }
 
-  bool isMoving = (moveDirection.x != 0.0f || moveDirection.z != 0.0f);
+  // Produce desired velocity + ease facing; PhysicsManager integrates position.
+  Vector3 velocity = movement_component.resolve(moveDirection, rotation.y, dt);
+  setHorizontalVelocity(velocity);
+
+  bool isMoving = (velocity.x != 0.0f || velocity.z != 0.0f);
   int targetAnimIndex = isMoving ? static_cast<int>(Player::AnimState::WALK)
                                  : static_cast<int>(Player::AnimState::IDLE);
 
@@ -36,39 +44,6 @@ void Player::update(const UpdateContext &ctx) {
     currentAnimIndex = targetAnimIndex;
     animTime = 0.0f; // Reset animation when transitioning
   }
-
-  if (isMoving) {
-    // Apply position displacement
-    position.x += moveDirection.x * MOVEMENT_SPEED * dt;
-    position.z += moveDirection.z * MOVEMENT_SPEED * dt;
-
-    // Calculate the target angle based on the horizontal direction vector
-    float target_yaw = std::atan2(moveDirection.x, moveDirection.z) * RAD2DEG;
-
-    // Calculate the shortest angular distance
-    float angle_diff = target_yaw - rotation.y;
-    while (angle_diff < -180.0f)
-      angle_diff += 360.0f;
-    while (angle_diff > 180.0f)
-      angle_diff -= 360.0f;
-
-    // FIX 1: Safeguard the interpolation factor (alpha) against dt spikes
-    float alpha = ROTATION_SPEED * dt;
-    if (alpha > 1.0f)
-      alpha = 1.0f; // Ensures it never shoots past target_yaw mathematically
-
-    // Fluidly interpolate rotation safely
-    rotation.y += angle_diff * alpha;
-
-    // FIX 2: Keep rotation.y cleanly wrapped within a standard 0-360 range
-    // to prevent floating-point inaccuracies over time
-    while (rotation.y < 0.0f)
-      rotation.y += 360.0f;
-    while (rotation.y >= 360.0f)
-      rotation.y -= 360.0f;
-  }
-
-  // Character::update(dt);
 }
 
 void Player::drawHPBar2D() const {
@@ -145,6 +120,8 @@ void Player::takeDamage(float health_damage, float posture_damage) {
 
 Vector3 Player::calculateCameraRelativeDirection(Vector3 camForward,
                                                  Vector3 camRight) const {
+  camForward.y = 0.0f;
+  camRight.y = 0.0f;
   Vector3 direction = {0.0f, 0.0f, 0.0f};
   if (input_manager.isActionHeld(GameAction::MoveForward))
     direction = Vector3Add(direction, camForward);
