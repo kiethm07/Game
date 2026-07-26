@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------------
 // Character-vs-Character push-out (XZ plane only)
 // ---------------------------------------------------------------------------
-void PhysicsManager::resolveCharacterCollisions(const std::vector<Character*>& characters) {
+void PhysicsManager::resolveCharacterCollisions(const std::vector<Character*>& characters, std::vector<Vector3>& positions) {
     size_t count = characters.size();
     if (count < 2) return;
 
@@ -21,15 +21,15 @@ void PhysicsManager::resolveCharacterCollisions(const std::vector<Character*>& c
                 continue;
             }
 
-            Vector3 pos_a    = char_a->getPosition();
-            Vector3 pos_b    = char_b->getPosition();
+            Vector3 pos_a    = positions[i];
+            Vector3 pos_b    = positions[j];
             float   radius_a = char_a->getColliderRadius();
             float   radius_b = char_b->getColliderRadius();
 
             bool resolved = CollisionMath::resolveCylinderCylinder(pos_a, radius_a, pos_b, radius_b);
             if (resolved) {
-                char_a->setPosition(pos_a);
-                char_b->setPosition(pos_b);
+                positions[i] = pos_a;
+                positions[j] = pos_b;
             }
         }
     }
@@ -139,7 +139,7 @@ void PhysicsManager::resolveEnvironmentCollisions(
 //   3. Overlap / Depenetration ejection  (2-iteration solver)
 //   4. Ground snapping / isGrounded classification
 // ---------------------------------------------------------------------------
-void PhysicsManager::updatePhysics(
+std::vector<Vector3> PhysicsManager::updatePhysics(
     const std::vector<Character*>& characters,
     const std::vector<PhysicsObstacle>& obstacles,
     float dt)
@@ -149,8 +149,13 @@ void PhysicsManager::updatePhysics(
     const float SNAP_BAND     = 0.35f;
     const float COS_MAX_SLOPE = std::cos(45.0f * DEG2RAD);
 
-    for (Character* character : characters) {
+    std::vector<Vector3> new_positions(characters.size());
+
+    for (size_t i = 0; i < characters.size(); ++i) {
+        Character* character = characters[i];
         assert(character != nullptr);
+        new_positions[i] = character->getPosition();
+
         if (character->getStats().isDead()) {
             continue;
         }
@@ -167,26 +172,32 @@ void PhysicsManager::updatePhysics(
         }
 
         // -----------------------------------------------------------------
-        // STEP 2: Position integration (vertical + horizontal)
-        // -----------------------------------------------------------------
-        pos.y += v_y * dt;
-        Vector3 h_vel = character->getHorizontalVelocity();
-        pos.x += h_vel.x * dt;
-        pos.z += h_vel.z * dt;
-
-        // -----------------------------------------------------------------
-        // STEP 3: Overlap / Depenetration — 2-iteration solver
+        // STEP 2 & 3: Sub-stepped Position integration + Depenetration
         //
-        // Running two passes ensures that a corner between a ramp and a wall
-        // is resolved cleanly: the first pass may push the character into the
-        // adjacent obstacle; the second pass corrects that residual overlap.
-        // (Fix: Bug 3 Root Cause 3)
+        // Running multiple sub-steps to sweep the movement vector and prevent tunneling.
+        // Running two passes per step ensures corners are resolved cleanly.
         // -----------------------------------------------------------------
         const float radius = character->getColliderRadius();
         const float height = character->getColliderHeight();
 
-        for (int iter = 0; iter < 2; ++iter) {
-            for (const PhysicsObstacle& obs : obstacles) {
+        Vector3 h_vel = character->getHorizontalVelocity();
+        Vector3 h_movement = { h_vel.x * dt, 0.0f, h_vel.z * dt };
+        float h_dist = Vector3Length(h_movement);
+        int steps = std::ceil(h_dist / (radius * 0.5f));
+        if (steps < 1) steps = 1;
+
+        Vector3 step_h = Vector3Scale(h_movement, 1.0f / steps);
+        float dt_step = dt / steps;
+
+        for (int s = 0; s < steps; ++s) {
+            float step_v = v_y * dt_step;
+            
+            pos.x += step_h.x;
+            pos.y += step_v;
+            pos.z += step_h.z;
+
+            for (int iter = 0; iter < 2; ++iter) {
+                for (const PhysicsObstacle& obs : obstacles) {
                 BoundingBox obox = obs.getApproxBox();
 
                 // ---- RAMP_SHAPE dispatch ----
@@ -278,6 +289,7 @@ void PhysicsManager::updatePhysics(
                 }
             }
         } // end solver iterations
+        } // end sub-steps
 
         // -----------------------------------------------------------------
         // STEP 4: Ground snapping & isGrounded classification
@@ -336,7 +348,7 @@ void PhysicsManager::updatePhysics(
             } else {
                 character->setGrounded(false);
             }
-            character->setPosition(pos);
+            new_positions[i] = pos;
             continue;
         }
 
@@ -352,7 +364,7 @@ void PhysicsManager::updatePhysics(
             v_y   = 0.0f;
             character->setVerticalVelocity(0.0f);
             character->setGrounded(true);
-            character->setPosition(pos);
+            new_positions[i] = pos;
             continue;
         }
 
@@ -386,10 +398,11 @@ void PhysicsManager::updatePhysics(
             }
         }
 
-        character->setPosition(pos);
+        new_positions[i] = pos;
     }
 
-    resolveCharacterCollisions(characters);
+    resolveCharacterCollisions(characters, new_positions);
+    return new_positions;
 }
 
 // ---------------------------------------------------------------------------

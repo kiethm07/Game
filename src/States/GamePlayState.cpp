@@ -34,6 +34,17 @@ GameplayState::GameplayState(const InputManager &input_manager)
   // Rotated Pillar supporting the center
   obstacles.emplace_back(Vector3{-2.0f, 0.0f, 8.0f}, Vector3{2.0f, 7.0f, 12.0f}, 45.0f, RED);
 
+  // 4 x 4 grid of pillars 
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < 4; ++j) {
+      obstacles.emplace_back(Vector3{i * 2.0f, 0.0f, j * 2.0f}, Vector3{(i + 1) * 2.0f, 10.0f, (j + 1) * 2.0f}, 0.0f, BLUE);
+    }
+  }
+
+  // --- THIN WALL FOR TUNNELING TEST ---
+  // A wall that is only 0.05 units thick!
+  obstacles.emplace_back(Vector3{-5.0f, 0.0f, -5.0f}, Vector3{-4.95f, 5.0f, 5.0f}, 0.0f, MAGENTA);
+
   renderer = std::make_unique<GameRenderer>();
 }
 
@@ -62,7 +73,10 @@ StateAction GameplayState::update(float dt) {
 
   // 2. Resolve Physics Pipeline (4-Step: Gravity -> Integration -> Ejection
   // Loop -> Ground Snap)
-  physics_manager.updatePhysics(active_characters, obstacles, dt);
+  std::vector<Vector3> new_positions = physics_manager.updatePhysics(active_characters, obstacles, dt);
+  for (size_t i = 0; i < active_characters.size(); ++i) {
+      active_characters[i]->setPosition(new_positions[i]);
+  }
 
   // 3. Resolve Combat
   combat_manager.update(active_characters);
