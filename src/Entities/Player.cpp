@@ -120,6 +120,8 @@ void Player::takeDamage(float health_damage, float posture_damage) {
 
 Vector3 Player::calculateCameraRelativeDirection(Vector3 camForward,
                                                  Vector3 camRight) const {
+  camForward.y = 0.0f;
+  camRight.y = 0.0f;
   Vector3 direction = {0.0f, 0.0f, 0.0f};
   if (input_manager.isActionHeld(GameAction::MoveForward))
     direction = Vector3Add(direction, camForward);
