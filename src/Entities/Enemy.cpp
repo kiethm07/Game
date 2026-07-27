@@ -33,9 +33,39 @@ void Enemy::drawHPBar(const Camera3D &camera) const {
   int y = static_cast<int>(screen_pos.y);
 
   DrawRectangle(x, y, (int)width, (int)height, RED);
-  DrawRectangle(x, y, (int)(width * stats.getHealthPercentage()), (int)height,
-                LIME);
+  DrawRectangle(x, y, (int)(width * stats.getHealthPercentage()), (int)height, LIME);
   DrawRectangleLines(x, y, (int)width, (int)height, BLACK);
+
+  // Draw hovering debug text above the HP bar
+  const std::string& debug_text = stealth_component.getDebugState();
+  int font_size = 10;
+  int text_width = MeasureText(debug_text.c_str(), font_size);
+  int text_x = static_cast<int>(screen_pos.x - (text_width / 2.0f));
+  int text_y = y - font_size - 4; // Above the HP bar
+  
+  Color text_color = (debug_text == "DETECTED") ? RED : GRAY;
+  DrawText(debug_text.c_str(), text_x, text_y, font_size, text_color);
+
+  // Draw combat state text above stealth text
+  std::string combat_text = "";
+  switch (combat_component.getCurrentState()) {
+    case CombatState::Idle: combat_text = "no-attack"; break;
+    case CombatState::AttackStartup: combat_text = "startup"; break;
+    case CombatState::AttackActive: combat_text = "active"; break;
+    case CombatState::AttackRecovery: combat_text = "recovery"; break;
+    case CombatState::Parrying: combat_text = "parry"; break;
+    case CombatState::Blocking: combat_text = "block"; break;
+  }
+  
+  int combat_width = MeasureText(combat_text.c_str(), font_size);
+  int combat_x = static_cast<int>(screen_pos.x - (combat_width / 2.0f));
+  int combat_y = text_y - font_size - 2;
+  
+  Color combat_color = ORANGE;
+  if (combat_component.getCurrentState() == CombatState::Idle) combat_color = LIGHTGRAY;
+  else if (combat_component.getCurrentState() == CombatState::AttackActive) combat_color = RED;
+  
+  DrawText(combat_text.c_str(), combat_x, combat_y, font_size, combat_color);
 }
 
 float Enemy::getColliderRadius() const { return body_radius; }

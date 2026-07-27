@@ -58,11 +58,6 @@ StateAction GameplayState::update(float dt) {
   Vector3 player_pos = player->getPosition();
   const UpdateContext ctx{dt, camera_controller->getCameraForward(),
                           camera_controller->getCameraRight(), player_pos};
-  player->update(ctx);
-  for (auto &enemy : enemies) {
-    enemy->update(ctx);
-  }
-
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());
 
@@ -70,6 +65,16 @@ StateAction GameplayState::update(float dt) {
   for (auto &enemy : enemies) {
     active_characters.push_back(enemy.get());
   }
+
+  // 1.5. Evaluate Stealth before AI update so AI can react in the same frame
+  stealth_manager.update(active_characters, player_pos);
+
+  player->update(ctx);
+  for (auto &enemy : enemies) {
+    enemy->update(ctx);
+  }
+
+
 
   // 2. Resolve Physics Pipeline (4-Step: Gravity -> Integration -> Ejection
   // Loop -> Ground Snap)
