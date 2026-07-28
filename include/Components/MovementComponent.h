@@ -17,7 +17,16 @@ public:
   /// @return Desired horizontal velocity (x,z); zero when moveDir is zero.
   Vector3 resolve(Vector3 moveDir, float &yaw, float dt) const;
 
+  /// Sets travel speed in world units per second. Owners derive this from the
+  /// run clip's authored speed (RootMotion::Track::authoredSpeed) so the stride
+  /// matches the ground travel; a hardcoded value slides the feet as soon as it
+  /// disagrees with the animation.
+  void setSpeed(float speed) { movement_speed = speed; }
+  float getSpeed() const { return movement_speed; }
+
 private:
-  const float MOVEMENT_SPEED = 20.0f;
+  /// Fallback only, for owners that never call setSpeed. Roughly the authored
+  /// speed of a Mixamo run cycle.
+  float movement_speed = 4.0f;
   const float ROTATION_SPEED = 10.0f;
 };

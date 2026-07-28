@@ -10,7 +10,10 @@
 
 class GameRenderer {
 public:
-  GameRenderer();
+  /// Does not own the asset store. Root motion is gameplay data as much as it
+  /// is render data, so the owner sits above both (see GameplayState) and hands
+  /// the same AssetManager to entities through UpdateContext.
+  explicit GameRenderer(AssetManager &assets);
   ~GameRenderer() = default;
 
   GameRenderer(const GameRenderer &) = delete;
@@ -27,7 +30,7 @@ public:
   void drawUI();
 
 private:
-  AssetManager assetManager;
+  AssetManager &assetManager;
 
   /// Maps each AssetID to the renderer strategy responsible for drawing it.
   std::unordered_map<AssetID, std::unique_ptr<IEntityRenderer>> entityRenderers;

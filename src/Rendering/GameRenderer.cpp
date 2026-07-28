@@ -28,9 +28,16 @@ struct AssetEntry {
       nullptr; ///< if set, alias animations to pointed-to source
 };
 
+// The player asset is built in two passes, both from ~/Documents/3D/pack.blend:
+//   1. tools/merge_animations.py folds the 51 per-clip Mixamo armatures into
+//      one skinned GLB at scale 1.0 -> Paladin.glb
+//   2. tools/bake_root_motion.py moves each clip's horizontal travel from
+//      mixamorig:Hips onto a dedicated `Root` bone -> Paladin.rootmotion.glb
+// Load only the second. Pointing this at Paladin.glb reverts bone 0 to the hips
+// and root motion starts picking up hip sway.
 static const AssetEntry kAssets[] = {
-    {AssetID::PLAYER_WOLF, ASSET_DIR "/UAL2_Standard.glb",
-     ASSET_DIR "/UAL2_Standard.glb", RendererKind::SkinnedCharacter},
+    {AssetID::PLAYER_WOLF, ASSET_DIR "/Paladin.rootmotion.glb",
+     ASSET_DIR "/Paladin.rootmotion.glb", RendererKind::SkinnedCharacter},
     {AssetID::ENEMY_ASHIGARU, ASSET_DIR "/Walk.glb", ASSET_DIR "/Walk.glb",
      RendererKind::SkinnedCharacter},
 };
@@ -49,7 +56,9 @@ std::unique_ptr<IEntityRenderer> makeRenderer(RendererKind kind) {
 // ---------------------------------------------------------------------------
 // GameRenderer
 // ---------------------------------------------------------------------------
-GameRenderer::GameRenderer() { initializeAssets(); }
+GameRenderer::GameRenderer(AssetManager &assets) : assetManager(assets) {
+  initializeAssets();
+}
 
 void GameRenderer::initializeAssets() {
   // 1. Load assets declared in the manifest table.

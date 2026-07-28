@@ -30,6 +30,10 @@ public:
   void exit() override;
 
 private:
+  /// Declared before `renderer`, which holds a reference to it: destruction is
+  /// reverse-declaration order, so the renderer dies first.
+  AssetManager asset_manager;
+
   std::unique_ptr<CameraController> camera_controller;
   std::unique_ptr<Player> player;
   std::vector<std::unique_ptr<Enemy>> enemies;

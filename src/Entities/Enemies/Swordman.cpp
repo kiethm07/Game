@@ -22,6 +22,24 @@ void Swordman::update(const UpdateContext &ctx) {
   combat_component.update(dt);
 
   ai_component.update();
+  updateAI(dt, player_position);
+
+  // Walk.glb carries a single clip; resolve it by name rather than assuming an
+  // index. Advancing playback here is what the previous code omitted, which
+  // left enemies rendering frozen on frame 0.
+  if (ctx.assets && !clips.resolved) {
+    clips.resolved = true;
+    clips.idle = ctx.assets->findAnimation(AssetID::ENEMY_ASHIGARU,
+                                           "Armature|mixamo.com|Layer0");
+    if (clips.idle < 0) clips.idle = 0;
+  }
+
+  animation.play(clips.idle, true);
+  const RootMotion::Track &track =
+      ctx.assets ? ctx.assets->getRootMotion(AssetID::ENEMY_ASHIGARU,
+                                             animation.index())
+                 : RootMotion::Track{};
+  animation.advance(dt, track.duration);
 }
 
 void Swordman::setupBehaviorTree() {
@@ -116,8 +134,8 @@ CharacterRenderData Swordman::getRenderData() const {
   transform.scale = visual_size;
 
   AnimationState anim_state;
-  anim_state.animIndex = currentAnimIndex;
-  anim_state.animTime = animTime;
+  anim_state.animIndex = animation.index();
+  anim_state.animTime = animation.time();
 
   return {AssetID::ENEMY_ASHIGARU, transform, anim_state};
 }
