@@ -22,7 +22,6 @@ void Swordman::update(const UpdateContext &ctx) {
   combat_component.update(dt);
 
   ai_component.update();
-  updateAI(dt, player_position);
 
   // Walk.glb carries a single clip; resolve it by name rather than assuming an
   // index. Advancing playback here is what the previous code omitted, which
