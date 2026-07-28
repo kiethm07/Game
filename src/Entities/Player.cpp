@@ -39,11 +39,15 @@ void Player::resolveClips(const AssetManager &assets) {
 
   clips.idle = assets.findAnimation(AssetID::PLAYER_WOLF, "Idle");
   clips.run = assets.findAnimation(AssetID::PLAYER_WOLF, "Run");
-  // Stand-in: the Mixamo pack has no dodge clip yet. Sneak travels 1.19 units
-  // over 1.10s, which is enough to exercise the root-motion path end to end.
-  // Swap the name once a real dodge/step clip is baked.
-  clips.dodge = assets.findAnimation(AssetID::PLAYER_WOLF, "Sneak");
-  clips.jump = assets.findAnimation(AssetID::PLAYER_WOLF, "Jump");
+  // Stand-in: the sword-and-shield pack has no dodge or roll. Strafe travels
+  // 1.30 units over 1.17s — near-identical to the Sneak clip this replaced —
+  // so it still exercises the root-motion path end to end. Swap the name once a
+  // real dodge clip is baked.
+  clips.dodge = assets.findAnimation(AssetID::PLAYER_WOLF, "Strafe");
+  // Jump_2, not Jump: Jump travels 2.45 units, which would fight the physics
+  // arc that JUMP_SPEED and gravity already drive. Jump_2 is in place, leaving
+  // the whole trajectory to the controller.
+  clips.jump = assets.findAnimation(AssetID::PLAYER_WOLF, "Jump_2");
 
   // Locomotion runs at the run clip's authored speed, scaled for game feel.
   // Playing the clip back at the same ratio keeps the stride matched to the
