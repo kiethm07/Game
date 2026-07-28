@@ -31,5 +31,5 @@ Vector3 MovementComponent::resolve(Vector3 moveDir, float &yaw, float dt) const 
   while (yaw >= 360.0f)
     yaw -= 360.0f;
 
-  return {moveDir.x * MOVEMENT_SPEED, 0.0f, moveDir.z * MOVEMENT_SPEED};
+  return {moveDir.x * movement_speed, 0.0f, moveDir.z * movement_speed};
 }

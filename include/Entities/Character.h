@@ -5,6 +5,7 @@
 #include <Components/HitBox.h>
 #include <Components/HurtBox.h>
 #include <Components/Stats.h>
+#include <Rendering/AssetManager.h>
 #include <Rendering/RenderData.h>
 #include <vector>
 
@@ -15,6 +16,11 @@ struct UpdateContext {
   Vector3 camForward = {0.0f, 0.0f, 1.0f};
   Vector3 camRight = {1.0f, 0.0f, 0.0f};
   Vector3 playerPos = {0.0f, 0.0f, 0.0f};
+
+  /// Read-only access to loaded assets, for the root motion tracks that drive
+  /// displacing states (attacks, dodges) and set locomotion speed. Never null
+  /// in the normal update path.
+  const AssetManager *assets = nullptr;
 };
 
 class Character {

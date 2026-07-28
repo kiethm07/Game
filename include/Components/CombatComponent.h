@@ -9,7 +9,8 @@ enum class CombatState {
     AttackActive,
     AttackRecovery,
     Parrying,
-    Blocking
+    Blocking,
+    Dodging
 };
 
 class CombatComponent {
@@ -22,10 +23,22 @@ public:
     void startGuard();
     void stopGuard();
 
+    /// Enters the dodge state for `duration` seconds. The caller passes the
+    /// dodge clip's length so the state ends exactly when the animation does —
+    /// the authored clip is the source of truth for how long a dodge lasts,
+    /// not a hand-typed constant that drifts out of sync with it.
+    bool startDodge(float duration);
+
     bool canMove() const;
+    bool canDodge() const;
     bool isHitboxActive() const;
     CombatState getCurrentState() const;
-    
+
+    /// The attack currently being performed, or nullptr outside attack states.
+    /// Lets the owner drive animation and root motion from the same frame data
+    /// the state machine is timing against.
+    const AttackData* getActiveAttack() const;
+
     private:
     //Core
     CombatState current_state = CombatState::Idle;
