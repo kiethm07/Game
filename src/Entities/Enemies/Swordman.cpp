@@ -6,11 +6,14 @@
 
 Swordman::Swordman(Vector3 start_position) : Enemy(start_position) {
   combo = {AttackID::PlayerLight1};
+  stealth_component.addSensor(std::make_shared<RadiusSensor>(5.0f));
+  setupBehaviorTree();
 }
 
 void Swordman::update(const UpdateContext &ctx) {
   const float dt = ctx.dt;
-  const Vector3 &player_position = ctx.playerPos;
+  current_ctx = &ctx;
+
   stats.update(dt);
 
   if (stats.isDead())
@@ -18,6 +21,7 @@ void Swordman::update(const UpdateContext &ctx) {
 
   combat_component.update(dt);
 
+  ai_component.update();
   updateAI(dt, player_position);
 
   // Walk.glb carries a single clip; resolve it by name rather than assuming an
@@ -38,20 +42,52 @@ void Swordman::update(const UpdateContext &ctx) {
   animation.advance(dt, track.duration);
 }
 
-void Swordman::updateAI(float dt, const Vector3 &player_position) {
-  // Orient toward player
-  Vector3 dir = Vector3Subtract(player_position, position);
-  if (dir.x != 0.0f || dir.z != 0.0f) {
-    float target_yaw = std::atan2(dir.x, dir.z) * RAD2DEG;
-    rotation.y = target_yaw;
-  }
+void Swordman::setupBehaviorTree() {
+  using namespace BT;
 
-  // Trigger attack when within range
-  float distance = Vector3Distance(position, player_position);
-  if (distance < 2.0f &&
-      combat_component.getCurrentState() == CombatState::Idle) {
+  auto orientAction = std::make_shared<Action>([this]() {
+    if (!current_ctx) return NodeState::FAILURE;
+    Vector3 dir = Vector3Subtract(current_ctx->playerPos, position);
+    if (dir.x != 0.0f || dir.z != 0.0f) {
+      float target_yaw = std::atan2(dir.x, dir.z) * RAD2DEG;
+      rotation.y = target_yaw;
+    }
+    return NodeState::SUCCESS;
+  });
+
+  auto stealthCondition = std::make_shared<Condition>([this]() {
+    return stealth_component.isPlayerDetected();
+  });
+
+  auto attackCondition = std::make_shared<Condition>([this]() {
+    if (!current_ctx) return false;
+    float distance = Vector3Distance(position, current_ctx->playerPos);
+    return (distance < 2.0f && combat_component.getCurrentState() == CombatState::Idle);
+  });
+
+  auto attackAction = std::make_shared<Action>([this]() {
     combat_component.initiateCombo(combo);
-  }
+    return NodeState::SUCCESS;
+  });
+
+  auto idleAction = std::make_shared<Action>([this]() {
+    // Enemy does nothing when idle
+    return NodeState::SUCCESS;
+  });
+
+  auto combatSequence = std::make_shared<Sequence>(std::vector<NodePtr>{
+    stealthCondition,
+    orientAction,
+    attackCondition,
+    attackAction
+  });
+
+  auto rootSelector = std::make_shared<Selector>(std::vector<NodePtr>{
+    combatSequence,
+    idleAction
+  });
+
+  ai_component.setRoot(rootSelector);
 }
 
 std::vector<HitBox> Swordman::getActiveHitBoxes() const {
