@@ -54,6 +54,12 @@ private:
   AnimationComponent animation;
   Combo combo;
 
+  /// Last frame's combat state, kept so an entry into AttackStartup can be
+  /// detected. Every combo step begins in that state, so the transition into it
+  /// is exactly "a new swing started" — which is when the attack clip must be
+  /// rewound even if the step reuses the previous step's clip.
+  CombatState prev_combat_state = CombatState::Idle;
+
   /// How fast the player travels relative to the run clip's authored speed.
   /// 1.0 plays the clip at its natural pace; higher time-scales the clip to
   /// match so the feet keep up instead of sliding.
@@ -66,6 +72,7 @@ private:
     int run = -1;
     int dodge = -1;
     int jump = -1;
+    int attack = -1;
     bool resolved = false;
   };
   Clips clips;

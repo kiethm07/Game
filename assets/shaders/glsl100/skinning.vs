@@ -6,16 +6,19 @@
 attribute vec3 vertexPosition;
 attribute vec2 vertexTexCoord;
 attribute vec4 vertexColor;
+attribute vec3 vertexNormal;
 attribute vec4 vertexBoneIndices;
 attribute vec4 vertexBoneWeights;
 
 // Input uniform values
 uniform mat4 mvp;
+uniform mat4 matNormal;
 uniform mat4 boneMatrices[MAX_BONE_NUM];
 
 // Output vertex attributes (to fragment shader)
 varying vec2 fragTexCoord;
 varying vec4 fragColor;
+varying vec3 fragNormal;
 
 void main()
 {
@@ -52,8 +55,18 @@ void main()
         vertexBoneWeights.z*(boneMatrixTransposed2*vec4(vertexPosition, 1.0)) +
         vertexBoneWeights.w*(boneMatrixTransposed3*vec4(vertexPosition, 1.0));
 
+    // Skin the normal with the same weights, so skinning.fs can shade against
+    // it. Direction only, hence the 0.0 w component.
+    vec4 skinnedNormal =
+        vertexBoneWeights.x*(boneMatrixTransposed0*vec4(vertexNormal, 0.0)) +
+        vertexBoneWeights.y*(boneMatrixTransposed1*vec4(vertexNormal, 0.0)) +
+        vertexBoneWeights.z*(boneMatrixTransposed2*vec4(vertexNormal, 0.0)) +
+        vertexBoneWeights.w*(boneMatrixTransposed3*vec4(vertexNormal, 0.0));
+    skinnedNormal.w = 0.0;
+
     fragTexCoord = vertexTexCoord;
     fragColor = vertexColor;
+    fragNormal = normalize(vec3(matNormal*skinnedNormal));
 
     gl_Position = mvp*skinnedPosition;
 }
