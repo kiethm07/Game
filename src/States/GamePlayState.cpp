@@ -103,7 +103,7 @@ StateAction GameplayState::update(float dt) {
 
   // 4. Update the camera tracking matrix using that position
   Vector2 mouse_delta = input_manager.getRawMouseDelta();
-  camera_controller->update(player_pos, mouse_delta);
+  camera_controller->update(player->getPosition(), mouse_delta);
 
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
     return StateAction::ChangeToMenu;
