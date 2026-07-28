@@ -5,6 +5,7 @@
 #include <rlgl.h>
 
 Swordman::Swordman(Vector3 start_position) : Enemy(start_position) {
+  stats = Stats(1000.0f, 100.0f, 15.0f);
   combo = {AttackID::PlayerLight1};
   stealth_component.addSensor(std::make_shared<RadiusSensor>(5.0f));
   setupBehaviorTree();

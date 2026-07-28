@@ -8,8 +8,6 @@ Enemy::Enemy(Vector3 start_position, Faction faction) : Character(faction) {
 }
 
 void Enemy::drawHPBar(const Camera3D &camera) const {
-  if (stats.isDead())
-    return;
 
   Vector3 head_pos = {position.x, position.y + body_height + 0.2f, position.z};
 
@@ -27,6 +25,15 @@ void Enemy::drawHPBar(const Camera3D &camera) const {
     return;
   }
 
+  if (stats.isDead()) {
+      int font_size = 10;
+      int text_width = MeasureText("DEATH", font_size);
+      int text_x = static_cast<int>(screen_pos.x - (text_width / 2.0f));
+      int text_y = static_cast<int>(screen_pos.y);
+      DrawText("DEATH", text_x, text_y, font_size, RED);
+      return;
+  }
+
   float width = 60.0f;
   float height = 6.0f;
   int x = static_cast<int>(screen_pos.x - (width / 2.0f));
@@ -35,6 +42,11 @@ void Enemy::drawHPBar(const Camera3D &camera) const {
   DrawRectangle(x, y, (int)width, (int)height, RED);
   DrawRectangle(x, y, (int)(width * stats.getHealthPercentage()), (int)height, LIME);
   DrawRectangleLines(x, y, (int)width, (int)height, BLACK);
+
+  int posture_y = y + (int)height + 2;
+  DrawRectangle(x, posture_y, (int)width, (int)height, DARKGRAY);
+  DrawRectangle(x, posture_y, (int)(width * stats.getPosturePercentage()), (int)height, ORANGE);
+  DrawRectangleLines(x, posture_y, (int)width, (int)height, BLACK);
 
   // Draw hovering debug text above the HP bar
   const std::string& debug_text = stealth_component.getDebugState();
@@ -87,5 +99,12 @@ void Enemy::takeDamage(float health_damage, float posture_damage) {
   if (combat_component.getCurrentState() == CombatState::Blocking)
     health_damage = 0.0f;
 
+  bool was_posture_broken = stats.isPostureBroken();
+
   stats.applyDamage(health_damage, posture_damage);
+
+  // If posture was already broken (they are in the 3s vulnerable window), next hit executes them
+  if (was_posture_broken && stats.isPostureBroken()) {
+      stats.applyDamage(stats.getCurrentHealth(), 0.0f);
+  }
 }

@@ -222,6 +222,12 @@ void Player::drawHPBar2D() const {
   DrawRectangle(x, y, (int)bar_width, (int)bar_height, DARKGRAY);
   DrawRectangle(x, y, (int)(bar_width * fill), (int)bar_height, LIME);
   DrawRectangleLines(x, y, (int)bar_width, (int)bar_height, WHITE);
+
+  int posture_y = y + (int)bar_height + 4;
+  float post_fill = stats.getPosturePercentage();
+  DrawRectangle(x, posture_y, (int)bar_width, (int)bar_height, DARKGRAY);
+  DrawRectangle(x, posture_y, (int)(bar_width * post_fill), (int)bar_height, ORANGE);
+  DrawRectangleLines(x, posture_y, (int)bar_width, (int)bar_height, WHITE);
 }
 
 float Player::getColliderRadius() const { return BODY_RADIUS; }
