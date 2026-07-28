@@ -78,32 +78,24 @@ void CombatComponent::update(float dt) {
             state_timer = frame_data.getRecoveryDuration();
         } 
         else if (current_state == CombatState::AttackRecovery) {
-            resetToIdle();
+            if (is_auto_combo && combo_index + 1 < active_combo_ptr->getAttackCount()) {
+                combo_index++;
+                startAttackPhase();
+            } else {
+                resetToIdle();
+            }
         }
         return;
     }
 }
 
-void CombatComponent::initiateCombo(const Combo& combo) {
+void CombatComponent::initiateCombo(const Combo& combo, bool auto_advance) {
     if (combo.isEmpty()) return;
 
-    // if (current_state == CombatState::Idle) {
-    //     active_combo_ptr = &combo; 
-    //     combo_index = 0;
-    //     startAttackPhase();
-    // } 
-    // else if (current_state == CombatState::AttackRecovery && active_combo_ptr == &combo) {
-    //     combo_index++;
-        
-    //     if (combo_index < active_combo_ptr->getAttackCount()) {
-    //         startAttackPhase();
-    //     } else {
-    //         resetToIdle();
-    //     }
-    // }
     if (current_state == CombatState::Idle) {
         active_combo_ptr = &combo; 
         combo_index = 0;
+        is_auto_combo = auto_advance;
         startAttackPhase();
     } 
     else if (current_state == CombatState::AttackRecovery && active_combo_ptr == &combo) {

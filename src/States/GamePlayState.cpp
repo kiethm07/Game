@@ -67,10 +67,6 @@ StateAction GameplayState::update(float dt) {
   const UpdateContext ctx{dt, camera_controller->getCameraForward(),
                           camera_controller->getCameraRight(), player_pos,
                           &asset_manager};
-  player->update(ctx);
-  for (auto &enemy : enemies) {
-    enemy->update(ctx);
-  }
 
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());

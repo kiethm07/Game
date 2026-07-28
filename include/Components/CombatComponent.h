@@ -19,7 +19,7 @@ public:
     ~CombatComponent() = default;
     
     void update(float dt);
-    void initiateCombo(const Combo& combo);
+    void initiateCombo(const Combo& combo, bool auto_advance = false);
     void startGuard();
     void stopGuard();
 
@@ -51,8 +51,9 @@ public:
     //const float PARRY_PENALTY_WINDOW = 0.10f;
 
     //Attack
-    const Combo* active_combo_ptr;
-    int combo_index;
+    const Combo* active_combo_ptr = nullptr;
+    int combo_index = 0;
+    bool is_auto_combo = false;
     void startAttackPhase();
     void resetToIdle();
 };
