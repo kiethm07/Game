@@ -8,6 +8,7 @@ public:
           current_posture(0.0f),
           max_posture(max_posture),
           posture_regen_rate(posture_regen_rate),
+          time_since_last_damage(0.0f),
           is_invincible(false),
           invincibility_timer(0.0f) {}
 
@@ -37,6 +38,7 @@ private:
     float current_posture;
     float max_posture;
     float posture_regen_rate;
+    float time_since_last_damage;
 
     bool is_invincible;
     float invincibility_timer;
