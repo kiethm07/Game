@@ -1,6 +1,7 @@
-#include <Rendering/AnimUtils.h>
 #include <Rendering/AssetManager.h>
 #include <iostream>
+#include <raymath.h>
+#include <utility>
 
 AssetManager::~AssetManager() { unloadAll(); }
 
@@ -78,7 +79,23 @@ void AssetManager::loadAnimations(AssetID id, const std::string &filePath) {
   AnimationData data;
   data.anims = anims;
   data.count = animCount;
-  animations[id] = data;
+
+  // Extract every clip's root motion up front. Gameplay needs these to drive
+  // the controller and the renderer needs them to pin the mesh to the capsule,
+  // and both would otherwise rescan all keyframes every frame.
+  data.rootTracks.reserve(static_cast<size_t>(animCount));
+  for (int i = 0; i < animCount; i++) {
+    data.rootTracks.push_back(RootMotion::buildTrack(anims[i]));
+    const RootMotion::Track &track = data.rootTracks.back();
+    TraceLog(LOG_INFO,
+             "AssetManager: clip %d '%s' duration=%.2fs travel=%.3f %s "
+             "speed=%.2f u/s",
+             i, anims[i].name, track.duration,
+             Vector3Length(track.totalDelta),
+             track.hasMotion ? "root-motion" : "in-place", track.authoredSpeed);
+  }
+
+  animations[id] = std::move(data);
 }
 
 void AssetManager::shareModel(AssetID alias, AssetID source) {
@@ -131,6 +148,44 @@ ModelAnimation *AssetManager::getAnimations(AssetID id, int &outAnimCount) {
   }
   outAnimCount = 0;
   return nullptr;
+}
+
+int AssetManager::findAnimation(AssetID id, const std::string &name) const {
+  auto aliasIt = animAliases.find(id);
+  AssetID resolvedId = (aliasIt != animAliases.end()) ? aliasIt->second : id;
+
+  auto it = animations.find(resolvedId);
+  if (it == animations.end() || it->second.anims == nullptr) return -1;
+
+  for (int i = 0; i < it->second.count; i++) {
+    if (name == it->second.anims[i].name) return i;
+  }
+
+  TraceLog(LOG_WARNING, "AssetManager: no clip named '%s' for AssetID %d",
+           name.c_str(), static_cast<int>(id));
+  return -1;
+}
+
+const RootMotion::Track &AssetManager::getRootMotion(AssetID id,
+                                                     int animIndex) const {
+  // Empty track shared by every miss. hasMotion is false, so callers fall
+  // through to their no-root-motion path instead of needing a null check.
+  static const RootMotion::Track kNullTrack{};
+
+  auto aliasIt = animAliases.find(id);
+  AssetID resolvedId = (aliasIt != animAliases.end()) ? aliasIt->second : id;
+
+  auto it = animations.find(resolvedId);
+  if (it == animations.end()) return kNullTrack;
+
+  const auto &tracks = it->second.rootTracks;
+  if (tracks.empty()) return kNullTrack;
+
+  // Match SkinnedEntityRenderer's animIndex % animCount so the track always
+  // describes the clip actually being played.
+  int wrapped = animIndex % static_cast<int>(tracks.size());
+  if (wrapped < 0) wrapped += static_cast<int>(tracks.size());
+  return tracks[static_cast<size_t>(wrapped)];
 }
 
 void AssetManager::unloadAll() {

@@ -325,10 +325,23 @@ void PhysicsManager::updatePhysics(
         // Only grounded logic runs when a real surface was found below the character.
         // If found_surface == false there is nothing underfoot; gravity takes over.
         if (!found_surface) {
-            // No obstacle surface detected — character is airborne.
-            // Clamp at world origin to avoid falling to -infinity, but do not snap.
-            // The world floor at Y=0 is handled as a hard floor only if pos.y < 0.
-            if (pos.y < 0.0f) {
+            // No obstacle surface detected. The world floor at Y=0 is the only
+            // thing left underfoot, so it has to be a surface a character can
+            // REST on, not merely a backstop that catches them once they are
+            // already below it.
+            //
+            // The comparison is <=, not <. At exactly y == 0 a strict < reports
+            // airborne, gravity pulls the character a hair under, the clamp puts
+            // them back on 0 and marks them grounded, and the next frame reports
+            // airborne again — is_grounded then alternates every single frame.
+            // Harmless while nothing consumed it; once the animation layer
+            // started picking a clip from it, standing on open ground flickered
+            // between the jump and locomotion clips at 30Hz.
+            //
+            // Characters genuinely in mid-air still have pos.y > 0 and fall
+            // normally, so this does not reintroduce the invisible floor that
+            // ground_y = -infinity was written to avoid.
+            if (pos.y <= 0.0f) {
                 pos.y = 0.0f;
                 v_y   = 0.0f;
                 character->setVerticalVelocity(0.0f);
@@ -359,6 +372,15 @@ void PhysicsManager::updatePhysics(
         // --- Standard upward step snap ---
         bool can_snap  = is_walkable;
         float step_diff = ground_y - pos.y;
+
+        // Never snap a character that is moving upward. One frame of a jump
+        // only clears ~0.08 units, which is well inside MAX_STEP, so the step
+        // snap would read it as a small ledge, pull the character back to the
+        // ground and zero the velocity — cancelling every jump on its first
+        // frame.
+        if (v_y > 0.0f) {
+            can_snap = false;
+        }
 
         if (step_diff > MAX_STEP || step_diff < -MAX_STEP) {
             can_snap = false;

@@ -3,7 +3,9 @@
 #include <raylib.h>
 #include <unordered_map>
 #include <string>
+#include <vector>
 #include <Rendering/AssetID.h>
+#include <Rendering/RootMotion.h>
 
 class AssetManager {
 public:
@@ -33,6 +35,19 @@ public:
     Model& getModel(AssetID id);
     ModelAnimation* getAnimations(AssetID id, int& outAnimCount);
 
+    /// Root motion track for one clip, extracted once at load time.
+    /// Out-of-range indices and unloaded assets return an empty track
+    /// (hasMotion == false), so callers never need to bounds-check.
+    const RootMotion::Track& getRootMotion(AssetID id, int animIndex) const;
+
+    /// Index of the clip named `name`, or -1 if the asset has no such clip.
+    ///
+    /// Prefer this over hardcoded indices: clip order is an artifact of the
+    /// export toolchain, not something the asset guarantees. The Blender root
+    /// motion bake reorders clips alphabetically, which silently remapped every
+    /// hardcoded index the first time it ran.
+    int findAnimation(AssetID id, const std::string& name) const;
+
     // --- Cleanup ---
     void unloadAll();
 
@@ -56,6 +71,10 @@ private:
     struct AnimationData {
         ModelAnimation* anims = nullptr;
         int count = 0;
+        /// One track per clip, parallel to anims. Built in loadAnimations so
+        /// the keyframe scan happens once per clip rather than once per entity
+        /// per frame.
+        std::vector<RootMotion::Track> rootTracks;
     };
     std::unordered_map<AssetID, AnimationData> animations;
 };

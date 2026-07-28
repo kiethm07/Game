@@ -15,26 +15,31 @@ GameplayState::GameplayState(const InputManager &input_manager)
       EnemyFactory::createEnemy(EnemyType::Swordman, {3.0f, 0.0f, 8.0f}));
 
   // --- MULTI-LEVEL BUILDING EXAMPLE ---
-  
+
   // Floor 1 (Ceiling for Ground)
   // Walk under this (Z=5 to 15) to test flat overhead ceilings!
-  obstacles.emplace_back(Vector3{-6.0f, 3.0f, 5.0f}, Vector3{6.0f, 3.5f, 15.0f}, 0.0f, DARKBLUE);
+  obstacles.emplace_back(Vector3{-6.0f, 3.0f, 5.0f}, Vector3{6.0f, 3.5f, 15.0f},
+                         0.0f, DARKBLUE);
 
   // Staircase 1: Ground (Y=0) to Floor 1 (Y=3.5)
   // Placed on the left side. Walk under this to test slanted ramp ceilings!
-  obstacles.emplace_back(Vector2{-9.0f, -2.0f}, Vector2{-6.0f, 8.0f}, 0.0f, 3.5f, 0.0f, SKYBLUE);
+  obstacles.emplace_back(Vector2{-9.0f, -2.0f}, Vector2{-6.0f, 8.0f}, 0.0f,
+                         3.5f, 0.0f, SKYBLUE);
 
   // Floor 2 (Ceiling for Floor 1)
-  obstacles.emplace_back(Vector3{-6.0f, 7.0f, 5.0f}, Vector3{6.0f, 7.5f, 15.0f}, 0.0f, DARKGREEN);
+  obstacles.emplace_back(Vector3{-6.0f, 7.0f, 5.0f}, Vector3{6.0f, 7.5f, 15.0f},
+                         0.0f, DARKGREEN);
 
   // Staircase 2: Floor 1 (Y=3.5) to Floor 2 (Y=7.5)
-  // Placed on the right side. 
-  obstacles.emplace_back(Vector2{6.0f, 5.0f}, Vector2{9.0f, 15.0f}, 3.5f, 7.5f, 0.0f, LIME);
+  // Placed on the right side.
+  obstacles.emplace_back(Vector2{6.0f, 5.0f}, Vector2{9.0f, 15.0f}, 3.5f, 7.5f,
+                         0.0f, LIME);
 
   // Rotated Pillar supporting the center
-  obstacles.emplace_back(Vector3{-2.0f, 0.0f, 8.0f}, Vector3{2.0f, 7.0f, 12.0f}, 45.0f, RED);
+  // obstacles.emplace_back(Vector3{-2.0f, 0.0f, 8.0f},
+  // Vector3{2.0f, 7.0f, 12.0f}, 45.0f, RED);
 
-  renderer = std::make_unique<GameRenderer>();
+  renderer = std::make_unique<GameRenderer>(asset_manager);
 }
 
 void GameplayState::enter() {
@@ -46,7 +51,8 @@ StateAction GameplayState::update(float dt) {
   // input/AI internally and shifts its own position safely.
   Vector3 player_pos = player->getPosition();
   const UpdateContext ctx{dt, camera_controller->getCameraForward(),
-                          camera_controller->getCameraRight(), player_pos};
+                          camera_controller->getCameraRight(), player_pos,
+                          &asset_manager};
   player->update(ctx);
   for (auto &enemy : enemies) {
     enemy->update(ctx);
