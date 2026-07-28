@@ -13,7 +13,8 @@ Player::Player(const InputManager &input_manager)
 void Player::update(const UpdateContext &ctx) {
   const float dt = ctx.dt;
 
-  if (ctx.assets) resolveClips(*ctx.assets);
+  if (ctx.assets)
+    resolveClips(*ctx.assets);
 
   combat_component.update(dt);
   stats.update(dt);
@@ -31,10 +32,13 @@ void Player::update(const UpdateContext &ctx) {
   } else {
     updateCommittedState(ctx);
   }
+
+  prev_combat_state = combat_component.getCurrentState();
 }
 
 void Player::resolveClips(const AssetManager &assets) {
-  if (clips.resolved) return;
+  if (clips.resolved)
+    return;
   clips.resolved = true;
 
   clips.idle = assets.findAnimation(AssetID::PLAYER_WOLF, "Idle");
@@ -48,6 +52,11 @@ void Player::resolveClips(const AssetManager &assets) {
   // arc that JUMP_SPEED and gravity already drive. Jump_2 is in place, leaving
   // the whole trajectory to the controller.
   clips.jump = assets.findAnimation(AssetID::PLAYER_WOLF, "Jump_2");
+
+  // Fallback only. Attacks normally name their own clip in AttackRegistry, so
+  // each combo step can differ; this is what plays when one doesn't, or when
+  // the clip it names is missing from the loaded asset.
+  clips.attack = assets.findAnimation(AssetID::PLAYER_WOLF, "Slash");
 
   // Locomotion runs at the run clip's authored speed, scaled for game feel.
   // Playing the clip back at the same ratio keeps the stride matched to the
@@ -113,9 +122,9 @@ void Player::updateLocomotion(const UpdateContext &ctx, Vector3 moveDirection) {
   animation.setPlaybackRate((!airborne && isMoving) ? RUN_SPEED_SCALE : 1.0f);
 
   const RootMotion::Track &track =
-      ctx.assets ? ctx.assets->getRootMotion(AssetID::PLAYER_WOLF,
-                                             animation.index())
-                 : RootMotion::Track{};
+      ctx.assets
+          ? ctx.assets->getRootMotion(AssetID::PLAYER_WOLF, animation.index())
+          : RootMotion::Track{};
   animation.advance(dt, track.duration);
 }
 
@@ -127,6 +136,7 @@ void Player::updateCommittedState(const UpdateContext &ctx) {
 
   int clipIndex = -1;
   bool rootDriven = false;
+  bool restartClip = false;
 
   if (combat_component.getCurrentState() == CombatState::Dodging) {
     clipIndex = clips.dodge;
@@ -137,14 +147,34 @@ void Player::updateCommittedState(const UpdateContext &ctx) {
                                             attack->getClipName());
       rootDriven = attack->usesRootMotion();
     }
+
+    // Fall back to the generic swing when the attack names no clip, or names
+    // one the loaded asset does not contain. Without this the animation stays
+    // on whatever locomotion clip was playing, so the attack reads as the
+    // character standing still for its whole duration.
+    if (clipIndex < 0) {
+      clipIndex = clips.attack;
+      rootDriven = false;
+    }
+
+    // Every combo step starts here. If it reuses the previous step's clip —
+    // which both fallbacks above always do — play() would see the index it is
+    // already on and leave the swing held at its end frame.
+    restartClip = (combat_component.getCurrentState() ==
+                   CombatState::AttackStartup) &&
+                  (prev_combat_state != CombatState::AttackStartup);
   }
 
-  if (clipIndex >= 0) animation.play(clipIndex, false);
+  if (clipIndex >= 0) {
+    animation.play(clipIndex, false);
+    if (restartClip)
+      animation.restart();
+  }
 
   const RootMotion::Track &track =
-      ctx.assets ? ctx.assets->getRootMotion(AssetID::PLAYER_WOLF,
-                                             animation.index())
-                 : RootMotion::Track{};
+      ctx.assets
+          ? ctx.assets->getRootMotion(AssetID::PLAYER_WOLF, animation.index())
+          : RootMotion::Track{};
   animation.advance(dt, track.duration);
 
   if (rootDriven && track.hasMotion) {

@@ -23,6 +23,16 @@ public:
     prev_anim_time = 0.0f;
   }
 
+  /// Rewinds the current clip to frame 0 without changing it. play() is
+  /// deliberately a no-op when the requested clip is already current, so a
+  /// caller re-triggering the same clip — a combo step that reuses the previous
+  /// step's animation — needs this to explicitly restart the swing instead of
+  /// leaving it frozen on its last frame.
+  void restart() {
+    anim_time = 0.0f;
+    prev_anim_time = 0.0f;
+  }
+
   /// Advances playback. Looping clips wrap at `duration`, non-looping clips
   /// stop there and report isFinished().
   ///
