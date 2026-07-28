@@ -28,15 +28,16 @@ struct AssetEntry {
       nullptr; ///< if set, alias animations to pointed-to source
 };
 
-// Alpha_Character.rootmotion.glb is generated from Alpha_Character.glb by
-// tools/bake_root_motion.py, which moves the clips' horizontal travel from
-// mixamorig:Hips onto a dedicated `Root` bone. The raw Mixamo export is kept as
-// the bake's source; do not load it directly, or bone 0 reverts to the hips and
-// root motion picks up hip sway.
+// The player asset is built in two passes, both from ~/Documents/3D/pack.blend:
+//   1. tools/merge_animations.py folds the 51 per-clip Mixamo armatures into
+//      one skinned GLB at scale 1.0 -> Paladin.glb
+//   2. tools/bake_root_motion.py moves each clip's horizontal travel from
+//      mixamorig:Hips onto a dedicated `Root` bone -> Paladin.rootmotion.glb
+// Load only the second. Pointing this at Paladin.glb reverts bone 0 to the hips
+// and root motion starts picking up hip sway.
 static const AssetEntry kAssets[] = {
-    {AssetID::PLAYER_WOLF, ASSET_DIR "/Alpha_Character.rootmotion.glb",
-     ASSET_DIR "/Alpha_Character.rootmotion.glb",
-     RendererKind::SkinnedCharacter},
+    {AssetID::PLAYER_WOLF, ASSET_DIR "/Paladin.rootmotion.glb",
+     ASSET_DIR "/Paladin.rootmotion.glb", RendererKind::SkinnedCharacter},
     {AssetID::ENEMY_ASHIGARU, ASSET_DIR "/Walk.glb", ASSET_DIR "/Walk.glb",
      RendererKind::SkinnedCharacter},
 };

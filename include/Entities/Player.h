@@ -38,8 +38,8 @@ private:
 
   /// Take-off speed in units/second. Against PhysicsManager's 9.81 gravity this
   /// apexes at v^2/2g ~= 1.27 units (about two thirds of body height) after
-  /// ~0.51s, for a ~1.0s round trip — close enough to the Jump clip's 0.82s
-  /// that the landing pose reads correctly.
+  /// ~0.51s, for a ~1.0s round trip — matching the Jump_2 clip's 1.00s, so the
+  /// landing pose reads correctly.
   static constexpr float JUMP_SPEED = 5.0f;
 
   /// How hard the player may steer while airborne, in units/second^2. Expressed

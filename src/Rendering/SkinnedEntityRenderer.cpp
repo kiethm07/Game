@@ -20,7 +20,14 @@ void SkinnedEntityRenderer::draw(AssetManager &assets,
     //    vertex work on the GPU, so entities can share one Model cheaply.
     Vector3 drawPosition = renderData.transform.position;
     if (anims != nullptr && animCount > 0) {
-        const ModelAnimation &anim = anims[animIndex % animCount];
+        // findAnimation() returns -1 for a clip the asset does not contain, and
+        // C++ '%' keeps the sign — indexing on that raw would read out of
+        // bounds. Wrap the same way AssetManager::getRootMotion does so the
+        // pose and its root-motion track stay describing the same clip.
+        int wrapped = animIndex % animCount;
+        if (wrapped < 0) wrapped += animCount;
+
+        const ModelAnimation &anim = anims[wrapped];
         UpdateModelAnimation(model, anim, frame);
 
         // 3. Neutralize root motion in the pose.
