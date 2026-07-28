@@ -21,6 +21,6 @@ private:
   const float ATTACK_RADIUS = 0.8f;
   const float MOVEMENT_SPEED = 5.0f;
   const float ROTATION_SPEED = 100.0f;
-
-  void updateAI(float dt, const Vector3 &player_position);
+  void setupBehaviorTree();
+  const UpdateContext* current_ctx = nullptr;
 };

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <GameManager/StealthManager.h>
+
 #include <Components/PhysicsObstacle.h>
 #include <Core/CameraController.h>
 #include <Core/Game.h>
@@ -38,6 +40,7 @@ private:
   std::unique_ptr<GameRenderer> renderer;
   CombatManager combat_manager;
   PhysicsManager physics_manager;
+  StealthManager stealth_manager;
   std::vector<PhysicsObstacle> obstacles;
   std::vector<CharacterRenderData> renderList;
 
