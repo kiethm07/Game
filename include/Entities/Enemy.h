@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Components/AnimationComponent.h>
 #include <Components/CombatComponent.h>
 #include <Core/InputManager.h>
 #include <Entities/Character.h>
@@ -23,15 +24,18 @@ public:
 
 protected:
   CombatComponent combat_component;
+  AnimationComponent animation;
   int moveState = 0;
 
-  enum class AnimState {
-    IDLE = 6, // UnarmedIdle
-    WALK = 23 // UnarmedRunForward
+  /// Clip indices, resolved by name on the first update (see
+  /// AssetManager::findAnimation). -1 until then, and for clips the loaded
+  /// asset does not contain.
+  struct Clips {
+    int idle = -1;
+    bool resolved = false;
   };
+  Clips clips;
 
-  int currentAnimIndex = static_cast<int>(AnimState::IDLE);
-  float animTime = 0.0f; ///< seconds elapsed in the current clip
   float body_height = 2.0f;
   float body_radius = 0.5f;
   Vector3 visual_size = {1.0f, 1.0f, 1.0f};

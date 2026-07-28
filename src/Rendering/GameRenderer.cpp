@@ -28,9 +28,15 @@ struct AssetEntry {
       nullptr; ///< if set, alias animations to pointed-to source
 };
 
+// Alpha_Character.rootmotion.glb is generated from Alpha_Character.glb by
+// tools/bake_root_motion.py, which moves the clips' horizontal travel from
+// mixamorig:Hips onto a dedicated `Root` bone. The raw Mixamo export is kept as
+// the bake's source; do not load it directly, or bone 0 reverts to the hips and
+// root motion picks up hip sway.
 static const AssetEntry kAssets[] = {
-    {AssetID::PLAYER_WOLF, ASSET_DIR "/Alpha_Character.glb",
-     ASSET_DIR "/Alpha_Character.glb", RendererKind::SkinnedCharacter},
+    {AssetID::PLAYER_WOLF, ASSET_DIR "/Alpha_Character.rootmotion.glb",
+     ASSET_DIR "/Alpha_Character.rootmotion.glb",
+     RendererKind::SkinnedCharacter},
     {AssetID::ENEMY_ASHIGARU, ASSET_DIR "/Walk.glb", ASSET_DIR "/Walk.glb",
      RendererKind::SkinnedCharacter},
 };
@@ -49,7 +55,9 @@ std::unique_ptr<IEntityRenderer> makeRenderer(RendererKind kind) {
 // ---------------------------------------------------------------------------
 // GameRenderer
 // ---------------------------------------------------------------------------
-GameRenderer::GameRenderer() { initializeAssets(); }
+GameRenderer::GameRenderer(AssetManager &assets) : assetManager(assets) {
+  initializeAssets();
+}
 
 void GameRenderer::initializeAssets() {
   // 1. Load assets declared in the manifest table.

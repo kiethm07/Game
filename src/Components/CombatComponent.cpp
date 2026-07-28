@@ -30,6 +30,17 @@ void CombatComponent::update(float dt) {
     if (current_state == CombatState::Idle) {
         return;
     }
+
+    //Dodge — a fixed-length committed state; its displacement comes from the
+    //clip's root motion, so nothing here needs to know how far it travels.
+    if (current_state == CombatState::Dodging) {
+        state_timer -= dt;
+        if (state_timer <= 0.0f) {
+            resetToIdle();
+        }
+        return;
+    }
+
     //Guard (Parry + Block)
     if (current_state == CombatState::Parrying) {
         state_timer -= dt;
@@ -130,9 +141,42 @@ void CombatComponent::stopGuard() {
     }  
 }
 
+bool CombatComponent::startDodge(float duration) {
+    if (!canDodge() || duration <= 0.0f) return false;
+
+    active_combo_ptr = nullptr;
+    combo_index = 0;
+    is_guard_held = false;
+    current_state = CombatState::Dodging;
+    state_timer = duration;
+    return true;
+}
+
 bool CombatComponent::canMove() const {
-    return current_state == CombatState::Idle 
+    return current_state == CombatState::Idle
         || current_state == CombatState::Blocking;
+}
+
+bool CombatComponent::canDodge() const {
+    // Cancellable out of a guard or an attack's recovery, but not out of an
+    // attack already committed to startup or active frames.
+    return current_state == CombatState::Idle
+        || current_state == CombatState::Blocking
+        || current_state == CombatState::Parrying
+        || current_state == CombatState::AttackRecovery;
+}
+
+const AttackData* CombatComponent::getActiveAttack() const {
+    if (!active_combo_ptr) return nullptr;
+    if (current_state != CombatState::AttackStartup &&
+        current_state != CombatState::AttackActive &&
+        current_state != CombatState::AttackRecovery) {
+        return nullptr;
+    }
+    if (combo_index >= active_combo_ptr->getAttackCount()) return nullptr;
+
+    return &AttackRegistry::instance().getAttackData(
+        active_combo_ptr->getAttackID(combo_index));
 }
 
 bool CombatComponent::canGuard() const {
