@@ -18,16 +18,37 @@
 enum class PlayerAnimState {
   Idle,
   Run,
+
+  /// The two halves of being airborne. Jump is the launch and the rise; Fall
+  /// takes over past the apex, and is also what a step off a ledge shows
+  /// straight away since it never rises at all.
   Jump,
+  Fall,
+
+  /// Touchdown recovery. Played on its own timer rather than while a state
+  /// lasts, because nothing about the gameplay state changes on landing — only
+  /// what the character looks like.
+  Land,
+
   GuardImpact,
   Guard,
-  Dodge,
+
+  /// One per authored dodge clip. Kept as four states rather than one state
+  /// with four clips so that each keeps its own row in the table: the backstep
+  /// is authored half again as long as the others and needs its own rate.
+  /// Which one plays is chosen from the movement input at the moment the dodge
+  /// starts, and held for the dodge's duration.
+  DodgeForward,
+  DodgeBack,
+  DodgeLeft,
+  DodgeRight,
+
   Attack,
+  HitReact,
 
   /// Authored clips do not exist yet: these resolve to index -1, which makes
   /// their rungs of the ladder inert. Wiring one up is a clip name in the
   /// table plus the condition that selects it.
-  HitReact,
   PostureBreak,
   Death,
 
@@ -69,6 +90,29 @@ private:
   /// landing pose reads correctly.
   static constexpr float JUMP_SPEED = 5.0f;
 
+  /// Descent speed, in units/second, above which a touchdown plays the landing
+  /// clip. A jump taken at JUMP_SPEED comes back down at that same speed, so
+  /// every real jump lands; a 0.3-unit step down reaches only ~2.4, so walking
+  /// off a kerb does not punctuate every stride with a crouch.
+  static constexpr float LAND_TRIGGER_SPEED = 3.5f;
+
+  /// How long a landing holds the player still, in seconds, measured from the
+  /// moment the feet touch. The clip has 0.78s of authored recovery after
+  /// contact, but locking control for all of it turns every jump into a
+  /// commitment; this covers the impact and the deepest part of the crouch,
+  /// which is the readable part, and releases the player on the way back up.
+  /// The clip is allowed to finish on its own if they choose to stand still.
+  static constexpr float LAND_LOCK_DURATION = 0.35f;
+
+  /// Where the landing clip's feet reach the floor, in seconds. The clip is
+  /// authored as a fall *into* a landing: it opens with the toes a full unit
+  /// above the ground and flies them down over its first 18 frames, which the
+  /// engine has meanwhile flown for real. Playing that lead-in on touchdown
+  /// would sink the character through the floor they just landed on, so the
+  /// state enters the clip here instead — measured off the toe bones, which
+  /// first read zero at frame 16 of 60.
+  static constexpr float LAND_CONTACT = 0.30f;
+
   /// How hard the player may steer while airborne, in units/second^2. Expressed
   /// as an acceleration rather than a blend factor so it stays frame-rate
   /// independent: at roughly 2x ground speed it takes ~0.5s to fully redirect a
@@ -102,6 +146,12 @@ private:
     /// transition because what governs the length is the state being entered:
     /// a swing or a flinch has to land now, a stride can afford to ease.
     float fadeIn;
+
+    /// Seconds to skip at the head of the clip. Zero for all but the landing,
+    /// which is authored with its own descent in front of the impact — the
+    /// engine has already flown that descent for real, so playing it again
+    /// would drop the character through a floor they are standing on.
+    float startAt = 0.0f;
   };
   static const AnimDesc &animDesc(PlayerAnimState state);
 
@@ -150,6 +200,39 @@ private:
   /// this it would read as one long flinch rather than two.
   unsigned reaction_id = 0;
 
+  /// Which of the four dodge clips the current dodge is playing. Latched when
+  /// the dodge starts and held for its whole length: re-reading the input every
+  /// frame would let the clip swap mid-roll, and would fight the root motion,
+  /// which is committed travel in the direction the clip was authored for.
+  PlayerAnimState dodge_state = PlayerAnimState::DodgeBack;
+
+  /// Seconds left of the landing clip, seeded from its own playable length.
+  /// Governs only how long the clip may be shown; the shorter lock below is
+  /// what actually holds the player.
+  float land_timer = 0.0f;
+
+  /// Seconds left of the landing's hold on the player, seeded from
+  /// LAND_LOCK_DURATION. Kept apart from land_timer because the two answer
+  /// different questions: the clip outlives the commitment, so that a player
+  /// who stands still sees the recovery finish, while one who wants to move
+  /// gets control back long before it does.
+  float land_lock_timer = 0.0f;
+
+  /// Bumped once per landing, and used as the landing selection's variant, so
+  /// that landing twice in quick succession replays the clip instead of holding
+  /// the last pose of the first one.
+  unsigned land_id = 0;
+
+  /// Fastest descent seen during the current time in the air. PhysicsManager
+  /// zeroes vertical velocity as it snaps the character to the ground, so by
+  /// the time the landing is observed the speed that would judge its severity
+  /// is already gone; this captures it while still falling.
+  float fall_speed = 0.0f;
+
+  /// Last frame's grounded flag, so that the frame of touchdown can be told
+  /// apart from every frame after it.
+  bool was_grounded = true;
+
   /// True for both halves of a guard — the parry window and the block hold
   /// that follows it. They share one animation, so the two states are treated
   /// as one for clip selection even though only Blocking allows movement.
@@ -157,6 +240,18 @@ private:
 
   /// Starts whatever flinch takeDamage() queued, and ages the running one.
   void updateReaction(const UpdateContext &ctx);
+
+  /// Tracks the fall and starts the landing clip on touchdown.
+  void updateLanding(const UpdateContext &ctx);
+
+  /// True while a landing is holding the player in place. A committed state in
+  /// the same sense an attack or a dodge is, just one the combat state machine
+  /// has no opinion about — landing is not a combat action.
+  bool isLandLocked() const { return land_lock_timer > 0.0f; }
+
+  /// Which dodge clip a world-space input direction calls for, resolved in the
+  /// character's own frame. A directionless input backsteps.
+  PlayerAnimState dodgeStateFor(Vector3 worldDirection) const;
 
   void resolveClips(const AssetManager &assets);
 

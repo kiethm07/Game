@@ -21,13 +21,19 @@ public:
   /// Switches to a clip, restarting it and cross-fading out of the current one
   /// over `fadeIn` seconds. Re-playing the current clip is a no-op, so callers
   /// can call this unconditionally every frame.
-  void play(int index, bool loop, float fadeIn = 0.0f) {
+  ///
+  /// `startTime` enters the clip partway in, for clips whose opening is a
+  /// lead-in the engine has already played out for real — a landing authored
+  /// with its own descent, entered at the frame the feet reach the floor.
+  void play(int index, bool loop, float fadeIn = 0.0f, float startTime = 0.0f) {
     if (index == anim_index) return;
     beginFade(fadeIn);
     anim_index = index;
     looping = loop;
-    anim_time = 0.0f;
-    prev_anim_time = 0.0f;
+    anim_time = startTime;
+    // Equal, not zero: the first advance() must report the travel of one frame,
+    // not of everything the skipped lead-in covered.
+    prev_anim_time = startTime;
   }
 
   /// Rewinds the current clip to frame 0 without changing it, cross-fading out
@@ -37,10 +43,10 @@ public:
   /// explicitly restart the swing instead of leaving it frozen on its last
   /// frame. The fade runs the same clip against itself at two different times,
   /// which UpdateModelAnimationEx handles fine.
-  void restart(float fadeIn = 0.0f) {
+  void restart(float fadeIn = 0.0f, float startTime = 0.0f) {
     beginFade(fadeIn);
-    anim_time = 0.0f;
-    prev_anim_time = 0.0f;
+    anim_time = startTime;
+    prev_anim_time = startTime;
   }
 
   /// Advances playback. Looping clips wrap at `duration`, non-looping clips
