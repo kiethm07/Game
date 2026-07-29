@@ -16,6 +16,7 @@ void CombatComponent::startAttackPhase() {
     
     current_state = CombatState::AttackStartup;
     state_timer = frame_data.getStartupDuration();
+    action_id++;
 }
 
 void CombatComponent::resetToIdle() {
@@ -121,6 +122,7 @@ void CombatComponent::startGuard() {
 
     current_state = CombatState::Parrying;
     state_timer = DEFAULT_PARRY_WINDOW;
+    action_id++;
 }
 
 void CombatComponent::stopGuard() {
@@ -141,6 +143,7 @@ bool CombatComponent::startDodge(float duration) {
     is_guard_held = false;
     current_state = CombatState::Dodging;
     state_timer = duration;
+    action_id++;
     return true;
 }
 
@@ -170,6 +173,8 @@ const AttackData* CombatComponent::getActiveAttack() const {
     return &AttackRegistry::instance().getAttackData(
         active_combo_ptr->getAttackID(combo_index));
 }
+
+unsigned CombatComponent::getActionId() const { return action_id; }
 
 bool CombatComponent::canGuard() const {
     return current_state == CombatState::Idle 
