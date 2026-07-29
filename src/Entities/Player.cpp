@@ -13,13 +13,32 @@ const Player::AnimDesc &Player::animDesc(PlayerAnimState state) {
   // Rows are in PlayerAnimState order. Function-local so the private
   // RUN_SPEED_SCALE is in scope.
   static const AnimDesc table[static_cast<int>(PlayerAnimState::Count)] = {
-      //                clip        loop   rate             root   fadeIn
+      //                clip             loop   rate             root   fadeIn
       /* Idle        */ {"Idle", true, 1.0f, false, 0.15f},
       /* Run         */ {"Run", true, RUN_SPEED_SCALE, false, 0.15f},
       /* Jump        */ {"Jump", false, 1.0f, false, 0.08f},
+      // Loops, because a fall lasts as long as the drop does rather than as
+      // long as the clip. The fade in is the longest in the table: it runs at
+      // the apex, between two clips that already agree closely on the pose, so
+      // there is nothing to be gained by making the swap crisp.
+      /* Fall        */ {"Fall", true, 1.0f, false, 0.20f},
+      // Entered 0.30s in, at LAND_CONTACT. Short fade the other way: the impact
+      // is the whole point of the clip, and easing into it over a fifth of a
+      // second reads as the character sinking to the floor rather than hitting
+      // it.
+      /* Land        */ {"Land", false, 1.0f, false, 0.06f, LAND_CONTACT},
       /* GuardImpact */ {"Impact", false, 1.0f, false, 0.05f},
       /* Guard       */ {"Block", false, 1.0f, false, 0.10f},
-      /* Dodge       */ {"Strafe", false, 1.0f, true, 0.05f},
+      // Root-driven, so each one's travel is exactly the sideways, forward or
+      // backward distance it was authored with. The backstep is authored at
+      // 1.67s against the others' 1.0s, half a second of which is the character
+      // settling after the travel has finished; time-scaling it brings the
+      // recovery — and so the length of the commitment, which is taken from the
+      // scaled duration — into line with the other three.
+      /* DodgeFwd    */ {"Dodge_Forward", false, 1.0f, true, 0.05f},
+      /* DodgeBack   */ {"Dodge_Back", false, 1.5f, true, 0.05f},
+      /* DodgeLeft   */ {"Dodge_Left", false, 1.0f, true, 0.05f},
+      /* DodgeRight  */ {"Dodge_Right", false, 1.0f, true, 0.05f},
       // Fallback swing, used when an attack names no clip or names one the
       // loaded asset does not contain. Attacks that do name a clip override
       // this in resolveAnimState().
@@ -50,6 +69,9 @@ void Player::update(const UpdateContext &ctx) {
   combat_component.update(dt);
   stats.update(dt);
   updateReaction(ctx);
+  // Before the inputs, which are what take the character off the ground: a
+  // jump pressed this frame must not be mistaken for a landing on it.
+  updateLanding(ctx);
 
   handleCombatAndUtilityInputs(ctx);
 
@@ -57,11 +79,16 @@ void Player::update(const UpdateContext &ctx) {
       calculateCameraRelativeDirection(ctx.camForward, ctx.camRight);
 
   // Two movement regimes. Free locomotion is code-driven so it stays
-  // responsive and steerable; committed states (attacks, dodges) hand control
-  // to the clip, so their travel is exactly what the animator authored. Only
-  // the free regime produces velocity here — the committed one gets its
-  // velocity below, from the root motion of whichever clip is chosen.
-  const bool freeMovement = combat_component.canMove();
+  // responsive and steerable; committed states (attacks, dodges, the first part
+  // of a landing) hand control to the clip, so their travel is exactly what the
+  // animator authored. Only the free regime produces velocity here — the
+  // committed one gets its velocity below, from the root motion of whichever
+  // clip is chosen, or none at all for a clip that does not travel.
+  //
+  // The landing is the one committed state the combat machine does not know
+  // about, because landing is not a combat action; it is and-ed in here rather
+  // than given a CombatState of its own.
+  const bool freeMovement = combat_component.canMove() && !isLandLocked();
   if (freeMovement)
     updateLocomotionVelocity(ctx, moveDirection);
 
@@ -161,8 +188,10 @@ Player::AnimSelection Player::resolveAnimState(const UpdateContext &ctx,
   // Highest priority first. A committed state outranks the locomotion states
   // below it, which is what makes an attack or dodge started in mid-air show
   // its own clip rather than the jump.
-  if (combat == CombatState::Dodging && clipFor(PlayerAnimState::Dodge) >= 0)
-    return select(PlayerAnimState::Dodge, combat_component.getActionId(), true);
+  // Which of the four dodges was decided when the dodge started; this rung only
+  // holds it for the length of the roll.
+  if (combat == CombatState::Dodging && clipFor(dodge_state) >= 0)
+    return select(dodge_state, combat_component.getActionId(), true);
 
   if (const AttackData *attack = combat_component.getActiveAttack()) {
     AnimSelection selection =
@@ -185,11 +214,20 @@ Player::AnimSelection Player::resolveAnimState(const UpdateContext &ctx,
       return selection;
   }
 
-  // Non-looping, so the clip holds on its last frame until touchdown: a jump
-  // that outlasts the animation settles into the landing pose rather than
-  // restarting the launch.
-  if (!isGrounded() && clipFor(PlayerAnimState::Jump) >= 0)
-    return select(PlayerAnimState::Jump, 0, false);
+  // Two clips for one condition, split at the apex. Rising is the jump proper;
+  // once the arc turns over it is a fall, and a step off a ledge — which never
+  // rises at all — goes straight to the fall without ever showing a launch it
+  // did not perform. Falling is the looping half, since a drop lasts as long as
+  // the geometry says rather than as long as the clip; the jump is not, so a
+  // hang time longer than its clip settles on the last airborne pose instead of
+  // launching a second time.
+  if (!isGrounded()) {
+    const bool rising = getVerticalVelocity() > 0.0f;
+    if (!rising && clipFor(PlayerAnimState::Fall) >= 0)
+      return select(PlayerAnimState::Fall, 0, false);
+    if (clipFor(PlayerAnimState::Jump) >= 0)
+      return select(PlayerAnimState::Jump, 0, false);
+  }
 
   // Outranks the guard hold for the length of the reaction, and outranks
   // idle/run too, so releasing the button mid-flinch does not cut the hit
@@ -206,6 +244,21 @@ Player::AnimSelection Player::resolveAnimState(const UpdateContext &ctx,
   if (isGuarding() && clipFor(PlayerAnimState::Guard) >= 0)
     return select(PlayerAnimState::Guard, combat_component.getActionId(),
                   false);
+
+  // Below everything that is an action, so a player who lands already swinging,
+  // dodging or guarding does that instead of crouching — those cancel a landing
+  // outright, and their own rungs above have already returned.
+  //
+  // Two ways to qualify. While the lock runs the landing is mandatory, and the
+  // isMoving test is deliberately not consulted: the player is pinned this
+  // frame, but the velocity read above is last frame's airborne momentum, which
+  // has not been zeroed yet and would otherwise read as movement and skip the
+  // clip on the very frame it is supposed to start. Once the lock lifts, the
+  // clip keeps playing out its recovery only for as long as the player stays
+  // put; the moment they run, the stride wins.
+  if (land_timer > 0.0f && (isLandLocked() || !isMoving) &&
+      clipFor(PlayerAnimState::Land) >= 0)
+    return select(PlayerAnimState::Land, land_id, false);
 
   if (isMoving && clipFor(PlayerAnimState::Run) >= 0)
     return select(PlayerAnimState::Run, 0, false);
@@ -224,7 +277,7 @@ Player::applyAnimSelection(const UpdateContext &ctx,
     // with a degenerate frame-0-to-frame-0 fade.
     const bool switched = (selection.clip != animation.index());
 
-    animation.play(selection.clip, desc.loop, desc.fadeIn);
+    animation.play(selection.clip, desc.loop, desc.fadeIn, desc.startAt);
 
     // Re-entering a state the clip is already playing: a combo step that reuses
     // the previous step's swing, or a second flinch during one guard. play() is
@@ -234,7 +287,7 @@ Player::applyAnimSelection(const UpdateContext &ctx,
     const bool reentered = (selection.state != prev_anim.state ||
                             selection.variant != prev_anim.variant);
     if (!switched && reentered)
-      animation.restart(desc.fadeIn);
+      animation.restart(desc.fadeIn, desc.startAt);
   }
 
   // Only the run clip is time-scaled, per its table row. The idle clip is
@@ -282,6 +335,73 @@ void Player::updateReaction(const UpdateContext &ctx) {
   reaction_state = queued;
   reaction_timer = track.duration;
   reaction_id++;
+}
+
+void Player::updateLanding(const UpdateContext &ctx) {
+  if (land_timer > 0.0f)
+    land_timer -= ctx.dt;
+  if (land_lock_timer > 0.0f)
+    land_lock_timer -= ctx.dt;
+
+  const bool grounded = isGrounded();
+
+  if (!grounded) {
+    // Sampled every airborne frame rather than read once on touchdown, because
+    // PhysicsManager zeroes vertical velocity in the same pass that snaps the
+    // character to the ground — by the time the landing is visible here, the
+    // speed it happened at is gone.
+    fall_speed = std::fmax(fall_speed, -getVerticalVelocity());
+  } else if (!was_grounded) {
+    // Touchdown, this frame only. A gentle one plays nothing: stepping off a
+    // low ledge is not an event the character needs to acknowledge, and
+    // interrupting the idle for it would make ordinary walking twitch.
+    if (fall_speed >= LAND_TRIGGER_SPEED && ctx.assets) {
+      const int clip = clip_index[static_cast<int>(PlayerAnimState::Land)];
+      if (clip >= 0) {
+        // The clip's own length is the recovery's length — no separate constant
+        // to fall out of sync when the animation is replaced. Less the lead-in
+        // the state skips, so the timer runs out with the clip rather than
+        // holding the finished pose for the length of a descent already flown.
+        const RootMotion::Track &track =
+            ctx.assets->getRootMotion(AssetID::PLAYER_WOLF, clip);
+        land_timer = track.duration - LAND_CONTACT;
+        // Never longer than the clip it is holding the player through, so a
+        // shorter landing animation cannot leave them frozen past its end.
+        land_lock_timer = std::fmin(LAND_LOCK_DURATION, land_timer);
+        land_id++;
+      }
+    }
+    fall_speed = 0.0f;
+  }
+
+  was_grounded = grounded;
+}
+
+PlayerAnimState Player::dodgeStateFor(Vector3 worldDirection) const {
+  // Nothing held: a standing dodge is a backstep. It is the reading that costs
+  // the player nothing when they meant no direction at all, and the one that
+  // opens the most distance from whatever they are backing away from.
+  if (worldDirection.x == 0.0f && worldDirection.z == 0.0f)
+    return PlayerAnimState::DodgeBack;
+
+  // Into the character's own frame, which is the frame the clips were authored
+  // in: +Z is forward and +X is the character's left. That is the same mapping
+  // RootMotion::toWorld uses to send their travel back out, so the clip that
+  // plays and the direction the player actually moves cannot disagree.
+  const float yaw = rotation.y * DEG2RAD;
+  const float sinYaw = std::sin(yaw);
+  const float cosYaw = std::cos(yaw);
+  const float forward = worldDirection.x * sinYaw + worldDirection.z * cosYaw;
+  const float left = worldDirection.x * cosYaw - worldDirection.z * sinYaw;
+
+  // The dominant axis wins outright. Four authored clips are not a blend space,
+  // so a diagonal has to resolve to one of them; ties go to the forward/back
+  // pair, which are the two the player is most likely to have meant when
+  // holding a diagonal against a camera that is itself turning.
+  if (std::fabs(forward) >= std::fabs(left))
+    return forward > 0.0f ? PlayerAnimState::DodgeForward
+                          : PlayerAnimState::DodgeBack;
+  return left > 0.0f ? PlayerAnimState::DodgeLeft : PlayerAnimState::DodgeRight;
 }
 
 bool Player::isGuarding() const {
@@ -430,17 +550,35 @@ void Player::handleCombatAndUtilityInputs(const UpdateContext &ctx) {
   if (input_manager.isActionReleased(GameAction::Parry)) {
     combat_component.stopGuard();
   }
-  const int dodge = clip_index[static_cast<int>(PlayerAnimState::Dodge)];
-  if (input_manager.isActionPressed(GameAction::Dodge) && ctx.assets &&
-      dodge >= 0) {
-    // The clip's own length is the dodge's length — no separate constant to
-    // fall out of sync when the animation is replaced.
-    const RootMotion::Track &track =
-        ctx.assets->getRootMotion(AssetID::PLAYER_WOLF, dodge);
-    combat_component.startDodge(track.duration);
+  if (input_manager.isActionPressed(GameAction::Dodge) && ctx.assets) {
+    // Read at the moment of the press, not per frame: the direction the player
+    // was holding when they hit the button is the dodge they asked for, and
+    // the clip has to be picked before it can say how long the dodge lasts.
+    const PlayerAnimState dodge = dodgeStateFor(
+        calculateCameraRelativeDirection(ctx.camForward, ctx.camRight));
+    const int clip = clip_index[static_cast<int>(dodge)];
+
+    if (clip >= 0) {
+      // The clip's own length is the dodge's length — no separate constant to
+      // fall out of sync when the animation is replaced. Divided by the
+      // playback rate the table gives it, because a time-scaled clip finishes
+      // proportionally sooner and the commitment has to end with it.
+      const RootMotion::Track &track =
+          ctx.assets->getRootMotion(AssetID::PLAYER_WOLF, clip);
+      const float rate = animDesc(dodge).rate;
+
+      // Latched only if the state machine accepted it. Otherwise a dodge
+      // refused mid-attack would still leave its direction behind, and the
+      // next accepted dodge would roll the wrong way.
+      if (combat_component.startDodge(track.duration / rate))
+        dodge_state = dodge;
+    }
   }
+  // Landing blocks the next jump as well as the run. Leaving it out would make
+  // the lock trivially skippable by re-jumping on the frame of touchdown, which
+  // is exactly the input a player hammering the button produces.
   if (input_manager.isActionPressed(GameAction::Jump) && isGrounded() &&
-      combat_component.canMove()) {
+      combat_component.canMove() && !isLandLocked()) {
     // Vertical only. The bake deliberately leaves vertical motion off the root
     // bone (tools/bake_root_motion.py), so the arc comes from gravity here
     // rather than from the clip — which is also what lets the same jump clear

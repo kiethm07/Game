@@ -63,6 +63,18 @@ CLIP_NAMES = {
     "Armature.047": "Block_2",          "Armature.048": "Crouching_3",
     "Armature.049": "Crouch",           "Armature.050": "Block",
     "Armature.051": "Run_2",
+    # Added later, and not part of the sword-and-shield pack. Directions were
+    # read off each clip's net hip travel in the character's own frame, with
+    # forward calibrated from Run and left taken as up x forward (the bind-pose
+    # legs and hands agree: the character's left is +X).
+    "Armature.052": "Dodge_Left",       "Armature.053": "Dodge_Forward",
+    "Armature.054": "Dodge_Back",       "Armature.055": "Dodge_Right",
+    # These two were the wrong way round until the runtime played them: .056
+    # starts with the toes a full unit off the floor and plants them at 0.33s,
+    # which is a landing, while .057 holds the toes 0.35 clear of the floor for
+    # every one of its frames, which is a fall. Told apart by foot height rather
+    # than by clip length -- the two are within half a second of each other.
+    "Armature.056": "Land",             "Armature.057": "Fall",
 }
 
 
