@@ -136,6 +136,9 @@ CharacterRenderData Swordman::getRenderData() const {
   AnimationState anim_state;
   anim_state.animIndex = animation.index();
   anim_state.animTime = animation.time();
+  anim_state.blendFromIndex = animation.fadeFromIndex();
+  anim_state.blendFromTime = animation.fadeFromTime();
+  anim_state.blend = animation.blend();
 
   return {AssetID::ENEMY_ASHIGARU, transform, anim_state};
 }

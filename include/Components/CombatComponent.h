@@ -39,6 +39,15 @@ public:
     /// the state machine is timing against.
     const AttackData* getActiveAttack() const;
 
+    /// Counter bumped every time a deliberate action begins — a swing, a guard
+    /// raise, a dodge. Several states share one clip (all three attack phases;
+    /// the parry window and the block hold), so "acted again" is invisible to a
+    /// state comparison: a combo step that reuses the previous step's animation
+    /// leaves the state unchanged, as does re-raising a guard that is already
+    /// up. This is what lets the owner tell those apart from "still in the same
+    /// action" and rewind the clip only for the former.
+    unsigned getActionId() const;
+
     private:
     //Core
     CombatState current_state = CombatState::Idle;
@@ -54,6 +63,7 @@ public:
     const Combo* active_combo_ptr = nullptr;
     int combo_index = 0;
     bool is_auto_combo = false;
+    unsigned action_id = 0;
     void startAttackPhase();
     void resetToIdle();
 };
