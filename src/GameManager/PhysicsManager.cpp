@@ -149,6 +149,19 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
     const float SNAP_BAND     = 0.35f;
     const float COS_MAX_SLOPE = std::cos(45.0f * DEG2RAD);
 
+    // How far past a surface's edge ground support still reaches, as a fraction
+    // of the collider radius, so a character whose centre has just cleared a
+    // ledge does not drop the instant it does.
+    //
+    // Must stay strictly BELOW 1.0. resolveCylinderAABB parks a blocked
+    // character at exactly `radius` from a wall's footprint, so probing at the
+    // full radius leaves anyone pressed against a wall permanently on the
+    // boundary of that same wall's "am I standing on this" test — the obstacle
+    // ejects them and offers itself as floor in the same frame. Against a ramp
+    // that reads as an invisible slope running alongside the real one, climbing
+    // as they walk, which is what this constant exists to prevent.
+    const float GROUND_PROBE_REACH = 0.5f;
+
     std::vector<Vector3> new_positions(characters.size());
 
     for (size_t i = 0; i < characters.size(); ++i) {
@@ -211,13 +224,10 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
                         continue;
                     }
 
-                    Vector3 local_clamped;
-                    local_clamped.x = std::clamp(local_pos.x, local_box.min.x, local_box.max.x);
-                    local_clamped.y = local_pos.y;
-                    local_clamped.z = std::clamp(local_pos.z, local_box.min.z, local_box.max.z);
-
-                    Vector3 world_clamped = Vector3Transform(local_clamped, obs.getLocalToWorld());
-                    float slope_y = obs.getHeightAt(world_clamped);
+                    // getHeightAt clamps into the footprint itself, so this is
+                    // already the slope height at the point of the ramp nearest
+                    // the character rather than an extrapolation past its side.
+                    float slope_y = obs.getHeightAt(pos);
 
                     if (slope_y <= pos.y + MAX_STEP) {
                         // Character can step up / is on top of slope. Skip XZ push.
@@ -261,6 +271,21 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
                     hit_normal = Vector3Scale(local_diff, 1.0f / len);
                 }
 
+                // Does the character's cylinder actually stand over this box?
+                //
+                // The branches below that move the character VERTICALLY need to
+                // know, and hit_normal cannot tell them: it only weighs the
+                // vertical offset against the horizontal one, so a slab several
+                // metres away in XZ still classifies as a ceiling as long as it
+                // is far enough overhead. Left unchecked, the underside of every
+                // platform extends across the whole level as an invisible lid,
+                // and every low ledge reaches out to drag distant characters on
+                // top of it. The XZ push below does its own radius test and does
+                // not need this.
+                const float gap_x = local_center.x - local_closest.x;
+                const float gap_z = local_center.z - local_closest.z;
+                const bool overlaps_xz = (gap_x * gap_x + gap_z * gap_z) < radius * radius;
+
                 if (hit_normal.y > 0.1f) {
                     if (local_box.max.y - local_pos.y > MAX_STEP) {
                         CollisionMath::resolveCylinderAABB(local_pos, radius, local_box);
@@ -268,15 +293,22 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
                     } else {
                         bool feet_below_top    = local_pos.y  < local_box.max.y;
                         bool head_above_bottom = local_pos.y + height > local_box.min.y;
-                        bool approaching_from_below = local_pos.y < local_box.min.y; 
-                        if (feet_below_top && head_above_bottom && approaching_from_below) {
+                        bool approaching_from_below = local_pos.y < local_box.min.y;
+                        if (overlaps_xz && feet_below_top && head_above_bottom && approaching_from_below) {
                             local_pos.y = local_box.max.y;
                             pos = Vector3Transform(local_pos, obs.getLocalToWorld());
                         }
                     }
                 } else if (hit_normal.y < -0.2f) {
-                    if (local_pos.y + height > local_box.min.y && local_pos.y < local_box.min.y) {
-                        local_pos.y = std::min(local_pos.y, local_box.min.y - height);
+                    if (overlaps_xz && local_pos.y + height > local_box.min.y && local_pos.y < local_box.min.y) {
+                        // Assigned, not min-ed. The guard above has already
+                        // established that the head is inside the slab, so this
+                        // IS the resolved position; taking the lower of the two
+                        // instead yanked a character who was rising into the
+                        // ceiling down to it from wherever they had reached —
+                        // over a unit in one frame from a running jump — rather
+                        // than simply stopping the arc where it was blocked.
+                        local_pos.y = local_box.min.y - height;
                         pos = Vector3Transform(local_pos, obs.getLocalToWorld());
                         if (v_y > 0.0f) {
                             v_y = 0.0f;
@@ -308,7 +340,7 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
         Vector3 surface_normal = { 0.0f, 1.0f, 0.0f };
 
         for (const PhysicsObstacle& obs : obstacles) {
-            if (!obs.containsXZ(pos, radius)) {
+            if (!obs.containsXZ(pos, radius * GROUND_PROBE_REACH)) {
                 continue;
             }
 
