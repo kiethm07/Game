@@ -231,7 +231,8 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
                     }
 
                     // 1. Ceiling collision (Headbumping on ramp bottom)
-                    if (v_y > 0.0f && local_pos.y < local_box.min.y && local_pos.y + height > local_box.min.y) {
+                    // BUG FIX: Must check containsXZ so we don't bump our head on another ramp's infinite horizontal plane!
+                    if (obs.containsXZ(pos, radius + 0.05f) && v_y > 0.0f && local_pos.y < local_box.min.y && local_pos.y + height > local_box.min.y) {
                         bool was_below = (local_pos.y + height - step_v) <= local_box.min.y;
                         if (was_below) {
                             local_pos.y = local_box.min.y - height - 0.01f;
@@ -250,12 +251,7 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
                             continue; // Completely above the ramp! Skip XZ wall collision.
                         }
 
-                        // Tolerance must be large enough to handle high-speed forward jumps on steep slopes
-                        // where single-frame penetration exceeds MAX_STEP.
-                        float tolerance = (v_y > 0.0f) ? 1.0f : MAX_STEP;
-                        
-                        if (pos.y >= slope_y - tolerance) {
-                            pos.y = slope_y; // Keep character physically on the upper face
+                        if (pos.y >= slope_y - MAX_STEP) {
                             continue; // Cleared the solid wall part of the ramp! Skip XZ wall collision.
                         }
                     }
