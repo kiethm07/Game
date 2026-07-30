@@ -270,7 +270,7 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
                 // If our feet are just slightly below the top (within MAX_STEP),
                 // we treat this as a floor. We SKIP XZ collision to let Step 4 (Gravity/Snapping) handle it!
                 float depth_floor = local_box.max.y - local_pos.y;
-                if (depth_floor > 0.0f && depth_floor <= MAX_STEP) {
+                if (depth_floor > 0.0f && depth_floor <= MAX_STEP && v_y <= 0.0f) {
                     continue; // Skip Step 3! Let Step 4 perfectly snap us down/up to the floor!
                 }
 
