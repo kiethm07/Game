@@ -112,7 +112,13 @@ void PhysicsManager::resolveEnvironmentCollisions(
                 hit_normal = Vector3Scale(diff, 1.0f / len);
             }
 
+            bool center_inside_xz = (char_pos.x >= obox.min.x && char_pos.x <= obox.max.x &&
+                                     char_pos.z >= obox.min.z && char_pos.z <= obox.max.z);
+
             SurfaceType surface_type = classifySurfaceNormal(hit_normal);
+            if (!center_inside_xz && surface_type == SurfaceType::CEILING_SURF) {
+                surface_type = SurfaceType::WALL_SURF;
+            }
 
             if (surface_type == SurfaceType::CEILING_SURF) {
                 if (char_pos.y + height > obox.min.y && char_pos.y < obox.min.y) {
@@ -252,72 +258,58 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
                     continue;
                 }
 
-                // ---- BOX_SHAPE: normal-based dispatch in local space ----
-                Vector3 local_center;
-                local_center.x = local_pos.x;
-                local_center.y = local_pos.y + height * 0.5f;
-                local_center.z = local_pos.z;
+                // ---- BOX_SHAPE: geometry-based dispatch in local space ----
+                const float local_head_y = local_pos.y + height;
 
-                Vector3 local_closest;
-                local_closest.x = std::clamp(local_center.x, local_box.min.x, local_box.max.x);
-                local_closest.y = std::clamp(local_center.y, local_box.min.y, local_box.max.y);
-                local_closest.z = std::clamp(local_center.z, local_box.min.z, local_box.max.z);
-
-                Vector3 local_diff = Vector3Subtract(local_center, local_closest);
-                float   len  = Vector3Length(local_diff);
-
-                Vector3 hit_normal = { 0.0f, 1.0f, 0.0f };
-                if (len > 0.0001f) {
-                    hit_normal = Vector3Scale(local_diff, 1.0f / len);
+                // 1. Check vertical overlap between character cylinder and box
+                if (local_pos.y >= local_box.max.y || local_head_y <= local_box.min.y) {
+                    continue;
                 }
 
-                // Does the character's cylinder actually stand over this box?
-                //
-                // The branches below that move the character VERTICALLY need to
-                // know, and hit_normal cannot tell them: it only weighs the
-                // vertical offset against the horizontal one, so a slab several
-                // metres away in XZ still classifies as a ceiling as long as it
-                // is far enough overhead. Left unchecked, the underside of every
-                // platform extends across the whole level as an invisible lid,
-                // and every low ledge reaches out to drag distant characters on
-                // top of it. The XZ push below does its own radius test and does
-                // not need this.
-                const float gap_x = local_center.x - local_closest.x;
-                const float gap_z = local_center.z - local_closest.z;
-                const bool overlaps_xz = (gap_x * gap_x + gap_z * gap_z) < radius * radius;
+                // 2. Are we landing on this box?
+                // If our feet are just slightly below the top (within MAX_STEP),
+                // we treat this as a floor. We SKIP XZ collision to let Step 4 (Gravity/Snapping) handle it!
+                float depth_floor = local_box.max.y - local_pos.y;
+                if (depth_floor > 0.0f && depth_floor <= MAX_STEP) {
+                    continue; // Skip Step 3! Let Step 4 perfectly snap us down/up to the floor!
+                }
 
-                if (hit_normal.y > 0.1f) {
-                    if (local_box.max.y - local_pos.y > MAX_STEP) {
-                        CollisionMath::resolveCylinderAABB(local_pos, radius, local_box);
-                        pos = Vector3Transform(local_pos, obs.getLocalToWorld());
-                    } else {
-                        bool feet_below_top    = local_pos.y  < local_box.max.y;
-                        bool head_above_bottom = local_pos.y + height > local_box.min.y;
-                        bool approaching_from_below = local_pos.y < local_box.min.y;
-                        if (overlaps_xz && feet_below_top && head_above_bottom && approaching_from_below) {
-                            local_pos.y = local_box.max.y;
-                            pos = Vector3Transform(local_pos, obs.getLocalToWorld());
-                        }
-                    }
-                } else if (hit_normal.y < -0.2f) {
-                    if (overlaps_xz && local_pos.y + height > local_box.min.y && local_pos.y < local_box.min.y) {
-                        // Assigned, not min-ed. The guard above has already
-                        // established that the head is inside the slab, so this
-                        // IS the resolved position; taking the lower of the two
-                        // instead yanked a character who was rising into the
-                        // ceiling down to it from wherever they had reached —
-                        // over a unit in one frame from a running jump — rather
-                        // than simply stopping the arc where it was blocked.
-                        local_pos.y = local_box.min.y - height;
-                        pos = Vector3Transform(local_pos, obs.getLocalToWorld());
-                        if (v_y > 0.0f) {
-                            v_y = 0.0f;
-                            character->setVerticalVelocity(0.0f);
-                        }
-                    }
-                } else {
-                    CollisionMath::resolveCylinderAABB(local_pos, radius, local_box);
+                // Calculate XZ distance to see if we even intersect the footprint
+                float dx = 0.0f, dz = 0.0f;
+                if (local_pos.x < local_box.min.x) dx = local_box.min.x - local_pos.x;
+                else if (local_pos.x > local_box.max.x) dx = local_pos.x - local_box.max.x;
+
+                if (local_pos.z < local_box.min.z) dz = local_box.min.z - local_pos.z;
+                else if (local_pos.z > local_box.max.z) dz = local_pos.z - local_box.max.z;
+
+                float dist_xz = sqrtf(dx*dx + dz*dz);
+                
+                if (dist_xz >= radius) {
+                    continue; // Completely outside the cylinder's XZ radius
+                }
+
+                // 3. Ceiling collision (Headbumping):
+                // If moving upward and the physics cylinder penetrates the bottom face of the box, BUMP HEAD!
+                if (v_y > 0.0f && local_pos.y < local_box.min.y && local_head_y > local_box.min.y) {
+                    local_pos.y = local_box.min.y - height;
                     pos = Vector3Transform(local_pos, obs.getLocalToWorld());
+                    v_y = 0.0f;
+                    character->setVerticalVelocity(0.0f);
+                    continue;
+                }
+
+                // 4. Otherwise, it is a WALL. Push out purely in XZ!
+                // Capsule Bottom prevents sudden shoves off cliffs when falling
+                float effective_radius = radius;
+                if (v_y < 0.0f && depth_floor > 0.0f && depth_floor < radius) {
+                    effective_radius = sqrtf(2.0f * radius * depth_floor - depth_floor * depth_floor);
+                }
+
+                if (dist_xz < effective_radius) {
+                    bool resolved = CollisionMath::resolveCylinderAABB(local_pos, effective_radius, local_box);
+                    if (resolved) {
+                        pos = Vector3Transform(local_pos, obs.getLocalToWorld());
+                    }
                 }
             }
         } // end solver iterations
@@ -402,7 +394,7 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
         // --- Downhill snap: hold character to slope while descending ---
         // Fires only when a real surface is sampled (found_surface == true),
         // preventing ground_y=-inf or a stale 0.0 from dragging the character down.
-        if (is_walkable && v_y <= 0.0f &&
+        if (is_walkable && v_y <= 0.0f && character->isGrounded() &&
             pos.y >= ground_y && (pos.y - ground_y) <= SNAP_BAND)
         {
             pos.y = ground_y;
@@ -423,6 +415,12 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
         // ground and zero the velocity — cancelling every jump on its first
         // frame.
         if (v_y > 0.0f) {
+            can_snap = false;
+        }
+
+        // Prevent snapping DOWNWARD if we are in free-fall!
+        // This completely eliminates the bug where falling within 0.3 units of a platform instantly teleports you down to it.
+        if (step_diff < 0.0f && !character->isGrounded()) {
             can_snap = false;
         }
 
