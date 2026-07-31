@@ -3,7 +3,9 @@
 #include <limits>
 
 // ---------------------------------------------------------------------------
-// Character-vs-Character push-out (XZ plane only)
+// Character-vs-Character push-out. Pairs must overlap vertically (cylinder
+// spans, feet to head) before any XZ separation is applied, so characters on
+// different floors ignore each other.
 // ---------------------------------------------------------------------------
 void PhysicsManager::resolveCharacterCollisions(const std::vector<Character*>& characters, std::vector<Vector3>& positions) {
     size_t count = characters.size();
@@ -25,8 +27,11 @@ void PhysicsManager::resolveCharacterCollisions(const std::vector<Character*>& c
             Vector3 pos_b    = positions[j];
             float   radius_a = char_a->getColliderRadius();
             float   radius_b = char_b->getColliderRadius();
+            float   height_a = char_a->getColliderHeight();
+            float   height_b = char_b->getColliderHeight();
 
-            bool resolved = CollisionMath::resolveCylinderCylinder(pos_a, radius_a, pos_b, radius_b);
+            bool resolved = CollisionMath::resolveCylinderCylinder(pos_a, radius_a, height_a,
+                                                                   pos_b, radius_b, height_b);
             if (resolved) {
                 positions[i] = pos_a;
                 positions[j] = pos_b;
