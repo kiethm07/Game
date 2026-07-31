@@ -4,7 +4,16 @@
 #include <raymath.h>
 #include <rlgl.h>
 
-Swordman::Swordman(Vector3 start_position) : Enemy(start_position) {
+namespace {
+/// Walk.glb carries a single clip, whose name is the armature's rather than
+/// anything descriptive.
+const AnimStateMachine<SwordmanAnimState>::Desc kAnimTable[] = {
+    /* Idle */ {"Armature|mixamo.com|Layer0", true, 1.0f, false, 0.0f},
+};
+} // namespace
+
+Swordman::Swordman(Vector3 start_position)
+    : Enemy(start_position), anim(AssetID::ENEMY_ASHIGARU, kAnimTable) {
   stats = Stats(1000.0f, 100.0f, 15.0f);
   combo = {AttackID::PlayerLight1};
   stealth_component.addSensor(std::make_shared<RadiusSensor>(5.0f));
@@ -24,22 +33,16 @@ void Swordman::update(const UpdateContext &ctx) {
 
   ai_component.update();
 
-  // Walk.glb carries a single clip; resolve it by name rather than assuming an
-  // index. Advancing playback here is what the previous code omitted, which
-  // left enemies rendering frozen on frame 0.
-  if (ctx.assets && !clips.resolved) {
-    clips.resolved = true;
-    clips.idle = ctx.assets->findAnimation(AssetID::ENEMY_ASHIGARU,
-                                           "Armature|mixamo.com|Layer0");
-    if (clips.idle < 0) clips.idle = 0;
-  }
+  // Resolved by name rather than by assuming an index. The model carries
+  // exactly one clip, so a name the export toolchain has renamed still leaves
+  // index 0 as the only possibility worth falling back to.
+  if (ctx.assets && anim.resolveClips(*ctx.assets) &&
+      anim.clipFor(SwordmanAnimState::Idle) < 0)
+    anim.setClip(SwordmanAnimState::Idle, 0);
 
-  animation.play(clips.idle, true);
-  const RootMotion::Track &track =
-      ctx.assets ? ctx.assets->getRootMotion(AssetID::ENEMY_ASHIGARU,
-                                             animation.index())
-                 : RootMotion::Track{};
-  animation.advance(dt, track.duration);
+  // Advancing playback here is what the original code omitted, which left
+  // enemies rendering frozen on frame 0.
+  anim.apply(ctx.assets, dt, anim.select(SwordmanAnimState::Idle));
 }
 
 void Swordman::setupBehaviorTree() {
@@ -133,12 +136,5 @@ CharacterRenderData Swordman::getRenderData() const {
   transform.rotation = rotation;
   transform.scale = visual_size;
 
-  AnimationState anim_state;
-  anim_state.animIndex = animation.index();
-  anim_state.animTime = animation.time();
-  anim_state.blendFromIndex = animation.fadeFromIndex();
-  anim_state.blendFromTime = animation.fadeFromTime();
-  anim_state.blend = animation.blend();
-
-  return {AssetID::ENEMY_ASHIGARU, transform, anim_state};
+  return {AssetID::ENEMY_ASHIGARU, transform, anim.renderState()};
 }

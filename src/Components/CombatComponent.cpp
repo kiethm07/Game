@@ -147,6 +147,8 @@ bool CombatComponent::startDodge(float duration) {
     return true;
 }
 
+void CombatComponent::interrupt() { resetToIdle(); }
+
 bool CombatComponent::canMove() const {
     return current_state == CombatState::Idle
         || current_state == CombatState::Blocking;
@@ -181,6 +183,11 @@ bool CombatComponent::canGuard() const {
         || current_state == CombatState::Parrying
         || current_state == CombatState::Blocking
         || current_state == CombatState::AttackStartup;
+}
+
+bool CombatComponent::isGuarding() const {
+    return current_state == CombatState::Parrying
+        || current_state == CombatState::Blocking;
 }
 
 bool CombatComponent::isHitboxActive() const {
