@@ -2,7 +2,6 @@
 
 #include <Components/StealthComponent.h>
 #include <Components/AIComponent.h>
-#include <Components/AnimationComponent.h>
 #include <Components/CombatComponent.h>
 #include <Core/InputManager.h>
 #include <Entities/Character.h>
@@ -30,17 +29,7 @@ protected:
   CombatComponent combat_component;
   AIComponent ai_component;
   StealthComponent stealth_component;
-  AnimationComponent animation;
   int moveState = 0;
-
-  /// Clip indices, resolved by name on the first update (see
-  /// AssetManager::findAnimation). -1 until then, and for clips the loaded
-  /// asset does not contain.
-  struct Clips {
-    int idle = -1;
-    bool resolved = false;
-  };
-  Clips clips;
 
   float body_height = 2.0f;
   float body_radius = 0.5f;

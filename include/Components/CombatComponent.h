@@ -29,9 +29,22 @@ public:
     /// not a hand-typed constant that drifts out of sync with it.
     bool startDodge(float duration);
 
+    /// Abandons whatever action is running and returns to Idle. For events
+    /// outside the combat machine's own timeline that make the current action
+    /// moot — a landing stagger arriving mid-swing, whose hitbox must not stay
+    /// live through a recovery the player no longer controls.
+    void interrupt();
+
     bool canMove() const;
     bool canDodge() const;
+    bool canGuard() const;
     bool isHitboxActive() const;
+
+    /// True for both halves of a guard — the parry window and the block hold
+    /// that follows it. They share one animation and one set of movement rules,
+    /// so callers asking "is the guard up" want both.
+    bool isGuarding() const;
+
     CombatState getCurrentState() const;
 
     /// The attack currently being performed, or nullptr outside attack states.
@@ -55,7 +68,6 @@ public:
     
     //Guard
     bool is_guard_held = false;
-    bool canGuard() const;
     const float DEFAULT_PARRY_WINDOW = 0.20f;
     //const float PARRY_PENALTY_WINDOW = 0.10f;
 
