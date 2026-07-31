@@ -24,11 +24,27 @@ void SkinnedEntityRenderer::draw(AssetManager &assets,
         // C++ '%' keeps the sign — indexing on that raw would read out of
         // bounds. Wrap the same way AssetManager::getRootMotion does so the
         // pose and its root-motion track stay describing the same clip.
-        int wrapped = animIndex % animCount;
-        if (wrapped < 0) wrapped += animCount;
+        auto wrap = [animCount](int index) {
+            int wrapped = index % animCount;
+            if (wrapped < 0) wrapped += animCount;
+            return wrapped;
+        };
 
-        const ModelAnimation &anim = anims[wrapped];
-        UpdateModelAnimation(model, anim, frame);
+        const int   fromIndex = renderData.animation.blendFromIndex;
+        const float fromFrame =
+            renderData.animation.blendFromTime * AnimUtils::ANIM_SAMPLE_RATE;
+        const float blend = renderData.animation.blend;
+        const bool  blending = (fromIndex >= 0) && (blend < 1.0f);
+
+        if (blending) {
+            // raylib 6.0 does the per-bone work: lerp on translation/scale,
+            // slerp on rotation, across the two clips. blend == 0 is entirely
+            // the outgoing clip, 1 entirely the incoming one.
+            UpdateModelAnimationEx(model, anims[wrap(fromIndex)], fromFrame,
+                                   anims[wrap(animIndex)], frame, blend);
+        } else {
+            UpdateModelAnimation(model, anims[wrap(animIndex)], frame);
+        }
 
         // 3. Neutralize root motion in the pose.
         //
@@ -40,17 +56,32 @@ void SkinnedEntityRenderer::draw(AssetManager &assets,
         //    This only pins the mesh to the capsule. The travel itself is
         //    consumed by gameplay (Player::applyRootMotion), which is what
         //    keeps the two in agreement.
-        const RootMotion::Track &track =
-            assets.getRootMotion(renderData.assetId, animIndex);
-        if (track.hasMotion) {
-            Vector3 offset = RootMotion::sampleOffset(track, frame);
-            // Scale componentwise: DrawModelEx below applies the full scale
-            // vector, so using scale.x alone mis-cancels a non-uniform scale
-            // (reachable via Enemy::visual_size).
-            offset = Vector3Multiply(offset, renderData.transform.scale);
-            offset = RootMotion::toWorld(offset, renderData.transform.rotation.y);
-            drawPosition = Vector3Subtract(drawPosition, offset);
+        auto rootOffset = [&assets, &renderData](int index, float atFrame) {
+            const RootMotion::Track &track =
+                assets.getRootMotion(renderData.assetId, index);
+            // Zero for in-place clips, so a fade between an in-place clip and a
+            // travelling one eases the cancellation in exactly as the pose
+            // eases in.
+            if (!track.hasMotion) return Vector3{0.0f, 0.0f, 0.0f};
+            return RootMotion::sampleOffset(track, atFrame);
+        };
+
+        Vector3 offset = rootOffset(animIndex, frame);
+        if (blending) {
+            // The blended pose carries a blended root translation — the root
+            // bone is interpolated like every other one. Cancelling only the
+            // incoming clip's offset would slide the mesh off the capsule for
+            // the length of every fade touching a root-motion clip, so the
+            // cancellation has to be interpolated with the same weight.
+            offset = Vector3Lerp(rootOffset(fromIndex, fromFrame), offset, blend);
         }
+
+        // Scale componentwise: DrawModelEx below applies the full scale
+        // vector, so using scale.x alone mis-cancels a non-uniform scale
+        // (reachable via Enemy::visual_size).
+        offset = Vector3Multiply(offset, renderData.transform.scale);
+        offset = RootMotion::toWorld(offset, renderData.transform.rotation.y);
+        drawPosition = Vector3Subtract(drawPosition, offset);
     }
 
     // 4. Draw.

@@ -29,15 +29,37 @@ public:
     /// not a hand-typed constant that drifts out of sync with it.
     bool startDodge(float duration);
 
+    /// Abandons whatever action is running and returns to Idle. For events
+    /// outside the combat machine's own timeline that make the current action
+    /// moot — a landing stagger arriving mid-swing, whose hitbox must not stay
+    /// live through a recovery the player no longer controls.
+    void interrupt();
+
     bool canMove() const;
     bool canDodge() const;
+    bool canGuard() const;
     bool isHitboxActive() const;
+
+    /// True for both halves of a guard — the parry window and the block hold
+    /// that follows it. They share one animation and one set of movement rules,
+    /// so callers asking "is the guard up" want both.
+    bool isGuarding() const;
+
     CombatState getCurrentState() const;
 
     /// The attack currently being performed, or nullptr outside attack states.
     /// Lets the owner drive animation and root motion from the same frame data
     /// the state machine is timing against.
     const AttackData* getActiveAttack() const;
+
+    /// Counter bumped every time a deliberate action begins — a swing, a guard
+    /// raise, a dodge. Several states share one clip (all three attack phases;
+    /// the parry window and the block hold), so "acted again" is invisible to a
+    /// state comparison: a combo step that reuses the previous step's animation
+    /// leaves the state unchanged, as does re-raising a guard that is already
+    /// up. This is what lets the owner tell those apart from "still in the same
+    /// action" and rewind the clip only for the former.
+    unsigned getActionId() const;
 
     private:
     //Core
@@ -46,7 +68,6 @@ public:
     
     //Guard
     bool is_guard_held = false;
-    bool canGuard() const;
     const float DEFAULT_PARRY_WINDOW = 0.20f;
     //const float PARRY_PENALTY_WINDOW = 0.10f;
 
@@ -54,6 +75,7 @@ public:
     const Combo* active_combo_ptr = nullptr;
     int combo_index = 0;
     bool is_auto_combo = false;
+    unsigned action_id = 0;
     void startAttackPhase();
     void resetToIdle();
 };

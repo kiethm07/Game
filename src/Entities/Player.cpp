@@ -5,6 +5,7 @@
 
 Player::Player(const InputManager &input_manager)
     : Character(Faction::Player), input_manager(input_manager) {
+  stats = Stats(1000.0f, 100.0f, 15.0f);
   combo = {AttackID::PlayerLight1, AttackID::PlayerLight2};
   position = {0, 0, 0};
   rotation = {0, 180.0f, 0};
@@ -13,72 +14,81 @@ Player::Player(const InputManager &input_manager)
 void Player::update(const UpdateContext &ctx) {
   const float dt = ctx.dt;
 
-  if (ctx.assets)
-    resolveClips(*ctx.assets);
+  if (ctx.assets && animator.resolveClips(*ctx.assets))
+    movement_component.setSpeed(animator.locomotionSpeed());
 
   combat_component.update(dt);
   stats.update(dt);
 
-  handleCombatAndUtilityInputs(ctx);
+  // Before the inputs, which are what take the character off the ground: a jump
+  // pressed this frame must not be mistaken for a landing on it, and must not
+  // slip past a gate evaluated before the stagger it would be escaping.
+  //
+  // A stagger cancels whatever was running. An attack whose root motion carried
+  // the player off a ledge would otherwise keep a live hitbox through a landing
+  // they no longer control.
+  if (locomotion.update(dt, isGrounded(), getVerticalVelocity(),
+                        animator.landPlayDuration(ctx.assets)))
+    combat_component.interrupt();
 
-  Vector3 moveDirection =
-      calculateCameraRelativeDirection(ctx.camForward, ctx.camRight);
+  animator.updateFlinch(dt, ctx.assets);
 
-  // Two movement regimes. Free locomotion is code-driven so it stays
-  // responsive and steerable; committed states (attacks, dodges) hand control
-  // to the clip, so their travel is exactly what the animator authored.
-  if (combat_component.canMove()) {
-    updateLocomotion(ctx, moveDirection);
-  } else {
-    updateCommittedState(ctx);
+  handleCombatAndUtilityInputs(ctx,
+                               locomotion.gate(combat_component, isGrounded()));
+
+  // Re-evaluated after the inputs rather than reusing the one above. An attack
+  // started this frame has to stop movement on this frame; a gate read before
+  // the input that began it would let one frame of free steering through.
+  const ActionGate move_gate = locomotion.gate(combat_component, isGrounded());
+
+  // Two movement regimes. Free locomotion is code-driven so it stays responsive
+  // and steerable; committed states (attacks, dodges, a landing stagger) hand
+  // control to the clip, so their travel is exactly what the animator authored.
+  // Only the free regime produces velocity here — the committed one gets its
+  // velocity below, from the root motion of whichever clip is chosen, or none
+  // at all for a clip that does not travel.
+  if (move_gate.canMove)
+    updateLocomotionVelocity(
+        ctx, calculateCameraRelativeDirection(ctx.camForward, ctx.camRight),
+        move_gate.moveSpeedScale);
+
+  const Vector3 velocity = getHorizontalVelocity();
+
+  PlayerAnimator::Frame frame;
+  frame.combat = &combat_component;
+  frame.assets = ctx.assets;
+  frame.grounded = isGrounded();
+  frame.verticalVelocity = getVerticalVelocity();
+  frame.moving = (velocity.x != 0.0f || velocity.z != 0.0f);
+  frame.staggered = locomotion.isStaggered();
+  frame.landingVisible = locomotion.isLandingVisible();
+  frame.landId = locomotion.landId();
+  frame.stance = locomotion.getStance();
+
+  const PlayerAnimator::Result anim = animator.update(frame, dt);
+
+  if (!move_gate.canMove) {
+    if (anim.rootDriven && anim.track->hasMotion) {
+      applyRootMotion(*anim.track, dt);
+    } else {
+      // No authored travel for this state: pin in place. Physics still applies
+      // gravity and collisions this frame.
+      setHorizontalVelocity({0.0f, 0.0f, 0.0f});
+    }
   }
-
-  prev_combat_state = combat_component.getCurrentState();
 }
 
-void Player::resolveClips(const AssetManager &assets) {
-  if (clips.resolved)
-    return;
-  clips.resolved = true;
-
-  clips.idle = assets.findAnimation(AssetID::PLAYER_WOLF, "Idle");
-  clips.run = assets.findAnimation(AssetID::PLAYER_WOLF, "Run");
-  // Stand-in: the sword-and-shield pack has no dodge or roll. Strafe travels
-  // 1.30 units over 1.17s — near-identical to the Sneak clip this replaced —
-  // so it still exercises the root-motion path end to end. Swap the name once a
-  // real dodge clip is baked.
-  clips.dodge = assets.findAnimation(AssetID::PLAYER_WOLF, "Strafe");
-  // Jump_2, not Jump: Jump travels 2.45 units, which would fight the physics
-  // arc that JUMP_SPEED and gravity already drive. Jump_2 is in place, leaving
-  // the whole trajectory to the controller.
-  clips.jump = assets.findAnimation(AssetID::PLAYER_WOLF, "Jump_2");
-
-  // Fallback only. Attacks normally name their own clip in AttackRegistry, so
-  // each combo step can differ; this is what plays when one doesn't, or when
-  // the clip it names is missing from the loaded asset.
-  clips.attack = assets.findAnimation(AssetID::PLAYER_WOLF, "Slash");
-
-  // Locomotion runs at the run clip's authored speed, scaled for game feel.
-  // Playing the clip back at the same ratio keeps the stride matched to the
-  // ground travel, so the tuning knob can never reintroduce foot sliding.
-  const RootMotion::Track &runTrack =
-      assets.getRootMotion(AssetID::PLAYER_WOLF, clips.run);
-  if (runTrack.hasMotion) {
-    movement_component.setSpeed(runTrack.authoredSpeed * RUN_SPEED_SCALE);
-    animation.setPlaybackRate(RUN_SPEED_SCALE);
-    TraceLog(LOG_INFO,
-             "Player: run clip authored at %.2f u/s, moving at %.2f u/s "
-             "(playback %.2fx)",
-             runTrack.authoredSpeed, runTrack.authoredSpeed * RUN_SPEED_SCALE,
-             RUN_SPEED_SCALE);
-  }
-}
-
-void Player::updateLocomotion(const UpdateContext &ctx, Vector3 moveDirection) {
+void Player::updateLocomotionVelocity(const UpdateContext &ctx,
+                                      Vector3 moveDirection,
+                                      float speedScale) {
   const float dt = ctx.dt;
 
   // Produce desired velocity + ease facing; PhysicsManager integrates position.
+  // The gate's scale is applied to the resolved velocity rather than to the
+  // component's speed, which is bound to the run clip's authored speed and set
+  // once at clip resolution — writing it per frame would fight that.
   Vector3 velocity = movement_component.resolve(moveDirection, rotation.y, dt);
+  velocity = Vector3Scale(velocity, speedScale);
 
   const bool airborne = !isGrounded();
   if (airborne) {
@@ -105,85 +115,6 @@ void Player::updateLocomotion(const UpdateContext &ctx, Vector3 moveDirection) {
   }
 
   setHorizontalVelocity(velocity);
-
-  const bool isMoving = (velocity.x != 0.0f || velocity.z != 0.0f);
-  if (airborne) {
-    // Non-looping: the clip holds on its last frame until touchdown, so a jump
-    // that outlasts the animation settles into the landing pose rather than
-    // restarting the launch.
-    animation.play(clips.jump, false);
-  } else {
-    animation.play(isMoving ? clips.run : clips.idle, true);
-  }
-
-  // Only the run clip is time-scaled. The idle clip is in-place, so scaling it
-  // would just make the character fidget faster, and the jump's timing is tied
-  // to the physics arc rather than to ground speed.
-  animation.setPlaybackRate((!airborne && isMoving) ? RUN_SPEED_SCALE : 1.0f);
-
-  const RootMotion::Track &track =
-      ctx.assets
-          ? ctx.assets->getRootMotion(AssetID::PLAYER_WOLF, animation.index())
-          : RootMotion::Track{};
-  animation.advance(dt, track.duration);
-}
-
-void Player::updateCommittedState(const UpdateContext &ctx) {
-  const float dt = ctx.dt;
-
-  // Committed states never steer, so playback is always at natural rate.
-  animation.setPlaybackRate(1.0f);
-
-  int clipIndex = -1;
-  bool rootDriven = false;
-  bool restartClip = false;
-
-  if (combat_component.getCurrentState() == CombatState::Dodging) {
-    clipIndex = clips.dodge;
-    rootDriven = true;
-  } else if (const AttackData *attack = combat_component.getActiveAttack()) {
-    if (attack->getClipName() && ctx.assets) {
-      clipIndex = ctx.assets->findAnimation(AssetID::PLAYER_WOLF,
-                                            attack->getClipName());
-      rootDriven = attack->usesRootMotion();
-    }
-
-    // Fall back to the generic swing when the attack names no clip, or names
-    // one the loaded asset does not contain. Without this the animation stays
-    // on whatever locomotion clip was playing, so the attack reads as the
-    // character standing still for its whole duration.
-    if (clipIndex < 0) {
-      clipIndex = clips.attack;
-      rootDriven = false;
-    }
-
-    // Every combo step starts here. If it reuses the previous step's clip —
-    // which both fallbacks above always do — play() would see the index it is
-    // already on and leave the swing held at its end frame.
-    restartClip = (combat_component.getCurrentState() ==
-                   CombatState::AttackStartup) &&
-                  (prev_combat_state != CombatState::AttackStartup);
-  }
-
-  if (clipIndex >= 0) {
-    animation.play(clipIndex, false);
-    if (restartClip)
-      animation.restart();
-  }
-
-  const RootMotion::Track &track =
-      ctx.assets
-          ? ctx.assets->getRootMotion(AssetID::PLAYER_WOLF, animation.index())
-          : RootMotion::Track{};
-  animation.advance(dt, track.duration);
-
-  if (rootDriven && track.hasMotion) {
-    applyRootMotion(track, dt);
-  } else {
-    // No authored travel for this state: pin in place. Physics still applies
-    // gravity and collisions this frame.
-    setHorizontalVelocity({0.0f, 0.0f, 0.0f});
-  }
 }
 
 void Player::applyRootMotion(const RootMotion::Track &track, float dt) {
@@ -195,8 +126,7 @@ void Player::applyRootMotion(const RootMotion::Track &track, float dt) {
   // Expressed as a velocity rather than a position offset so it flows through
   // PhysicsManager's depenetration and ground snapping. Writing position
   // directly here would let a dodge pass through walls.
-  Vector3 local =
-      RootMotion::sampleDelta(track, animation.prevFrame(), animation.frame());
+  Vector3 local = animator.sampleRootDelta(track);
   Vector3 world = RootMotion::toWorld(local, rotation.y);
   Vector3 velocity = Vector3Scale(world, 1.0f / dt);
 
@@ -226,7 +156,8 @@ void Player::drawHPBar2D() const {
   int posture_y = y + (int)bar_height + 4;
   float post_fill = stats.getPosturePercentage();
   DrawRectangle(x, posture_y, (int)bar_width, (int)bar_height, DARKGRAY);
-  DrawRectangle(x, posture_y, (int)(bar_width * post_fill), (int)bar_height, ORANGE);
+  DrawRectangle(x, posture_y, (int)(bar_width * post_fill), (int)bar_height,
+                ORANGE);
   DrawRectangleLines(x, posture_y, (int)bar_width, (int)bar_height, WHITE);
 }
 
@@ -271,8 +202,10 @@ void Player::takeDamage(float health_damage, float posture_damage) {
     return;
   }
 
-  if (combat_component.getCurrentState() == CombatState::Blocking) {
-    // Blocking cuts HP damage in half, but takes full posture damage
+  const bool blocked =
+      (combat_component.getCurrentState() == CombatState::Blocking);
+  if (blocked) {
+    // Blocking absorbs the HP damage entirely, but takes full posture damage
     health_damage = 0.0f;
   }
 
@@ -280,6 +213,11 @@ void Player::takeDamage(float health_damage, float posture_damage) {
   bool hit_applied = stats.applyDamage(health_damage, posture_damage);
 
   if (hit_applied) {
+    // Queued, not played here: this runs from CombatManager's pass, and the
+    // reaction needs a frame's assets to find the clip's length. Gated on the
+    // hit having connected, so an i-framed hit does not flinch.
+    animator.queueReaction(blocked);
+
     if (stats.isPostureBroken()) {
       // Stance broken state!
     } else if (stats.isDead()) {
@@ -308,26 +246,41 @@ Vector3 Player::calculateCameraRelativeDirection(Vector3 camForward,
   return direction;
 }
 
-void Player::handleCombatAndUtilityInputs(const UpdateContext &ctx) {
-  if (input_manager.isActionPressed(GameAction::Attack)) {
+void Player::handleCombatAndUtilityInputs(const UpdateContext &ctx,
+                                          const ActionGate &gate) {
+  if (input_manager.isActionPressed(GameAction::Attack) && gate.canAttack) {
     combat_component.initiateCombo(combo);
   }
-  if (input_manager.isActionPressed(GameAction::Parry)) {
+  if (input_manager.isActionPressed(GameAction::Parry) && gate.canGuard) {
     combat_component.startGuard();
   }
   if (input_manager.isActionReleased(GameAction::Parry)) {
+    // Not gated: releasing a guard is letting go of a commitment, not starting
+    // one. A stagger that swallowed the release would leave the guard stuck up
+    // once it recovered.
     combat_component.stopGuard();
   }
-  if (input_manager.isActionPressed(GameAction::Dodge) && ctx.assets &&
-      clips.dodge >= 0) {
-    // The clip's own length is the dodge's length — no separate constant to
-    // fall out of sync when the animation is replaced.
-    const RootMotion::Track &track =
-        ctx.assets->getRootMotion(AssetID::PLAYER_WOLF, clips.dodge);
-    combat_component.startDodge(track.duration);
+  if (input_manager.isActionPressed(GameAction::Dodge) && gate.canDodge &&
+      ctx.assets) {
+    // Read at the moment of the press, not per frame: the direction the player
+    // was holding when they hit the button is the dodge they asked for, and
+    // the clip has to be picked before it can say how long the dodge lasts.
+    const PlayerAnimState dodge = animator.dodgeStateFor(
+        calculateCameraRelativeDirection(ctx.camForward, ctx.camRight),
+        rotation.y);
+    const float duration = animator.dodgeDuration(*ctx.assets, dodge);
+
+    // Latched only if the state machine accepted it. Otherwise a dodge refused
+    // mid-attack would still leave its direction behind, and the next accepted
+    // dodge would roll the wrong way.
+    if (combat_component.startDodge(duration))
+      animator.setDodge(dodge);
   }
-  if (input_manager.isActionPressed(GameAction::Jump) && isGrounded() &&
-      combat_component.canMove()) {
+  if (input_manager.isActionPressed(GameAction::Jump) && gate.canJump) {
+    // A jump taken from a crouch stands up first rather than launching
+    // crouched.
+    locomotion.standUp();
+
     // Vertical only. The bake deliberately leaves vertical motion off the root
     // bone (tools/bake_root_motion.py), so the arc comes from gravity here
     // rather than from the clip — which is also what lets the same jump clear
@@ -347,9 +300,5 @@ CharacterRenderData Player::getRenderData() const {
   transform.rotation = rotation;
   transform.scale = {1.0f, 1.0f, 1.0f};
 
-  AnimationState anim_state;
-  anim_state.animIndex = animation.index();
-  anim_state.animTime = animation.time();
-
-  return {AssetID::PLAYER_WOLF, transform, anim_state};
+  return {AssetID::PLAYER_WOLF, transform, animator.renderState()};
 }

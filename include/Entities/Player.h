@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Components/AnimationComponent.h>
 #include <Components/CombatComponent.h>
 #include <Components/MovementComponent.h>
 #include <Core/InputManager.h>
 #include <Entities/Character.h>
+#include <Entities/PlayerAnimator.h>
+#include <Entities/PlayerLocomotion.h>
 #include <Rendering/RootMotion.h>
 
 class Player : public Character {
@@ -51,38 +52,21 @@ private:
 
   CombatComponent combat_component;
   MovementComponent movement_component;
-  AnimationComponent animation;
   Combo combo;
 
-  /// Last frame's combat state, kept so an entry into AttackStartup can be
-  /// detected. Every combo step begins in that state, so the transition into it
-  /// is exactly "a new swing started" — which is when the attack clip must be
-  /// rewound even if the step reuses the previous step's clip.
-  CombatState prev_combat_state = CombatState::Idle;
+  /// Stance and landing recovery, and the one function that decides what the
+  /// player is allowed to do with them.
+  PlayerLocomotion locomotion;
 
-  /// How fast the player travels relative to the run clip's authored speed.
-  /// 1.0 plays the clip at its natural pace; higher time-scales the clip to
-  /// match so the feet keep up instead of sliding.
-  static constexpr float RUN_SPEED_SCALE = 1.6f;
+  /// Which clip plays, and the clock that drives it.
+  PlayerAnimator animator;
 
-  /// Clip indices, resolved by name on the first update. -1 until then, and
-  /// for clips the loaded asset does not contain.
-  struct Clips {
-    int idle = -1;
-    int run = -1;
-    int dodge = -1;
-    int jump = -1;
-    int attack = -1;
-    bool resolved = false;
-  };
-  Clips clips;
-
-  void resolveClips(const AssetManager &assets);
-  void updateLocomotion(const UpdateContext &ctx, Vector3 moveDirection);
-  void updateCommittedState(const UpdateContext &ctx);
+  void updateLocomotionVelocity(const UpdateContext &ctx, Vector3 moveDirection,
+                                float speedScale);
   void applyRootMotion(const RootMotion::Track &track, float dt);
 
   Vector3 calculateCameraRelativeDirection(Vector3 camForward,
                                            Vector3 camRight) const;
-  void handleCombatAndUtilityInputs(const UpdateContext &ctx);
+  void handleCombatAndUtilityInputs(const UpdateContext &ctx,
+                                    const ActionGate &gate);
 };

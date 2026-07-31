@@ -16,6 +16,7 @@ void CombatComponent::startAttackPhase() {
     
     current_state = CombatState::AttackStartup;
     state_timer = frame_data.getStartupDuration();
+    action_id++;
 }
 
 void CombatComponent::resetToIdle() {
@@ -121,6 +122,7 @@ void CombatComponent::startGuard() {
 
     current_state = CombatState::Parrying;
     state_timer = DEFAULT_PARRY_WINDOW;
+    action_id++;
 }
 
 void CombatComponent::stopGuard() {
@@ -141,8 +143,11 @@ bool CombatComponent::startDodge(float duration) {
     is_guard_held = false;
     current_state = CombatState::Dodging;
     state_timer = duration;
+    action_id++;
     return true;
 }
+
+void CombatComponent::interrupt() { resetToIdle(); }
 
 bool CombatComponent::canMove() const {
     return current_state == CombatState::Idle
@@ -171,11 +176,18 @@ const AttackData* CombatComponent::getActiveAttack() const {
         active_combo_ptr->getAttackID(combo_index));
 }
 
+unsigned CombatComponent::getActionId() const { return action_id; }
+
 bool CombatComponent::canGuard() const {
     return current_state == CombatState::Idle 
         || current_state == CombatState::Parrying
         || current_state == CombatState::Blocking
         || current_state == CombatState::AttackStartup;
+}
+
+bool CombatComponent::isGuarding() const {
+    return current_state == CombatState::Parrying
+        || current_state == CombatState::Blocking;
 }
 
 bool CombatComponent::isHitboxActive() const {

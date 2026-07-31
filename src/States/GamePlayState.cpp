@@ -36,8 +36,9 @@ GameplayState::GameplayState(const InputManager &input_manager)
                          0.0f, LIME);
 
   // Rotated Pillar supporting the center
-  obstacles.emplace_back(Vector3{-2.0f, 0.0f, 8.0f}, Vector3{2.0f, 7.0f, 12.0f},
-                         45.0f, RED);
+  // obstacles.emplace_back(Vector3{-2.0f, 0.0f, 8.0f},
+  // Vector3{2.0f, 7.0f, 12.0f},
+  //                        45.0f, RED);
 
   // 4 x 4 grid of pillars
   for (int i = 0; i < 4; ++i) {
@@ -83,8 +84,6 @@ StateAction GameplayState::update(float dt) {
   for (auto &enemy : enemies) {
     enemy->update(ctx);
   }
-
-
 
   // 2. Resolve Physics Pipeline (4-Step: Gravity -> Integration -> Ejection
   // Loop -> Ground Snap)
