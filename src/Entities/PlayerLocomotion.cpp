@@ -35,14 +35,29 @@ bool PlayerLocomotion::update(float dt, bool grounded, float verticalVelocity,
   return staggerBegan;
 }
 
-ActionGate PlayerLocomotion::gate(const CombatComponent &combat,
-                                  bool grounded) const {
+ActionGate PlayerLocomotion::gate(const CombatComponent &combat, bool grounded,
+                                  bool sprintHeld) const {
   // A stagger is total: until it recovers, nothing may be started. Returned
   // first and whole, so no rule below can accidentally grant something back.
   if (isStaggered())
-    return ActionGate{false, false, false, false, false, 0.0f};
+    return ActionGate{false, false, false, false, false, 0.0f, Gait::Walking};
 
   ActionGate g;
+
+  // The sprint key's second meaning. Its first — the dodge on the press frame —
+  // has already been taken by the time this sees it held, so the only thing
+  // left to decide is whether the hold has outlived the dash it began: a sprint
+  // that started while the roll was still travelling would be claiming a gait
+  // the character is not in, and the dodge owns its own travel besides.
+  //
+  // Deliberately not latched. Sprinting is the key being down, so letting go
+  // returns to a walk on that frame rather than at the end of some window, and
+  // a dodge the gate refused (mid-air, crouched, mid-swing) still sprints once
+  // whatever refused it is over.
+  const bool sprinting =
+      sprintHeld && combat.getCurrentState() != CombatState::Dodging;
+  g.gait = sprinting ? Gait::Sprinting : Gait::Walking;
+  g.moveSpeedScale = sprinting ? 1.0f : WALK_SPEED_SCALE;
 
   // The combat machine's own commitments. canMove() is false through every
   // attack phase, which is what stops a swing from being steered. canDodge() is
@@ -74,11 +89,14 @@ ActionGate PlayerLocomotion::gate(const CombatComponent &combat,
     // one clip; there is no such animation, and the stance exists to be
     // deliberate.
     g.canDodge = false;
-    g.moveSpeedScale = CROUCH_SPEED_SCALE;
+    // The slower of the stance and the gait, not the stance outright: a crouch
+    // is a ceiling on speed, and one that overwrote the walk would have
+    // crouching *accelerate* a player who was not sprinting.
+    g.moveSpeedScale = std::fmin(g.moveSpeedScale, CROUCH_SPEED_SCALE);
   }
 
-  // After the crouch scale rather than before, so a crouched block takes the
-  // slower of the two rather than whichever rule happened to run last.
+  // Same rule again, so a crouched block takes the slowest of the three rather
+  // than whichever happened to run last.
   if (combat.isGuarding())
     g.moveSpeedScale = std::fmin(g.moveSpeedScale, BLOCK_SPEED_SCALE);
 

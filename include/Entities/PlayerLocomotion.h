@@ -8,6 +8,14 @@
 /// what they may do.
 enum class Stance { Standing, Crouching };
 
+/// How fast the player is carrying themselves. The default is the walk: holding
+/// a direction is asking to go somewhere, not to sprint there.
+///
+/// Sprinting is not a mode that is toggled into — it is what the sprint key
+/// means once the dodge it also means has finished. One key, two readings, told
+/// apart by how long it is held (see gate()).
+enum class Gait { Walking, Sprinting };
+
 /// What the player may start this instant, and how fast they travel if they
 /// move.
 ///
@@ -25,6 +33,12 @@ struct ActionGate {
   /// Multiplies the velocity the movement component resolves. 1.0 is the
   /// character's full speed, which is the run clip's authored speed.
   float moveSpeedScale = 1.0f;
+
+  /// Which locomotion cycle the scale above belongs to. Carried alongside it so
+  /// the animator shows the gait the player is actually travelling at: deriving
+  /// it a second time from the speed would be a second place for the clip and
+  /// the travel to disagree.
+  Gait gait = Gait::Walking;
 };
 
 /// The player state that is neither combat nor animation: which stance they are
@@ -36,15 +50,6 @@ struct ActionGate {
 /// it does not own it.
 class PlayerLocomotion {
 public:
-  /// How fast a guarding player walks, as a fraction of full speed. A raised
-  /// guard is a commitment to defence: it should cost mobility, but not so much
-  /// that closing or retreating behind it stops being an option.
-  ///
-  /// Public because the animator needs it too: the guard-walk cycle is
-  /// time-scaled to the speed this imposes, and a second copy of the number
-  /// would let the stride and the travel drift apart.
-  static constexpr float BLOCK_SPEED_SCALE = 0.5f;
-
   /// Ages the timers and watches for touchdown. Returns true on the single
   /// frame a stagger begins, which is the caller's cue to cancel whatever
   /// combat action was running: an attack whose root motion carried the player
@@ -58,7 +63,13 @@ public:
               float landPlayDuration);
 
   /// The whole rule set, in priority order.
-  ActionGate gate(const CombatComponent &combat, bool grounded) const;
+  ///
+  /// `sprintHeld` is the sprint key's held state — held, not pressed. The press
+  /// itself is a dodge and is handled by the caller; this only ever sees the
+  /// frames after it, which is what makes "kept holding it" the thing that
+  /// sprints.
+  ActionGate gate(const CombatComponent &combat, bool grounded,
+                  bool sprintHeld) const;
 
   /// Rule: a jump taken from a crouch stands up first rather than launching
   /// crouched. A transition rather than a permission, so it is applied at the
@@ -122,4 +133,17 @@ private:
   /// How fast a crouching player moves. Slow enough to read as deliberate,
   /// which is what a stance held for stealth has to be.
   static constexpr float CROUCH_SPEED_SCALE = 0.5f;
+
+  /// How fast a guarding player travels, as a fraction of full speed. A raised
+  /// guard is a commitment to defence: it should cost mobility, but not so much
+  /// that closing or retreating behind it stops being an option.
+  static constexpr float BLOCK_SPEED_SCALE = 0.5f;
+
+  /// How fast the default gait is, as a fraction of full speed. Roughly the
+  /// walk clip's own authored pace over the sprint's, so the cycle plays near
+  /// 1.0x and reads as an ordinary walk — but only roughly: the animator
+  /// time-scales whichever cycle it shows to whatever speed actually comes out
+  /// of here, so this stays a number to tune by feel rather than one the
+  /// clips constrain.
+  static constexpr float WALK_SPEED_SCALE = 0.25f;
 };

@@ -15,6 +15,13 @@
 /// each use site.
 enum class PlayerAnimState {
   Idle,
+
+  /// The two gaits, one clip each. Which one plays is Gait's to say, not this
+  /// ladder's — the gate decides the gait and the speed together, and both
+  /// arrive in the frame. Each is time-scaled to the speed that came with it,
+  /// so neither slides its feet at whatever fraction of full speed a crouch or
+  /// a guard has left it travelling at.
+  Walk,
   Run,
 
   /// The two halves of being airborne. Jump is the launch and the rise; Fall
@@ -84,6 +91,14 @@ public:
     bool landingVisible = false;
     unsigned landId = 0;
     Stance stance = Stance::Standing;
+
+    /// The gate's two answers about travel: which cycle the player is in, and
+    /// what fraction of full speed they are covering ground at. Taken together
+    /// they are what time-scales the cycle, so the clip that plays and the
+    /// distance covered are two readings of one decision rather than two
+    /// decisions that have to be kept in agreement.
+    Gait gait = Gait::Walking;
+    float speedScale = 1.0f;
   };
 
   /// What the frame's animation implies for movement. The track is never null;
@@ -99,9 +114,11 @@ public:
   /// when locomotionSpeed() becomes meaningful.
   bool resolveClips(const AssetManager &assets);
 
-  /// The speed the character should travel to keep the run clip's feet planted,
-  /// or 0 when the run clip has no authored travel. Only the controller's speed
-  /// comes from here; the matching clip time-scale is the Run row's rate.
+  /// The character's full speed: what they travel at with the gate imposing no
+  /// scale, which is the run clip's authored speed taken at RUN_SPEED_SCALE. 0
+  /// when the run clip has no authored travel. Every other speed in the game is
+  /// this one times an ActionGate::moveSpeedScale, which is also what lets a
+  /// single rule time-scale every cycle.
   float locomotionSpeed() const { return locomotion_speed; }
 
   /// The landing clip's playable length, less the lead-in the state skips, so a
@@ -174,6 +191,16 @@ private:
   /// The single prioritised ladder: the one place that answers "which clip".
   Machine::Selection resolve(const Frame &frame) const;
 
+  /// Playback rate for a travelling cycle: the speed the player is actually
+  /// covering ground at, over the speed the cycle was authored to cover it at.
+  /// One rule for the walk, the run and the guarded walk alike — a cycle whose
+  /// feet are planted is one played at the ratio between those two numbers, and
+  /// the three differ only in which clip and which gate scale they hand it.
+  ///
+  /// Falls back to the row's own rate when there is nothing to measure: no
+  /// assets, or a cycle with no authored travel.
+  float cycleRate(const Frame &frame, PlayerAnimState cycle) const;
+
   Machine anim;
 
   float locomotion_speed = 0.0f;
@@ -185,14 +212,6 @@ private:
   /// sword a second time. Zero until the clip is resolved, which is also the
   /// harmless answer when the asset does not contain it.
   float guard_hold_at = 0.0f;
-
-  /// Playback rate for the guard-walk cycle: the speed a guarding player
-  /// actually travels at, over the speed the cycle was authored to travel at,
-  /// so its feet stay planted the way the run's do. Resolved once from the two
-  /// clips rather than written into the table, because neither number is known
-  /// until the model is loaded. Left at the row's own rate when the cycle has
-  /// no authored travel to measure.
-  float guard_walk_rate = 1.0f;
 
   /// The flinch queueReaction() left for the next updateFlinch() to start, or
   /// Count for none.
