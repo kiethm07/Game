@@ -164,12 +164,27 @@ private:
   /// constants above are in scope for it.
   static const Machine::Desc *descTable();
 
+  /// Whether a state already has the guard up on screen. The three that do are
+  /// the raise-and-hold, the guarded walk and the blocked flinch — a flinch
+  /// that got through the guard is not one of them, because an unblocked hit
+  /// knocks the character out of the pose and the raise back into it is then
+  /// the truthful thing to show.
+  static bool isGuardPose(PlayerAnimState state);
+
   /// The single prioritised ladder: the one place that answers "which clip".
   Machine::Selection resolve(const Frame &frame) const;
 
   Machine anim;
 
   float locomotion_speed = 0.0f;
+
+  /// Where the guard clip's raise has finished and the held pose begins, in
+  /// seconds — its playable end, since the clip is authored as a raise that
+  /// finishes guard-up and holds there. Entering the clip here is how returning
+  /// to a guard that was never dropped resumes the pose instead of raising the
+  /// sword a second time. Zero until the clip is resolved, which is also the
+  /// harmless answer when the asset does not contain it.
+  float guard_hold_at = 0.0f;
 
   /// Playback rate for the guard-walk cycle: the speed a guarding player
   /// actually travels at, over the speed the cycle was authored to travel at,

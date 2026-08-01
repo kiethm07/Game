@@ -60,6 +60,12 @@ public:
     /// cycle time-scaled to whatever speed the character is actually
     /// travelling at.
     float rate = 1.0f;
+
+    /// Where to enter the clip, seeded from the row and overridable per frame
+    /// for a state whose lead-in is only sometimes worth playing — a guard
+    /// raise that must run when the guard goes up, but must not run again when
+    /// the character returns to a guard they never dropped.
+    float startAt = 0.0f;
   };
 
   static constexpr int STATE_COUNT = static_cast<int>(StateEnum::Count);
@@ -99,12 +105,20 @@ public:
   const Desc &desc(StateEnum state) const { return table[index(state)]; }
 
   /// A selection filled from the table. Callers may overwrite `clip`,
-  /// `rootDriven` and `rate` afterwards, which is how a state whose clip varies
-  /// per action — an attack naming its own swing — overrides its row.
+  /// `rootDriven`, `rate` and `startAt` afterwards, which is how a state whose
+  /// clip varies per action — an attack naming its own swing — overrides its
+  /// row.
   Selection select(StateEnum state, unsigned variant = 0) const {
-    return Selection{state, variant, clipFor(state), desc(state).rootDriven,
-                     desc(state).rate};
+    return Selection{state,          variant,        clipFor(state),
+                     desc(state).rootDriven, desc(state).rate,
+                     desc(state).startAt};
   }
+
+  /// The state the last apply() settled on — what is on screen right now. Read
+  /// by ladders that need to know where they are coming from: a transition into
+  /// a pose the character is already holding is not the same as one into a pose
+  /// they have to assume from scratch.
+  StateEnum activeState() const { return prev.state; }
 
   const RootMotion::Track &track(const AssetManager &assets,
                                  StateEnum state) const {
@@ -124,7 +138,7 @@ public:
       // replace it with a degenerate frame-0-to-frame-0 fade.
       const bool switched = (selection.clip != animation.index());
 
-      animation.play(selection.clip, d.loop, d.fadeIn, d.startAt);
+      animation.play(selection.clip, d.loop, d.fadeIn, selection.startAt);
 
       // Re-entering a state the clip is already playing: a combo step that
       // reuses the previous step's swing, or a second flinch during one guard.
@@ -134,7 +148,7 @@ public:
       const bool reentered = (selection.state != prev.state ||
                               selection.variant != prev.variant);
       if (!switched && reentered)
-        animation.restart(d.fadeIn, d.startAt);
+        animation.restart(d.fadeIn, selection.startAt);
     }
 
     // Set after play(), so the fade snapshot above captures the outgoing

@@ -47,6 +47,12 @@ const PlayerAnimator::Machine::Desc *PlayerAnimator::descTable() {
   return table;
 }
 
+bool PlayerAnimator::isGuardPose(PlayerAnimState state) {
+  return state == PlayerAnimState::Guard ||
+         state == PlayerAnimState::GuardWalk ||
+         state == PlayerAnimState::GuardImpact;
+}
+
 PlayerAnimator::PlayerAnimator()
     : anim(AssetID::PLAYER_WOLF, descTable()) {}
 
@@ -62,6 +68,10 @@ bool PlayerAnimator::resolveClips(const AssetManager &assets) {
              "(playback %.2fx)",
              runTrack.authoredSpeed, locomotion_speed, RUN_SPEED_SCALE);
   }
+
+  // The guard clip's whole playable length: it raises and ends guard-up, so its
+  // last frame is the pose a sustained block holds.
+  guard_hold_at = anim.track(assets, PlayerAnimState::Guard).duration;
 
   // Time-scaled against the speed the gate actually lets a guarding player
   // travel at, not against full speed: the same reasoning as the run, applied
@@ -240,8 +250,21 @@ PlayerAnimator::resolve(const Frame &frame) const {
   // raise runs during the parry, then Blocking picks it up mid-playback with no
   // visible re-trigger. Non-looping, so the clip ends guard-up and holds that
   // pose for as long as the button is down instead of replaying the raise.
-  if (combat.isGuarding() && anim.clipFor(PlayerAnimState::Guard) >= 0)
-    return anim.select(PlayerAnimState::Guard, combat.getActionId());
+  if (combat.isGuarding() && anim.clipFor(PlayerAnimState::Guard) >= 0) {
+    Machine::Selection selection =
+        anim.select(PlayerAnimState::Guard, combat.getActionId());
+
+    // Where in the clip to come in. From anything that is not already a guard
+    // the answer is the top, so the raise plays. From a blocked flinch or from
+    // the guarded walk it is the hold at the end: the guard was never dropped,
+    // and replaying the raise reads as the character lowering their sword and
+    // lifting it again — the exact artifact of a state change, shown as though
+    // it were something the character did.
+    if (isGuardPose(anim.activeState()))
+      selection.startAt = guard_hold_at;
+
+    return selection;
+  }
 
   // Below everything that is an action, so a player who lands already swinging,
   // dodging or guarding does that instead of crouching. A stagger stops any of
