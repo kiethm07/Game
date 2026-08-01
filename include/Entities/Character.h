@@ -72,7 +72,7 @@ public:
 
   virtual std::vector<HurtBox> getHurtBoxes() const = 0;
   virtual std::vector<HitBox> getActiveHitBoxes() const = 0;
-  virtual void takeDamage(float health_damage, float posture_damage) = 0;
+  virtual void takeDamage(float health_damage, float posture_damage, Character* attacker = nullptr) = 0;
 
 protected:
   unsigned int id;

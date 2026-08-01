@@ -48,6 +48,20 @@ void Enemy::drawHPBar(const Camera3D &camera) const {
   DrawRectangle(x, posture_y, (int)(width * stats.getPosturePercentage()), (int)height, ORANGE);
   DrawRectangleLines(x, posture_y, (int)width, (int)height, BLACK);
 
+  int stealth_y = posture_y + (int)height + 2;
+  float awareness = stealth_component.getAwarenessLevel();
+  float sus_pct = std::min(awareness, 100.0f) / 100.0f;
+  float aware_pct = std::max(0.0f, awareness - 100.0f) / 100.0f;
+
+  DrawRectangle(x, stealth_y, (int)width, (int)height, DARKGRAY);
+  if (sus_pct > 0.0f) {
+      DrawRectangle(x, stealth_y, (int)(width * sus_pct), (int)height, YELLOW);
+  }
+  if (aware_pct > 0.0f) {
+      DrawRectangle(x, stealth_y, (int)(width * aware_pct), (int)height, RED);
+  }
+  DrawRectangleLines(x, stealth_y, (int)width, (int)height, BLACK);
+
   // Draw hovering debug text above the HP bar
   const std::string& debug_text = stealth_component.getDebugState();
   int font_size = 10;
@@ -55,7 +69,12 @@ void Enemy::drawHPBar(const Camera3D &camera) const {
   int text_x = static_cast<int>(screen_pos.x - (text_width / 2.0f));
   int text_y = y - font_size - 4; // Above the HP bar
   
-  Color text_color = (debug_text == "DETECTED") ? RED : GRAY;
+  Color text_color;
+  StealthState s_state = stealth_component.getStealthState();
+  if (s_state == StealthState::Aware) text_color = RED;
+  else if (s_state == StealthState::Suspicious) text_color = YELLOW;
+  else text_color = GRAY;
+  
   DrawText(debug_text.c_str(), text_x, text_y, font_size, text_color);
 
   // Draw combat state text above stealth text
@@ -67,6 +86,8 @@ void Enemy::drawHPBar(const Camera3D &camera) const {
     case CombatState::AttackRecovery: combat_text = "recovery"; break;
     case CombatState::Parrying: combat_text = "parry"; break;
     case CombatState::Blocking: combat_text = "block"; break;
+    case CombatState::Dodging: combat_text = "dodge"; break;
+    case CombatState::PostureBroken: combat_text = "posture-broken"; break;
   }
   
   int combat_width = MeasureText(combat_text.c_str(), font_size);
@@ -93,11 +114,14 @@ std::vector<HurtBox> Enemy::getHurtBoxes() const {
   return {HurtBox(body_capsule, getFaction(), getId())};
 }
 
-void Enemy::takeDamage(float health_damage, float posture_damage) {
-  if (combat_component.getCurrentState() == CombatState::Parrying)
-    return;
-  if (combat_component.getCurrentState() == CombatState::Blocking)
+void Enemy::takeDamage(float health_damage, float posture_damage, Character* attacker) {
+  if (combat_component.getCurrentState() == CombatState::Parrying) {
     health_damage = 0.0f;
+    // Posture damage remains normal, same as block
+  }
+  else if (combat_component.getCurrentState() == CombatState::Blocking) {
+    health_damage = 0.0f;
+  }
 
   bool was_posture_broken = stats.isPostureBroken();
 
@@ -106,5 +130,7 @@ void Enemy::takeDamage(float health_damage, float posture_damage) {
   // If posture was already broken (they are in the 3s vulnerable window), next hit executes them
   if (was_posture_broken && stats.isPostureBroken()) {
       stats.applyDamage(stats.getCurrentHealth(), 0.0f);
+  } else if (!was_posture_broken && stats.isPostureBroken()) {
+      combat_component.breakPosture(3.0f);
   }
 }

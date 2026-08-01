@@ -22,7 +22,7 @@ public:
   float getColliderHeight() const override;
   std::vector<HurtBox> getHurtBoxes() const override;
   std::vector<HitBox> getActiveHitBoxes() const override;
-  void takeDamage(float health_damage, float posture_damage) override;
+  void takeDamage(float health_damage, float posture_damage, Character* attacker) override;
 
 private:
   const InputManager &input_manager;
