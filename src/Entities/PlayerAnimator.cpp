@@ -7,7 +7,8 @@ const PlayerAnimator::Machine::Desc *PlayerAnimator::descTable() {
   static const Machine::Desc table[Machine::STATE_COUNT] = {
       //                clip             loop   rate             root   fadeIn
       /* Idle        */ {"Idle", true, 1.0f, false, 0.15f},
-      /* Run         */ {"Run", true, RUN_SPEED_SCALE, false, 0.15f},
+      /* Walk        */ {"Walk", true, 1.0f, false, 0.15f},
+      /* Run         */ {"Run", true, 1.0f, false, 0.15f},
       /* Jump        */ {"Jump", false, 1.0f, false, 0.08f},
       // Loops, because a fall lasts as long as the drop does rather than as
       // long as the clip. The fade in is the longest in the table: it runs at
@@ -20,10 +21,10 @@ const PlayerAnimator::Machine::Desc *PlayerAnimator::descTable() {
       // it.
       /* Land        */ {"Land", false, 1.0f, false, 0.06f, LAND_CONTACT},
       /* GuardImpact */ {"Impact", false, 1.0f, false, 0.05f},
-      // Loops, and its rate is overridden per frame with guard_walk_rate — the
-      // 1.0 here is what a cycle with no authored travel falls back to. Fades
-      // like the run does: it is only ever entered from or left for another
-      // guard pose, which is nothing worth making crisp.
+      // Loops, and time-scaled per frame like the other two cycles — the 1.0
+      // here is what one with no authored travel falls back to. Fades like the
+      // run does: it is only ever entered from or left for another guard pose,
+      // which is nothing worth making crisp.
       /* GuardWalk   */ {"BlockWalk", true, 1.0f, false, 0.15f},
       /* Guard       */ {"Block", false, 1.0f, false, 0.10f},
       // Root-driven, so each one's travel is exactly the sideways, forward or
@@ -59,34 +60,45 @@ bool PlayerAnimator::resolveClips(const AssetManager &assets) {
   if (!anim.resolveClips(assets))
     return false;
 
+  // Full speed, and the one number every other speed is a fraction of. Taken
+  // from the run rather than the walk because the run is the cycle the
+  // controller was tuned around; the walk follows from it through the gate's
+  // scale, and is time-scaled to whatever that works out to.
   const RootMotion::Track &runTrack = anim.track(assets, PlayerAnimState::Run);
   if (runTrack.hasMotion) {
     locomotion_speed = runTrack.authoredSpeed * RUN_SPEED_SCALE;
     TraceLog(LOG_INFO,
-             "Player: run clip authored at %.2f u/s, moving at %.2f u/s "
+             "Player: run clip authored at %.2f u/s, sprinting at %.2f u/s "
              "(playback %.2fx)",
              runTrack.authoredSpeed, locomotion_speed, RUN_SPEED_SCALE);
   }
+
+  // No matching playback rate to report: unlike the run's, every cycle's rate
+  // is now settled per frame against the speed the gate allows that frame, so
+  // the authored figure is the only part of it fixed at load.
+  const RootMotion::Track &walkTrack = anim.track(assets, PlayerAnimState::Walk);
+  if (walkTrack.hasMotion)
+    TraceLog(LOG_INFO, "Player: walk clip authored at %.2f u/s",
+             walkTrack.authoredSpeed);
 
   // The guard clip's whole playable length: it raises and ends guard-up, so its
   // last frame is the pose a sustained block holds.
   guard_hold_at = anim.track(assets, PlayerAnimState::Guard).duration;
 
-  // Time-scaled against the speed the gate actually lets a guarding player
-  // travel at, not against full speed: the same reasoning as the run, applied
-  // to a slower cycle and a slower character.
-  const RootMotion::Track &guardWalkTrack =
-      anim.track(assets, PlayerAnimState::GuardWalk);
-  if (guardWalkTrack.hasMotion && locomotion_speed > 0.0f) {
-    const float guardSpeed =
-        locomotion_speed * PlayerLocomotion::BLOCK_SPEED_SCALE;
-    guard_walk_rate = guardSpeed / guardWalkTrack.authoredSpeed;
-    TraceLog(LOG_INFO,
-             "Player: guard-walk clip authored at %.2f u/s, guarding at %.2f "
-             "u/s (playback %.2fx)",
-             guardWalkTrack.authoredSpeed, guardSpeed, guard_walk_rate);
-  }
   return true;
+}
+
+float PlayerAnimator::cycleRate(const Frame &frame,
+                                PlayerAnimState cycle) const {
+  const float authoredRate = anim.desc(cycle).rate;
+  if (!frame.assets || locomotion_speed <= 0.0f)
+    return authoredRate;
+
+  const RootMotion::Track &track = anim.track(*frame.assets, cycle);
+  if (!track.hasMotion || track.authoredSpeed <= 0.0f)
+    return authoredRate;
+
+  return (locomotion_speed * frame.speedScale) / track.authoredSpeed;
 }
 
 float PlayerAnimator::landPlayDuration(const AssetManager *assets) const {
@@ -240,7 +252,7 @@ PlayerAnimator::resolve(const Frame &frame) const {
     // a guarding player, or the feet slide the way they did before the cycle
     // existed. No variant — the cycle loops, so a fresh guard taken mid-stride
     // has nothing to re-trigger.
-    selection.rate = guard_walk_rate;
+    selection.rate = cycleRate(frame, PlayerAnimState::GuardWalk);
     return selection;
   }
 
@@ -282,8 +294,24 @@ PlayerAnimator::resolve(const Frame &frame) const {
       anim.clipFor(PlayerAnimState::Land) >= 0)
     return anim.select(PlayerAnimState::Land, frame.landId);
 
-  if (frame.moving && anim.clipFor(PlayerAnimState::Run) >= 0)
-    return anim.select(PlayerAnimState::Run);
+  // The gait the gate settled on, shown at the speed it settled on with it. The
+  // other cycle stands in when the asset is missing the one asked for, which
+  // keeps the ladder's rule — a missing clip falls through rather than freezing
+  // the character — without an extra rung that would only ever mean "moving".
+  if (frame.moving) {
+    PlayerAnimState cycle = (frame.gait == Gait::Sprinting)
+                                ? PlayerAnimState::Run
+                                : PlayerAnimState::Walk;
+    if (anim.clipFor(cycle) < 0)
+      cycle = (cycle == PlayerAnimState::Run) ? PlayerAnimState::Walk
+                                              : PlayerAnimState::Run;
+
+    if (anim.clipFor(cycle) >= 0) {
+      Machine::Selection selection = anim.select(cycle);
+      selection.rate = cycleRate(frame, cycle);
+      return selection;
+    }
+  }
 
   return anim.select(PlayerAnimState::Idle);
 }

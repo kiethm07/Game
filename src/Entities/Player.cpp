@@ -33,13 +33,21 @@ void Player::update(const UpdateContext &ctx) {
 
   animator.updateFlinch(dt, ctx.assets);
 
-  handleCombatAndUtilityInputs(ctx,
-                               locomotion.gate(combat_component, isGrounded()));
+  // Held, never pressed: the press frame is the dodge, which
+  // handleCombatAndUtilityInputs takes below, and InputManager reports a key as
+  // Pressed *or* Held but never both. So the earliest this can be true is the
+  // frame after the dash began — which is exactly the reading that makes a hold
+  // outlasting the dodge, and nothing shorter, a sprint.
+  const bool sprint_held = input_manager.isActionHeld(GameAction::Dodge);
+
+  handleCombatAndUtilityInputs(
+      ctx, locomotion.gate(combat_component, isGrounded(), sprint_held));
 
   // Re-evaluated after the inputs rather than reusing the one above. An attack
   // started this frame has to stop movement on this frame; a gate read before
   // the input that began it would let one frame of free steering through.
-  const ActionGate move_gate = locomotion.gate(combat_component, isGrounded());
+  const ActionGate move_gate =
+      locomotion.gate(combat_component, isGrounded(), sprint_held);
 
   // Two movement regimes. Free locomotion is code-driven so it stays responsive
   // and steerable; committed states (attacks, dodges, a landing stagger) hand
@@ -64,6 +72,8 @@ void Player::update(const UpdateContext &ctx) {
   frame.landingVisible = locomotion.isLandingVisible();
   frame.landId = locomotion.landId();
   frame.stance = locomotion.getStance();
+  frame.gait = move_gate.gait;
+  frame.speedScale = move_gate.moveSpeedScale;
 
   const PlayerAnimator::Result anim = animator.update(frame, dt);
 

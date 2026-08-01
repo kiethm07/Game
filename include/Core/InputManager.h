@@ -10,7 +10,13 @@ enum class GameAction {
     Jump,
     Attack,
     Parry,
+
+    /// One key, two meanings, told apart by how long it is held: the press is a
+    /// dodge, and keeping it down past the end of that dodge is a sprint. Named
+    /// for the press because that is the half with its own action; the sprint
+    /// half is a gait, and lives in PlayerLocomotion::gate().
     Dodge,
+
     LockOn
 };
 
