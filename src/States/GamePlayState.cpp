@@ -96,9 +96,17 @@ StateAction GameplayState::update(float dt) {
   // 3. Resolve Combat
   combat_manager.update(active_characters);
 
-  // 4. Update the camera tracking matrix using that position
-  Vector2 mouse_delta = input_manager.getRawMouseDelta();
-  camera_controller->update(player->getPosition(), mouse_delta);
+  // 4. Update the camera tracking matrix using that position. Built here the
+  // same way the UpdateContext above is, so the camera never reaches back into
+  // the player for it — and so that the framing, which is a decision about the
+  // world rather than about the camera, is made where the world is known.
+  CameraFrame shot;
+  shot.target = player->getPosition();
+  shot.look = input_manager.getRawMouseDelta();
+  shot.dt = dt;
+  shot.framing =
+      player->isDashing() ? CameraFraming::Wide : CameraFraming::Close;
+  camera_controller->update(shot);
 
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
     return StateAction::ChangeToMenu;

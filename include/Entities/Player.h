@@ -24,6 +24,16 @@ public:
   std::vector<HitBox> getActiveHitBoxes() const override;
   void takeDamage(float health_damage, float posture_damage) override;
 
+  /// Whether the player is dashing — mid-dodge or sprinting. Asked by the
+  /// camera, which frames a dash wider than a walk. One question with one
+  /// answer, rather than the camera reassembling it from a gait and a combat
+  /// state it would have to be handed anyway.
+  ///
+  /// The two halves are asked separately because the gate deliberately reports
+  /// Walking *during* a dodge — sprinting is what the key means once the dash
+  /// it began has finished — so the dodge has to be tested on its own.
+  bool isDashing() const;
+
 private:
   const InputManager &input_manager;
 
@@ -57,6 +67,12 @@ private:
   /// Stance and landing recovery, and the one function that decides what the
   /// player is allowed to do with them.
   PlayerLocomotion locomotion;
+
+  /// The gait the gate settled on this frame. Kept because the gate itself is a
+  /// local inside update() and the camera is ticked afterwards: without it the
+  /// camera would have to re-derive the gait from raw input, which is a second
+  /// place for the rule to live and drift.
+  Gait gait = Gait::Walking;
 
   /// Which clip plays, and the clock that drives it.
   PlayerAnimator animator;
