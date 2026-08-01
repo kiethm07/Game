@@ -36,6 +36,15 @@ struct ActionGate {
 /// it does not own it.
 class PlayerLocomotion {
 public:
+  /// How fast a guarding player walks, as a fraction of full speed. A raised
+  /// guard is a commitment to defence: it should cost mobility, but not so much
+  /// that closing or retreating behind it stops being an option.
+  ///
+  /// Public because the animator needs it too: the guard-walk cycle is
+  /// time-scaled to the speed this imposes, and a second copy of the number
+  /// would let the stride and the travel drift apart.
+  static constexpr float BLOCK_SPEED_SCALE = 0.5f;
+
   /// Ages the timers and watches for touchdown. Returns true on the single
   /// frame a stagger begins, which is the caller's cue to cancel whatever
   /// combat action was running: an attack whose root motion carried the player
@@ -109,11 +118,6 @@ private:
   /// covers the impact and the deepest part of the crouch, which is the
   /// readable part, and releases the player on the way back up.
   static constexpr float LAND_LOCK_DURATION = 0.35f;
-
-  /// How fast a guarding player walks, as a fraction of full speed. A raised
-  /// guard is a commitment to defence: it should cost mobility, but not so much
-  /// that closing or retreating behind it stops being an option.
-  static constexpr float BLOCK_SPEED_SCALE = 0.5f;
 
   /// How fast a crouching player moves. Slow enough to read as deliberate,
   /// which is what a stance held for stealth has to be.
