@@ -75,6 +75,14 @@ CLIP_NAMES = {
     # every one of its frames, which is a fall. Told apart by foot height rather
     # than by clip length -- the two are within half a second of each other.
     "Armature.056": "Land",             "Armature.057": "Fall",
+    # Not from Mixamo: synthesised in pack.blend by layering the Block guard
+    # (Armature.050, last frame -- where the shield is fully up) onto Walk's
+    # (Armature.025) lower body. Legs, hips and net travel are Walk's untouched;
+    # the guard is blended in ARMATURE space, not by copying local rotations,
+    # because the Block stance is bladed ~65 deg out of the walk's heading and a
+    # local copy would carry that turn along and swing the shield off to the
+    # left instead of leading with it.
+    "Armature.058": "BlockWalk",
 }
 
 

@@ -29,6 +29,12 @@ enum class PlayerAnimState {
   Land,
 
   GuardImpact,
+
+  /// The guard held while walking. A separate state rather than the Guard clip
+  /// with movement layered on: the block stance turns the pelvis away from the
+  /// direction of travel, so a stride cannot be blended onto it locally — the
+  /// pack ships the combination as its own authored cycle.
+  GuardWalk,
   Guard,
 
   /// One per authored dodge clip. Kept as four states rather than one state
@@ -164,6 +170,14 @@ private:
   Machine anim;
 
   float locomotion_speed = 0.0f;
+
+  /// Playback rate for the guard-walk cycle: the speed a guarding player
+  /// actually travels at, over the speed the cycle was authored to travel at,
+  /// so its feet stay planted the way the run's do. Resolved once from the two
+  /// clips rather than written into the table, because neither number is known
+  /// until the model is loaded. Left at the row's own rate when the cycle has
+  /// no authored travel to measure.
+  float guard_walk_rate = 1.0f;
 
   /// The flinch queueReaction() left for the next updateFlinch() to start, or
   /// Count for none.

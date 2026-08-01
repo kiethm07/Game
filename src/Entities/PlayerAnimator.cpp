@@ -20,6 +20,11 @@ const PlayerAnimator::Machine::Desc *PlayerAnimator::descTable() {
       // it.
       /* Land        */ {"Land", false, 1.0f, false, 0.06f, LAND_CONTACT},
       /* GuardImpact */ {"Impact", false, 1.0f, false, 0.05f},
+      // Loops, and its rate is overridden per frame with guard_walk_rate — the
+      // 1.0 here is what a cycle with no authored travel falls back to. Fades
+      // like the run does: it is only ever entered from or left for another
+      // guard pose, which is nothing worth making crisp.
+      /* GuardWalk   */ {"BlockWalk", true, 1.0f, false, 0.15f},
       /* Guard       */ {"Block", false, 1.0f, false, 0.10f},
       // Root-driven, so each one's travel is exactly the sideways, forward or
       // backward distance it was authored with. The backstep is authored at
@@ -56,6 +61,21 @@ bool PlayerAnimator::resolveClips(const AssetManager &assets) {
              "Player: run clip authored at %.2f u/s, moving at %.2f u/s "
              "(playback %.2fx)",
              runTrack.authoredSpeed, locomotion_speed, RUN_SPEED_SCALE);
+  }
+
+  // Time-scaled against the speed the gate actually lets a guarding player
+  // travel at, not against full speed: the same reasoning as the run, applied
+  // to a slower cycle and a slower character.
+  const RootMotion::Track &guardWalkTrack =
+      anim.track(assets, PlayerAnimState::GuardWalk);
+  if (guardWalkTrack.hasMotion && locomotion_speed > 0.0f) {
+    const float guardSpeed =
+        locomotion_speed * PlayerLocomotion::BLOCK_SPEED_SCALE;
+    guard_walk_rate = guardSpeed / guardWalkTrack.authoredSpeed;
+    TraceLog(LOG_INFO,
+             "Player: guard-walk clip authored at %.2f u/s, guarding at %.2f "
+             "u/s (playback %.2fx)",
+             guardWalkTrack.authoredSpeed, guardSpeed, guard_walk_rate);
   }
   return true;
 }
@@ -195,16 +215,31 @@ PlayerAnimator::resolve(const Frame &frame) const {
   if (reaction_timer > 0.0f && anim.clipFor(reaction_state) >= 0)
     return anim.select(reaction_state, reaction_id);
 
+  // A guard that is travelling. Above the standing guard so that moving wins
+  // while the button is down, and below everything that is an action, so a
+  // swing or a dodge started while walking guarded still shows its own clip.
+  //
+  // The cycle carries the guard pose itself, so entering it skips the raise the
+  // standing guard would have played. That is only visible when a guard is
+  // started while already moving, and the 0.15s fade into a pose the character
+  // is a fifth of the way into holding covers it.
+  if (combat.isGuarding() && frame.moving &&
+      anim.clipFor(PlayerAnimState::GuardWalk) >= 0) {
+    Machine::Selection selection = anim.select(PlayerAnimState::GuardWalk);
+
+    // Not the row's rate: the stride has to match the speed the gate imposes on
+    // a guarding player, or the feet slide the way they did before the cycle
+    // existed. No variant — the cycle loops, so a fresh guard taken mid-stride
+    // has nothing to re-trigger.
+    selection.rate = guard_walk_rate;
+    return selection;
+  }
+
   // One rung for both halves of a guard. The parry window is the front of the
   // same raise the block hold sits on, so they share a clip and a state: the
   // raise runs during the parry, then Blocking picks it up mid-playback with no
   // visible re-trigger. Non-looping, so the clip ends guard-up and holds that
   // pose for as long as the button is down instead of replaying the raise.
-  //
-  // A guarding player who walks keeps this clip and slides their feet — the
-  // pack has no guard-walk cycle wired up yet. Adding one is a table row, a
-  // rung above this that tests `frame.moving`, and a per-frame rate so the
-  // stride can be scaled to the reduced speed the gate imposes.
   if (combat.isGuarding() && anim.clipFor(PlayerAnimState::Guard) >= 0)
     return anim.select(PlayerAnimState::Guard, combat.getActionId());
 

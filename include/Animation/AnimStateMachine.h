@@ -54,6 +54,12 @@ public:
 
     int clip = -1;
     bool rootDriven = false;
+
+    /// Playback rate, seeded from the row and overridable per frame for the
+    /// states whose pace is not a property of the clip alone — a locomotion
+    /// cycle time-scaled to whatever speed the character is actually
+    /// travelling at.
+    float rate = 1.0f;
   };
 
   static constexpr int STATE_COUNT = static_cast<int>(StateEnum::Count);
@@ -92,11 +98,12 @@ public:
 
   const Desc &desc(StateEnum state) const { return table[index(state)]; }
 
-  /// A selection filled from the table. Callers may overwrite `clip` and
-  /// `rootDriven` afterwards, which is how a state whose clip varies per action
-  /// — an attack naming its own swing — overrides its row.
+  /// A selection filled from the table. Callers may overwrite `clip`,
+  /// `rootDriven` and `rate` afterwards, which is how a state whose clip varies
+  /// per action — an attack naming its own swing — overrides its row.
   Selection select(StateEnum state, unsigned variant = 0) const {
-    return Selection{state, variant, clipFor(state), desc(state).rootDriven};
+    return Selection{state, variant, clipFor(state), desc(state).rootDriven,
+                     desc(state).rate};
   }
 
   const RootMotion::Track &track(const AssetManager &assets,
@@ -132,8 +139,11 @@ public:
 
     // Set after play(), so the fade snapshot above captures the outgoing
     // state's rate — a run fading out has to keep striding at its own rate, not
-    // drop to the incoming state's mid-fade.
-    animation.setPlaybackRate(d.rate);
+    // drop to the incoming state's mid-fade. The selection's rate rather than
+    // the row's, so an owner that time-scales a cycle to the speed it is
+    // travelling at is obeyed; select() seeds it from the row, so a state that
+    // does not is unaffected.
+    animation.setPlaybackRate(selection.rate);
 
     const RootMotion::Track &t =
         assets ? assets->getRootMotion(asset, animation.index()) : kNoTrack;
