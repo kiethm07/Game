@@ -11,20 +11,33 @@ CameraController::CameraController() {
     camera.projection = CAMERA_PERSPECTIVE;
 
     // Default orbital settings
-    distance = 5.0f;     // 5 units behind the player
-    pitch = 20.0f;       // Looking slightly down at the player
-    yaw = 0.0f;          // Looking straight ahead
-    sensitivity = 0.2f;  // Adjust this to make the mouse feel right
+    distance = CLOSE_DISTANCE; // The player starts idle, so start framed for it
+    pitch = 20.0f;             // Looking slightly down at the player
+    yaw = 0.0f;                // Looking straight ahead
+    sensitivity = 0.2f;        // Adjust this to make the mouse feel right
 }
 
-void CameraController::update(Vector3 target_position, Vector2 mouse_delta) {
+void CameraController::update(const CameraFrame& frame) {
+    const Vector3 target_position = frame.target;
+
     // 1. Adjust angles based on raw mouse input
-    yaw -= mouse_delta.x * sensitivity;
-    pitch += mouse_delta.y * sensitivity;
+    yaw -= frame.look.x * sensitivity;
+    pitch += frame.look.y * sensitivity;
 
     // 2. Clamp the pitch to prevent the camera from flipping upside down
     if (pitch > 89.0f) pitch = 89.0f;
     if (pitch < -89.0f) pitch = -89.0f;
+
+    // 2.5. Ease the orbit radius toward the one this framing asks for. A
+    // constant fraction of the remaining gap is closed per second, so the shot
+    // settles identically at 30fps and at 144 — a lerp with a dt-scaled alpha
+    // would not, and would need a clamp against dt spikes the way
+    // MovementComponent's facing does. This form is bounded in [0, 1) for every
+    // dt >= 0 by construction, and a dt of zero leaves the distance untouched.
+    const float framedDistance =
+        (frame.framing == CameraFraming::Wide) ? WIDE_DISTANCE : CLOSE_DISTANCE;
+    distance += (framedDistance - distance) *
+                (1.0f - expf(-DISTANCE_DAMPING * frame.dt));
 
     // 3. Convert degrees to radians for C++ math functions
     float pitchRad = pitch * DEG2RAD;

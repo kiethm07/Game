@@ -48,6 +48,7 @@ void Player::update(const UpdateContext &ctx) {
   // the input that began it would let one frame of free steering through.
   const ActionGate move_gate =
       locomotion.gate(combat_component, isGrounded(), sprint_held);
+  gait = move_gate.gait;
 
   // Two movement regimes. Free locomotion is code-driven so it stays responsive
   // and steerable; committed states (attacks, dodges, a landing stagger) hand
@@ -86,6 +87,11 @@ void Player::update(const UpdateContext &ctx) {
       setHorizontalVelocity({0.0f, 0.0f, 0.0f});
     }
   }
+}
+
+bool Player::isDashing() const {
+  return gait == Gait::Sprinting ||
+         combat_component.getCurrentState() == CombatState::Dodging;
 }
 
 void Player::updateLocomotionVelocity(const UpdateContext &ctx,
