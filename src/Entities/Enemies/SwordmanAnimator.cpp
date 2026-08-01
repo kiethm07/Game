@@ -1,0 +1,116 @@
+#include <Entities/Enemies/SwordmanAnimator.h>
+
+const SwordmanAnimator::Machine::Desc *SwordmanAnimator::descTable() {
+  // Rows are in SwordmanAnimState order. Every clip named here belongs to the
+  // player's asset, which the ashigaru borrows whole.
+  static const Machine::Desc table[Machine::STATE_COUNT] = {
+      //                clip          loop   rate   root   fadeIn
+      /* Idle        */ {"Idle", true, 1.0f, false, 0.15f},
+      // Rate overridden per frame once something moves an enemy, the same way
+      // the player's run is; the 1.0 here is the clip's authored pace.
+      /* Walk        */ {"Walk", true, 1.0f, false, 0.15f},
+      /* GuardImpact */ {"Impact", false, 1.0f, false, 0.05f},
+      /* HitReact    */ {"Impact_2", false, 1.0f, false, 0.05f},
+      // Fallback swing, used when an attack names no clip or names one the
+      // asset does not contain. Attacks that do name a clip override this in
+      // resolve(), which is how the swordman's combo plays the same authored
+      // swings the player's does.
+      /* Attack      */ {"Slash", false, 1.0f, false, 0.05f},
+      /* Death       */ {"Death", false, 1.0f, false, 0.10f},
+  };
+  return table;
+}
+
+SwordmanAnimator::SwordmanAnimator()
+    : anim(AssetID::ENEMY_ASHIGARU, descTable()) {}
+
+bool SwordmanAnimator::resolveClips(const AssetManager &assets) {
+  if (!anim.resolveClips(assets))
+    return false;
+
+  const RootMotion::Track &walkTrack =
+      anim.track(assets, SwordmanAnimState::Walk);
+  if (walkTrack.hasMotion) {
+    locomotion_speed = walkTrack.authoredSpeed;
+    TraceLog(LOG_INFO, "Swordman: walk clip authored at %.2f u/s",
+             locomotion_speed);
+  }
+  return true;
+}
+
+void SwordmanAnimator::queueReaction(bool blocked) {
+  queued_reaction =
+      blocked ? SwordmanAnimState::GuardImpact : SwordmanAnimState::HitReact;
+}
+
+void SwordmanAnimator::updateFlinch(float dt, const AssetManager *assets) {
+  if (reaction_timer > 0.0f)
+    reaction_timer -= dt;
+
+  const SwordmanAnimState queued = queued_reaction;
+  queued_reaction = SwordmanAnimState::Count;
+  if (queued == SwordmanAnimState::Count || !assets)
+    return;
+
+  if (anim.clipFor(queued) < 0)
+    return;
+
+  // The clip's own length is the reaction's length — no separate constant to
+  // fall out of sync when the animation is replaced.
+  const RootMotion::Track &track = anim.track(*assets, queued);
+  if (track.duration <= 0.0f)
+    return;
+
+  // The newest hit wins outright rather than queueing behind the one playing.
+  reaction_state = queued;
+  reaction_timer = track.duration;
+  reaction_id++;
+}
+
+SwordmanAnimator::Machine::Selection
+SwordmanAnimator::resolve(const Frame &frame) const {
+  // Every rung is guarded on its clip existing, so a state whose animation the
+  // loaded asset does not contain falls through to the next one instead of
+  // freezing the character.
+
+  // Above everything: a corpse does not flinch, swing or walk. Non-looping, so
+  // it plays once and holds its last pose for as long as the body is up.
+  if (frame.dead && anim.clipFor(SwordmanAnimState::Death) >= 0)
+    return anim.select(SwordmanAnimState::Death);
+
+  const CombatComponent &combat = *frame.combat;
+
+  if (const AttackData *attack = combat.getActiveAttack()) {
+    Machine::Selection selection =
+        anim.select(SwordmanAnimState::Attack, combat.getActionId());
+
+    // The attack's own clip when it names one the asset contains, otherwise the
+    // table's generic swing. Root motion is deliberately dropped even where the
+    // attack asks for it: nothing feeds an enemy's clip travel back into its
+    // position, so claiming the clip drives movement would only leave the mesh
+    // sliding off its capsule.
+    if (attack->getClipName() && frame.assets) {
+      const int named = frame.assets->findAnimation(AssetID::ENEMY_ASHIGARU,
+                                                    attack->getClipName());
+      if (named >= 0)
+        selection.clip = named;
+    }
+
+    if (selection.clip >= 0)
+      return selection;
+  }
+
+  // Below the swing, so a hit taken mid-attack does not interrupt it — the same
+  // ordering the player's ladder uses.
+  if (reaction_timer > 0.0f && anim.clipFor(reaction_state) >= 0)
+    return anim.select(reaction_state, reaction_id);
+
+  if (frame.moving && anim.clipFor(SwordmanAnimState::Walk) >= 0)
+    return anim.select(SwordmanAnimState::Walk);
+
+  return anim.select(SwordmanAnimState::Idle);
+}
+
+void SwordmanAnimator::update(const Frame &frame, float dt) {
+  anim.apply(frame.assets, dt, resolve(frame));
+}

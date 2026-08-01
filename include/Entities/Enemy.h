@@ -26,6 +26,12 @@ public:
   const StealthComponent &getStealthComponent() const { return stealth_component; }
 
 protected:
+  /// Called once per hit that actually landed, with whether the guard caught
+  /// it. The hook exists so a subclass can react — a flinch is the whole of it
+  /// today — without having to restate takeDamage's parry, block and
+  /// posture-break rules, which are the same for every enemy.
+  virtual void onDamaged(bool /*blocked*/) {}
+
   CombatComponent combat_component;
   AIComponent ai_component;
   StealthComponent stealth_component;

@@ -1,13 +1,8 @@
 #pragma once
 
-#include <Animation/AnimStateMachine.h>
 #include <CombatData/Combo.h>
+#include <Entities/Enemies/SwordmanAnimator.h>
 #include <Entities/Enemy.h>
-
-/// The one clip the ashigaru model carries. A single-entry ladder, but it goes
-/// through the same machinery the player's does, so the clock is advanced and
-/// the render state is filled the same way rather than by hand.
-enum class SwordmanAnimState { Idle, Count };
 
 class Swordman : public Enemy {
 public:
@@ -18,10 +13,15 @@ public:
   std::vector<HitBox> getActiveHitBoxes() const override;
   CharacterRenderData getRenderData() const override;
 
+protected:
+  /// Flinches on a hit that connected. Enemy::takeDamage decides whether one
+  /// did and whether the guard caught it; all that is left here is showing it.
+  void onDamaged(bool blocked) override;
+
 private:
   Combo combo;
 
-  AnimStateMachine<SwordmanAnimState> anim;
+  SwordmanAnimator animator;
 
   const float BODY_HEIGHT = 1.8f;
   const float BODY_RADIUS = 0.5f;
