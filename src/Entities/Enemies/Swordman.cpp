@@ -4,16 +4,7 @@
 #include <raymath.h>
 #include <rlgl.h>
 
-namespace {
-/// Walk.glb carries a single clip, whose name is the armature's rather than
-/// anything descriptive.
-const AnimStateMachine<SwordmanAnimState>::Desc kAnimTable[] = {
-    /* Idle */ {"Armature|mixamo.com|Layer0", true, 1.0f, false, 0.0f},
-};
-} // namespace
-
-Swordman::Swordman(Vector3 start_position)
-    : Enemy(start_position), anim(AssetID::ENEMY_ASHIGARU, kAnimTable) {
+Swordman::Swordman(Vector3 start_position) : Enemy(start_position) {
   stats = Stats(1000.0f, 100.0f, 15.0f);
   combo = {AttackID::PlayerLight1};
   stealth_component.addSensor(std::make_shared<RadiusSensor>(5.0f));
@@ -26,24 +17,34 @@ void Swordman::update(const UpdateContext &ctx) {
 
   stats.update(dt);
 
-  if (stats.isDead())
-    return;
+  if (ctx.assets)
+    animator.resolveClips(*ctx.assets);
 
-  combat_component.update(dt);
+  // Gameplay stops at death; the animation does not. The death clip has to be
+  // driven to its end and held there, which the early return this replaced left
+  // frozen on whatever pose the last live frame happened to be showing.
+  const bool dead = stats.isDead();
+  if (!dead) {
+    combat_component.update(dt);
+    ai_component.update();
+  }
 
-  ai_component.update();
+  animator.updateFlinch(dt, ctx.assets);
 
-  // Resolved by name rather than by assuming an index. The model carries
-  // exactly one clip, so a name the export toolchain has renamed still leaves
-  // index 0 as the only possibility worth falling back to.
-  if (ctx.assets && anim.resolveClips(*ctx.assets) &&
-      anim.clipFor(SwordmanAnimState::Idle) < 0)
-    anim.setClip(SwordmanAnimState::Idle, 0);
+  SwordmanAnimator::Frame frame;
+  frame.combat = &combat_component;
+  frame.assets = ctx.assets;
+  // Nothing writes an enemy's velocity yet, so this is false every frame today.
+  // Read from the same field PhysicsManager integrates, so the stride starts
+  // the moment something does.
+  const Vector3 velocity = getHorizontalVelocity();
+  frame.moving = (velocity.x != 0.0f || velocity.z != 0.0f);
+  frame.dead = dead;
 
-  // Advancing playback here is what the original code omitted, which left
-  // enemies rendering frozen on frame 0.
-  anim.apply(ctx.assets, dt, anim.select(SwordmanAnimState::Idle));
+  animator.update(frame, dt);
 }
+
+void Swordman::onDamaged(bool blocked) { animator.queueReaction(blocked); }
 
 void Swordman::setupBehaviorTree() {
   using namespace BT;
@@ -136,5 +137,5 @@ CharacterRenderData Swordman::getRenderData() const {
   transform.rotation = rotation;
   transform.scale = visual_size;
 
-  return {AssetID::ENEMY_ASHIGARU, transform, anim.renderState()};
+  return {AssetID::ENEMY_ASHIGARU, transform, animator.renderState()};
 }

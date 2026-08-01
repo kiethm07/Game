@@ -35,11 +35,24 @@ struct AssetEntry {
 //      mixamorig:Hips onto a dedicated `Root` bone -> Paladin.rootmotion.glb
 // Load only the second. Pointing this at Paladin.glb reverts bone 0 to the hips
 // and root motion starts picking up hip sway.
+
+// The ashigaru has no model of its own yet, so it borrows the player's rather
+// than the single-clip Walk.glb it used to draw with: one skeleton, one set of
+// 58 named clips, which is what lets SwordmanAnimator's table name "Slash" and
+// "Impact_2" the way the player's does. Aliased, not loaded a second time —
+// both IDs resolve to the one Model and the one animation array, and the
+// skinning shader re-uploads the bone matrices per draw, so each entity poses
+// it independently.
+//
+// Swapping in a real ashigaru asset is this pointer becoming a path, plus
+// whatever clip names the new asset carries.
+static const AssetID kAshigaruSource = AssetID::PLAYER_WOLF;
+
 static const AssetEntry kAssets[] = {
     {AssetID::PLAYER_WOLF, ASSET_DIR "/Paladin.rootmotion.glb",
      ASSET_DIR "/Paladin.rootmotion.glb", RendererKind::SkinnedCharacter},
-    {AssetID::ENEMY_ASHIGARU, ASSET_DIR "/Walk.glb", ASSET_DIR "/Walk.glb",
-     RendererKind::SkinnedCharacter},
+    {AssetID::ENEMY_ASHIGARU, nullptr, nullptr, RendererKind::SkinnedCharacter,
+     &kAshigaruSource, &kAshigaruSource},
 };
 
 std::unique_ptr<IEntityRenderer> makeRenderer(RendererKind kind) {

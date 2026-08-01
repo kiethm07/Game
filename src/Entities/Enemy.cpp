@@ -99,12 +99,20 @@ void Enemy::takeDamage(float health_damage, float posture_damage) {
   if (combat_component.getCurrentState() == CombatState::Blocking)
     health_damage = 0.0f;
 
+  const bool blocked =
+      (combat_component.getCurrentState() == CombatState::Blocking);
   bool was_posture_broken = stats.isPostureBroken();
 
-  stats.applyDamage(health_damage, posture_damage);
+  const bool hit_applied = stats.applyDamage(health_damage, posture_damage);
 
   // If posture was already broken (they are in the 3s vulnerable window), next hit executes them
   if (was_posture_broken && stats.isPostureBroken()) {
       stats.applyDamage(stats.getCurrentHealth(), 0.0f);
   }
+
+  // Once per hit that connected, and only then: a hit swallowed by i-frames is
+  // not something the character should be seen reacting to. After the execute
+  // above, so a subclass asking whether it is dead gets this hit's answer.
+  if (hit_applied)
+    onDamaged(blocked);
 }

@@ -42,7 +42,7 @@ const PlayerAnimator::Machine::Desc *PlayerAnimator::descTable() {
       /* Attack      */ {"Slash", false, 1.0f, false, 0.05f},
       /* HitReact    */ {"Impact_2", false, 1.0f, false, 0.05f},
       /* PostureBreak*/ {nullptr, false, 1.0f, false, 0.05f},
-      /* Death       */ {nullptr, false, 1.0f, false, 0.10f},
+      /* Death       */ {"Death", false, 1.0f, false, 0.10f},
   };
   return table;
 }
@@ -53,8 +53,7 @@ bool PlayerAnimator::isGuardPose(PlayerAnimState state) {
          state == PlayerAnimState::GuardImpact;
 }
 
-PlayerAnimator::PlayerAnimator()
-    : anim(AssetID::PLAYER_WOLF, descTable()) {}
+PlayerAnimator::PlayerAnimator() : anim(AssetID::PLAYER_WOLF, descTable()) {}
 
 bool PlayerAnimator::resolveClips(const AssetManager &assets) {
   if (!anim.resolveClips(assets))
