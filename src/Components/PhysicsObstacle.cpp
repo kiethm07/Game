@@ -20,10 +20,16 @@ PhysicsObstacle::PhysicsObstacle(Vector3 min_corner, Vector3 max_corner, float y
     local_box.min = Vector3Negate(extents);
     local_box.max = extents;
 
-    // Raymath's MatrixMultiply(left, right) evaluates left * right.
-    // To construct a matrix that Rotates first, then Translates (v' = T * R * v),
-    // we need MatrixMultiply(Translate, Rotate).
-    localToWorld = MatrixMultiply(MatrixTranslate(center.x, center.y, center.z), MatrixRotateY(yaw * DEG2RAD));
+    // Raymath's MatrixMultiply(left, right) applies LEFT FIRST -- check the
+    // translation column of the product in raymath.h: for left=Translate(c) it
+    // comes out as R(c), i.e. the result is R * T. So rotate-then-translate
+    // (v' = T * R * v) is MatrixMultiply(Rotate, Translate).
+    //
+    // Passing them the other way round spins the obstacle about the WORLD
+    // origin instead of its own centre, which silently relocates every obstacle
+    // with a non-zero yaw -- and does it to the collision volume and the drawn
+    // volume alike, so it reads as the level being authored wrong.
+    localToWorld = MatrixMultiply(MatrixRotateY(yaw * DEG2RAD), MatrixTranslate(center.x, center.y, center.z));
     worldToLocal = MatrixInvert(localToWorld);
 }
 
@@ -51,7 +57,9 @@ PhysicsObstacle::PhysicsObstacle(Vector2 min_xz, Vector2 max_xz, float start_y, 
     local_box.min = { std::min(ramp_min_xz.x, ramp_max_xz.x), min_y, std::min(ramp_min_xz.y, ramp_max_xz.y) };
     local_box.max = { std::max(ramp_min_xz.x, ramp_max_xz.x), max_y, std::max(ramp_min_xz.y, ramp_max_xz.y) };
 
-    localToWorld = MatrixMultiply(MatrixTranslate(center.x, center.y, center.z), MatrixRotateY(yaw * DEG2RAD));
+    // Rotate then translate; see the box constructor for why the arguments are
+    // in this order.
+    localToWorld = MatrixMultiply(MatrixRotateY(yaw * DEG2RAD), MatrixTranslate(center.x, center.y, center.z));
     worldToLocal = MatrixInvert(localToWorld);
 }
 
@@ -87,6 +95,15 @@ BoundingBox PhysicsObstacle::getApproxBox() const {
 
 float PhysicsObstacle::getHeightAt(Vector3 position) const {
     Vector3 local_pos = Vector3Transform(position, worldToLocal);
+
+    // Outside the footprint the answer is the height at the nearest edge, not an
+    // extrapolation. A ramp sampled past its own side otherwise reports the slope
+    // it WOULD have at that depth, so a caller probing for ground beside a
+    // staircase is handed a surface that climbs as it walks along it — an
+    // invisible incline running parallel to the visible one. A box is flat, so
+    // this changes nothing for BOX_SHAPE beyond making the contract explicit.
+    local_pos.x = std::clamp(local_pos.x, local_box.min.x, local_box.max.x);
+    local_pos.z = std::clamp(local_pos.z, local_box.min.z, local_box.max.z);
 
     if (shape == ObstacleShape::BOX_SHAPE) {
         // Return max.y transformed back to world
