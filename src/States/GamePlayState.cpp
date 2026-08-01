@@ -52,7 +52,7 @@ GameplayState::GameplayState(const InputManager &input_manager)
   // --- THIN WALL FOR TUNNELING TEST ---
   // A wall that is only 0.05 units thick!
   obstacles.emplace_back(Vector3{-5.0f, 0.0f, -5.0f},
-                         Vector3{-4.95f, 5.0f, 5.0f}, 0.0f, MAGENTA);
+                         Vector3{-4.95f, 4.5f, 5.0f}, 0.0f, MAGENTA);
 
   renderer = std::make_unique<GameRenderer>(asset_manager);
 }

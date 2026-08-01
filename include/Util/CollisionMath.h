@@ -29,8 +29,18 @@ public:
         return dist_sq <= (combined_radius * combined_radius);
     }
 
-    // Resolve overlap between two cylinders on XZ plane
-    static bool resolveCylinderCylinder(Vector3& pos_a, float radius_a, Vector3& pos_b, float radius_b) {
+    // Resolve overlap between two cylinders (origin at the feet, extending upward).
+    // The pair must overlap vertically to count as touching at all — otherwise
+    // characters on different floors would shove each other. The push-out itself
+    // stays on the XZ plane so separation never launches anyone vertically.
+    static bool resolveCylinderCylinder(Vector3& pos_a, float radius_a, float height_a,
+                                        Vector3& pos_b, float radius_b, float height_b) {
+        // Vertical span test. The epsilon keeps a character standing exactly on
+        // another's head (spans meeting at a single point) from registering.
+        const float SPAN_EPS = 0.001f;
+        if (pos_a.y >= pos_b.y + height_b - SPAN_EPS) return false;
+        if (pos_b.y >= pos_a.y + height_a - SPAN_EPS) return false;
+
         Vector3 diff = Vector3Subtract(pos_a, pos_b);
         diff.y = 0.0f;
 

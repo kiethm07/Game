@@ -3,7 +3,9 @@
 #include <limits>
 
 // ---------------------------------------------------------------------------
-// Character-vs-Character push-out (XZ plane only)
+// Character-vs-Character push-out. Pairs must overlap vertically (cylinder
+// spans, feet to head) before any XZ separation is applied, so characters on
+// different floors ignore each other.
 // ---------------------------------------------------------------------------
 void PhysicsManager::resolveCharacterCollisions(const std::vector<Character*>& characters, std::vector<Vector3>& positions) {
     size_t count = characters.size();
@@ -25,8 +27,11 @@ void PhysicsManager::resolveCharacterCollisions(const std::vector<Character*>& c
             Vector3 pos_b    = positions[j];
             float   radius_a = char_a->getColliderRadius();
             float   radius_b = char_b->getColliderRadius();
+            float   height_a = char_a->getColliderHeight();
+            float   height_b = char_b->getColliderHeight();
 
-            bool resolved = CollisionMath::resolveCylinderCylinder(pos_a, radius_a, pos_b, radius_b);
+            bool resolved = CollisionMath::resolveCylinderCylinder(pos_a, radius_a, height_a,
+                                                                   pos_b, radius_b, height_b);
             if (resolved) {
                 positions[i] = pos_a;
                 positions[j] = pos_b;
@@ -72,7 +77,7 @@ bool PhysicsManager::checkHeadroomClearance(
 // Classify the surface type from an outward-facing surface normal.
 // ---------------------------------------------------------------------------
 SurfaceType PhysicsManager::classifySurfaceNormal(const Vector3& normal) const {
-    if (normal.y >  0.5f) return SurfaceType::GROUND_SURF;
+    if (normal.y >  0.4f) return SurfaceType::GROUND_SURF;
     if (normal.y < -0.2f) return SurfaceType::CEILING_SURF;
     return SurfaceType::WALL_SURF;
 }
@@ -112,7 +117,13 @@ void PhysicsManager::resolveEnvironmentCollisions(
                 hit_normal = Vector3Scale(diff, 1.0f / len);
             }
 
+            bool center_inside_xz = (char_pos.x >= obox.min.x && char_pos.x <= obox.max.x &&
+                                     char_pos.z >= obox.min.z && char_pos.z <= obox.max.z);
+
             SurfaceType surface_type = classifySurfaceNormal(hit_normal);
+            if (!center_inside_xz && surface_type == SurfaceType::CEILING_SURF) {
+                surface_type = SurfaceType::WALL_SURF;
+            }
 
             if (surface_type == SurfaceType::CEILING_SURF) {
                 if (char_pos.y + height > obox.min.y && char_pos.y < obox.min.y) {
@@ -147,7 +158,20 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
     const float GRAVITY       = 9.81f;
     const float MAX_STEP      = 0.3f;
     const float SNAP_BAND     = 0.35f;
-    const float COS_MAX_SLOPE = std::cos(45.0f * DEG2RAD);
+    const float COS_MAX_SLOPE = std::cos(60.0f * DEG2RAD);
+
+    // How far past a surface's edge ground support still reaches, as a fraction
+    // of the collider radius, so a character whose centre has just cleared a
+    // ledge does not drop the instant it does.
+    //
+    // Must stay strictly BELOW 1.0. resolveCylinderAABB parks a blocked
+    // character at exactly `radius` from a wall's footprint, so probing at the
+    // full radius leaves anyone pressed against a wall permanently on the
+    // boundary of that same wall's "am I standing on this" test — the obstacle
+    // ejects them and offers itself as floor in the same frame. Against a ramp
+    // that reads as an invisible slope running alongside the real one, climbing
+    // as they walk, which is what this constant exists to prevent.
+    const float GROUND_PROBE_REACH = 0.5f;
 
     std::vector<Vector3> new_positions(characters.size());
 
@@ -211,81 +235,91 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
                         continue;
                     }
 
-                    Vector3 local_clamped;
-                    local_clamped.x = std::clamp(local_pos.x, local_box.min.x, local_box.max.x);
-                    local_clamped.y = local_pos.y;
-                    local_clamped.z = std::clamp(local_pos.z, local_box.min.z, local_box.max.z);
-
-                    Vector3 world_clamped = Vector3Transform(local_clamped, obs.getLocalToWorld());
-                    float slope_y = obs.getHeightAt(world_clamped);
-
-                    if (slope_y <= pos.y + MAX_STEP) {
-                        // Character can step up / is on top of slope. Skip XZ push.
-                        continue;
-                    }
-
-                    if (obs.containsXZ(pos, 0.0f)) {
-                        // Center is inside! They must have fallen onto the ramp, or glitched through the side.
-                        // Snap them UP to the surface to prevent falling through the solid half-box!
-                        pos.y = slope_y;
-                        if (v_y < 0.0f) {
+                    // 1. Ceiling collision (Headbumping on ramp bottom)
+                    // BUG FIX: Must check containsXZ so we don't bump our head on another ramp's infinite horizontal plane!
+                    if (obs.containsXZ(pos, radius + 0.05f) && v_y > 0.0f && local_pos.y < local_box.min.y && local_pos.y + height > local_box.min.y) {
+                        bool was_below = (local_pos.y + height - step_v) <= local_box.min.y;
+                        if (was_below) {
+                            local_pos.y = local_box.min.y - height - 0.01f;
+                            pos = Vector3Transform(local_pos, obs.getLocalToWorld());
                             v_y = 0.0f;
                             character->setVerticalVelocity(0.0f);
+                            continue;
                         }
-                        continue;
                     }
 
-                    // Otherwise, they are hitting the side or the tall back wall.
-                    // Treat it as a solid vertical wall (Half Box) and push out in XZ.
+                    // 2. Ramp slope surface
+                    if (obs.containsXZ(pos, radius + 0.05f)) {
+                        float slope_y = obs.getHeightAt(pos);
+
+                        if (pos.y >= slope_y) {
+                            continue; // Completely above the ramp! Skip XZ wall collision.
+                        }
+
+                        if (pos.y >= slope_y - MAX_STEP) {
+                            continue; // Cleared the solid wall part of the ramp! Skip XZ wall collision.
+                        }
+                    }
+
+                    // 3. Solid vertical side of ramp base
                     CollisionMath::resolveCylinderAABB(local_pos, radius, local_box);
                     pos = Vector3Transform(local_pos, obs.getLocalToWorld());
                     continue;
                 }
 
-                // ---- BOX_SHAPE: normal-based dispatch in local space ----
-                Vector3 local_center;
-                local_center.x = local_pos.x;
-                local_center.y = local_pos.y + height * 0.5f;
-                local_center.z = local_pos.z;
+                // ---- BOX_SHAPE: geometry-based dispatch in local space ----
+                const float local_head_y = local_pos.y + height;
 
-                Vector3 local_closest;
-                local_closest.x = std::clamp(local_center.x, local_box.min.x, local_box.max.x);
-                local_closest.y = std::clamp(local_center.y, local_box.min.y, local_box.max.y);
-                local_closest.z = std::clamp(local_center.z, local_box.min.z, local_box.max.z);
-
-                Vector3 local_diff = Vector3Subtract(local_center, local_closest);
-                float   len  = Vector3Length(local_diff);
-
-                Vector3 hit_normal = { 0.0f, 1.0f, 0.0f };
-                if (len > 0.0001f) {
-                    hit_normal = Vector3Scale(local_diff, 1.0f / len);
+                // 1. Check vertical overlap between character cylinder and box
+                if (local_pos.y >= local_box.max.y || local_head_y <= local_box.min.y) {
+                    continue;
                 }
 
-                if (hit_normal.y > 0.1f) {
-                    if (local_box.max.y - local_pos.y > MAX_STEP) {
-                        CollisionMath::resolveCylinderAABB(local_pos, radius, local_box);
-                        pos = Vector3Transform(local_pos, obs.getLocalToWorld());
-                    } else {
-                        bool feet_below_top    = local_pos.y  < local_box.max.y;
-                        bool head_above_bottom = local_pos.y + height > local_box.min.y;
-                        bool approaching_from_below = local_pos.y < local_box.min.y; 
-                        if (feet_below_top && head_above_bottom && approaching_from_below) {
-                            local_pos.y = local_box.max.y;
-                            pos = Vector3Transform(local_pos, obs.getLocalToWorld());
-                        }
-                    }
-                } else if (hit_normal.y < -0.2f) {
-                    if (local_pos.y + height > local_box.min.y && local_pos.y < local_box.min.y) {
-                        local_pos.y = std::min(local_pos.y, local_box.min.y - height);
-                        pos = Vector3Transform(local_pos, obs.getLocalToWorld());
-                        if (v_y > 0.0f) {
-                            v_y = 0.0f;
-                            character->setVerticalVelocity(0.0f);
-                        }
-                    }
-                } else {
-                    CollisionMath::resolveCylinderAABB(local_pos, radius, local_box);
+                // 2. Are we landing on this box?
+                // If our feet are just slightly below the top (within MAX_STEP),
+                // we treat this as a floor. We SKIP XZ collision to let Step 4 (Gravity/Snapping) handle it!
+                float depth_floor = local_box.max.y - local_pos.y;
+                if (depth_floor > 0.0f && depth_floor <= MAX_STEP && v_y <= 0.0f) {
+                    continue; // Skip Step 3! Let Step 4 perfectly snap us down/up to the floor!
+                }
+
+                // Calculate XZ distance to see if we even intersect the footprint
+                float dx = 0.0f, dz = 0.0f;
+                if (local_pos.x < local_box.min.x) dx = local_box.min.x - local_pos.x;
+                else if (local_pos.x > local_box.max.x) dx = local_pos.x - local_box.max.x;
+
+                if (local_pos.z < local_box.min.z) dz = local_box.min.z - local_pos.z;
+                else if (local_pos.z > local_box.max.z) dz = local_pos.z - local_box.max.z;
+
+                float dist_xz = sqrtf(dx*dx + dz*dz);
+                
+                if (dist_xz >= radius) {
+                    continue; // Completely outside the cylinder's XZ radius
+                }
+
+                // 3. Ceiling collision (Headbumping):
+                // If moving upward and the physics cylinder penetrates the bottom face of the box, BUMP HEAD!
+                bool was_below_ceiling = (local_head_y - step_v) <= local_box.min.y;
+                if (v_y > 0.0f && local_pos.y < local_box.min.y && local_head_y > local_box.min.y && was_below_ceiling) {
+                    local_pos.y = local_box.min.y - height - 0.01f;
                     pos = Vector3Transform(local_pos, obs.getLocalToWorld());
+                    v_y = 0.0f;
+                    character->setVerticalVelocity(0.0f);
+                    continue;
+                }
+
+                // 4. Otherwise, it is a WALL. Push out purely in XZ!
+                // Capsule Bottom prevents sudden shoves off cliffs when falling
+                float effective_radius = radius;
+                if (v_y < 0.0f && depth_floor > 0.0f && depth_floor < radius) {
+                    effective_radius = sqrtf(2.0f * radius * depth_floor - depth_floor * depth_floor);
+                }
+
+                if (dist_xz < effective_radius) {
+                    bool resolved = CollisionMath::resolveCylinderAABB(local_pos, effective_radius, local_box);
+                    if (resolved) {
+                        pos = Vector3Transform(local_pos, obs.getLocalToWorld());
+                    }
                 }
             }
         } // end solver iterations
@@ -308,7 +342,7 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
         Vector3 surface_normal = { 0.0f, 1.0f, 0.0f };
 
         for (const PhysicsObstacle& obs : obstacles) {
-            if (!obs.containsXZ(pos, radius)) {
+            if (!obs.containsXZ(pos, radius * GROUND_PROBE_REACH)) {
                 continue;
             }
 
@@ -370,7 +404,7 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
         // --- Downhill snap: hold character to slope while descending ---
         // Fires only when a real surface is sampled (found_surface == true),
         // preventing ground_y=-inf or a stale 0.0 from dragging the character down.
-        if (is_walkable && v_y <= 0.0f &&
+        if (is_walkable && v_y <= 0.0f && character->isGrounded() &&
             pos.y >= ground_y && (pos.y - ground_y) <= SNAP_BAND)
         {
             pos.y = ground_y;
@@ -385,11 +419,13 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
         bool can_snap  = is_walkable;
         float step_diff = ground_y - pos.y;
 
-        // Never snap a character that is moving upward. One frame of a jump
-        // only clears ~0.08 units, which is well inside MAX_STEP, so the step
-        // snap would read it as a small ledge, pull the character back to the
-        // ground and zero the velocity — cancelling every jump on its first
-        // frame.
+        // Never step-snap a character that is airborne (jumping or falling).
+        // This fixes BUG 2: Snapping up through a ceiling after a headbump!
+        if (!character->isGrounded()) {
+            can_snap = false;
+        }
+
+        // Never snap a character that is moving upward.
         if (v_y > 0.0f) {
             can_snap = false;
         }
@@ -397,6 +433,7 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
         if (step_diff > MAX_STEP || step_diff < -MAX_STEP) {
             can_snap = false;
         }
+
         // Headroom check uses the live integrated pos, not character->getPosition().
         if (can_snap && step_diff > 0.001f) {
             if (!checkHeadroomClearance(pos, radius, height, ground_y, obstacles)) {
@@ -409,7 +446,9 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
             character->setVerticalVelocity(0.0f);
             character->setGrounded(true);
         } else {
-            if (pos.y <= ground_y) {
+            // BUG 1 (Ramp snap when jump): The `&& v_y <= 0.0f` ensures that 
+            // even if the ramp is steeper than our jump arc, we don't snap down to it!
+            if (pos.y <= ground_y && v_y <= 0.0f) {
                 // Character has fallen to or below the detected surface — hard floor.
                 pos.y = ground_y;
                 character->setVerticalVelocity(0.0f);
