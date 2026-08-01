@@ -195,10 +195,28 @@ std::vector<HitBox> Player::getActiveHitBoxes() const {
   return active_hitboxes;
 }
 
-void Player::takeDamage(float health_damage, float posture_damage) {
+void Player::takeDamage(float health_damage, float posture_damage, Character* attacker) {
   // 1. Guard check state machine windows
   if (combat_component.getCurrentState() == CombatState::Parrying) {
-    // Perfect deflect window: Ignore damage entirely!
+    // Perfect deflect window: Ignore health damage entirely.
+    // Receive drastically more posture damage than blocking, but it never breaks posture.
+    float parry_posture_damage = posture_damage * 2.0f;
+    float current = stats.getCurrentPosture();
+    float max_p = stats.getMaxPosture();
+
+    if (current + parry_posture_damage >= max_p) {
+      float safe_damage = (max_p - current) - 0.1f;
+      if (safe_damage > 0.0f) {
+        stats.applyDamage(0.0f, safe_damage);
+      }
+    } else {
+      stats.applyDamage(0.0f, parry_posture_damage);
+    }
+
+    // Attacker takes posture damage from being parried
+    if (attacker) {
+      attacker->takeDamage(0.0f, posture_damage * 1.5f, nullptr);
+    }
     return;
   }
 
@@ -219,7 +237,9 @@ void Player::takeDamage(float health_damage, float posture_damage) {
     animator.queueReaction(blocked);
 
     if (stats.isPostureBroken()) {
-      // Stance broken state!
+      // 2.0s duration for posture break stagger
+      combat_component.breakPosture(2.0f);
+      stats.resetPosture();
     } else if (stats.isDead()) {
       // Player death state!
     }

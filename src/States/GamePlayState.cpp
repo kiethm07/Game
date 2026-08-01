@@ -78,7 +78,7 @@ StateAction GameplayState::update(float dt) {
   }
 
   // 1.5. Evaluate Stealth before AI update so AI can react in the same frame
-  stealth_manager.update(active_characters, player_pos);
+  stealth_manager.update(active_characters, player.get(), obstacles, dt);
 
   player->update(ctx);
   for (auto &enemy : enemies) {

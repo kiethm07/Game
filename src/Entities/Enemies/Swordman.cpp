@@ -16,7 +16,8 @@ Swordman::Swordman(Vector3 start_position)
     : Enemy(start_position), anim(AssetID::ENEMY_ASHIGARU, kAnimTable) {
   stats = Stats(1000.0f, 100.0f, 15.0f);
   combo = {AttackID::PlayerLight1};
-  stealth_component.addSensor(std::make_shared<RadiusSensor>(5.0f));
+  stealth_component.addSensor(std::make_shared<VisionSensor>(8.0f, 90.0f));
+  stealth_component.addSensor(std::make_shared<SoundSensor>(6.0f));
   setupBehaviorTree();
 }
 
@@ -50,10 +51,21 @@ void Swordman::setupBehaviorTree() {
 
   auto orientAction = std::make_shared<Action>([this]() {
     if (!current_ctx) return NodeState::FAILURE;
+    if (combat_component.getCurrentState() == CombatState::PostureBroken) return NodeState::SUCCESS;
+    
     Vector3 dir = Vector3Subtract(current_ctx->playerPos, position);
     if (dir.x != 0.0f || dir.z != 0.0f) {
       float target_yaw = std::atan2(dir.x, dir.z) * RAD2DEG;
-      rotation.y = target_yaw;
+      float angle_diff = target_yaw - rotation.y;
+      while (angle_diff < -180.0f) angle_diff += 360.0f;
+      while (angle_diff > 180.0f) angle_diff -= 360.0f;
+      
+      float alpha = 10.0f * current_ctx->dt;
+      if (alpha > 1.0f) alpha = 1.0f;
+      
+      rotation.y += angle_diff * alpha;
+      while (rotation.y < 0.0f) rotation.y += 360.0f;
+      while (rotation.y >= 360.0f) rotation.y -= 360.0f;
     }
     return NodeState::SUCCESS;
   });
@@ -85,8 +97,39 @@ void Swordman::setupBehaviorTree() {
     attackAction
   });
 
+  auto susCondition = std::make_shared<Condition>([this]() {
+    return stealth_component.getStealthState() == StealthState::Suspicious;
+  });
+
+  auto susAction = std::make_shared<Action>([this]() {
+    if (!current_ctx) return NodeState::FAILURE;
+    if (combat_component.getCurrentState() == CombatState::PostureBroken) return NodeState::SUCCESS;
+    
+    Vector3 dir = Vector3Subtract(stealth_component.getLastKnownPlayerPos(), position);
+    if (dir.x != 0.0f || dir.z != 0.0f) {
+      float target_yaw = std::atan2(dir.x, dir.z) * RAD2DEG;
+      float angle_diff = target_yaw - rotation.y;
+      while (angle_diff < -180.0f) angle_diff += 360.0f;
+      while (angle_diff > 180.0f) angle_diff -= 360.0f;
+      
+      float alpha = 10.0f * current_ctx->dt;
+      if (alpha > 1.0f) alpha = 1.0f;
+      
+      rotation.y += angle_diff * alpha;
+      while (rotation.y < 0.0f) rotation.y += 360.0f;
+      while (rotation.y >= 360.0f) rotation.y -= 360.0f;
+    }
+    return NodeState::SUCCESS;
+  });
+
+  auto susSequence = std::make_shared<Sequence>(std::vector<NodePtr>{
+    susCondition,
+    susAction
+  });
+
   auto rootSelector = std::make_shared<Selector>(std::vector<NodePtr>{
     combatSequence,
+    susSequence,
     idleAction
   });
 

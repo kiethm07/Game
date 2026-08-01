@@ -32,9 +32,9 @@ void CombatComponent::update(float dt) {
         return;
     }
 
-    //Dodge — a fixed-length committed state; its displacement comes from the
-    //clip's root motion, so nothing here needs to know how far it travels.
-    if (current_state == CombatState::Dodging) {
+    //Dodge & PostureBroken — fixed-length committed states; their displacement comes from the
+    //clip's root motion, so nothing here needs to know how far they travel.
+    if (current_state == CombatState::Dodging || current_state == CombatState::PostureBroken) {
         state_timer -= dt;
         if (state_timer <= 0.0f) {
             resetToIdle();
@@ -145,6 +145,17 @@ bool CombatComponent::startDodge(float duration) {
     state_timer = duration;
     action_id++;
     return true;
+}
+
+void CombatComponent::breakPosture(float duration) {
+    if (duration <= 0.0f) return;
+    
+    active_combo_ptr = nullptr;
+    combo_index = 0;
+    is_guard_held = false;
+    current_state = CombatState::PostureBroken;
+    state_timer = duration;
+    action_id++;
 }
 
 void CombatComponent::interrupt() { resetToIdle(); }

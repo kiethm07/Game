@@ -62,7 +62,7 @@ void CombatManager::update(const std::vector<Character*>& characters) {
                 for (const auto& hurtbox : hurtboxes) {
                     if (CollisionMath::checkSphereCapsule(hitbox.getShape(), hurtbox.getShape())) {
 
-                        defender->takeDamage(hitbox.getHealthDamage(), hitbox.getPostureDamage());
+                        defender->takeDamage(hitbox.getHealthDamage(), hitbox.getPostureDamage(), attacker);
                         active_hits.push_back({ attacker->getId(), defender->getId() });
 
                         //Only process one hit at a time for this specific hitbox
