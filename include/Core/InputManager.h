@@ -11,7 +11,9 @@ enum class GameAction {
     Attack,
     Parry,
     Dodge,
-    LockOn
+    LockOn,
+    Takedown,
+    Crouch
 };
 
 enum class InputState {

@@ -16,8 +16,9 @@ Swordman::Swordman(Vector3 start_position)
     : Enemy(start_position), anim(AssetID::ENEMY_ASHIGARU, kAnimTable) {
   stats = Stats(1000.0f, 100.0f, 15.0f);
   combo = {AttackID::PlayerLight1};
-  stealth_component.addSensor(std::make_shared<VisionSensor>(8.0f, 90.0f));
+  stealth_component.addSensor(std::make_shared<VisionSensor>(20.0f, 70.0f));
   stealth_component.addSensor(std::make_shared<SoundSensor>(6.0f));
+  stealth_component.addSensor(std::make_shared<ProximitySensor>(1.2f));
   setupBehaviorTree();
 }
 

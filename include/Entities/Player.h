@@ -24,6 +24,14 @@ public:
   std::vector<HitBox> getActiveHitBoxes() const override;
   void takeDamage(float health_damage, float posture_damage, Character* attacker) override;
 
+  bool isCrouching() const override { return locomotion.getStance() == Stance::Crouching; }
+
+  CombatComponent& getCombatComponent() { return combat_component; }
+
+  void performTakedown() {
+      combat_component.initiateCombo(combo);
+  }
+
 private:
   const InputManager &input_manager;
 

@@ -1,7 +1,9 @@
 #include "States/GamePlayState.h"
 #include "raylib.h"
+#include "raymath.h"
 #include <Core/Game.h>
 #include <cassert>
+#include <cmath>
 
 GameplayState::GameplayState(const InputManager &input_manager)
     : input_manager(input_manager) {
@@ -13,6 +15,10 @@ GameplayState::GameplayState(const InputManager &input_manager)
       EnemyFactory::createEnemy(EnemyType::Swordman, {0.0f, 0.0f, 5.0f}));
   enemies.push_back(
       EnemyFactory::createEnemy(EnemyType::Swordman, {3.0f, 0.0f, 8.0f}));
+  
+  // Test enemy for wall-takedown
+  enemies.push_back(
+      EnemyFactory::createEnemy(EnemyType::Swordman, {0.0f, 0.0f, -3.0f}));
 
   // --- MULTI-LEVEL BUILDING EXAMPLE ---
 
@@ -53,6 +59,11 @@ GameplayState::GameplayState(const InputManager &input_manager)
   // A wall that is only 0.05 units thick!
   obstacles.emplace_back(Vector3{-5.0f, 0.0f, -5.0f},
                          Vector3{-4.95f, 4.5f, 5.0f}, 0.0f, MAGENTA);
+
+  // --- WALL FOR TAKEDOWN TEST ---
+  // Blocks the enemy at Z=-3.0f
+  obstacles.emplace_back(Vector3{-2.0f, 0.0f, -2.1f},
+                         Vector3{2.0f, 4.5f, -2.0f}, 0.0f, ORANGE);
 
   renderer = std::make_unique<GameRenderer>(asset_manager);
 }
@@ -104,6 +115,144 @@ StateAction GameplayState::update(float dt) {
     return StateAction::ChangeToMenu;
   }
 
+  if (takedown_text_timer > 0.0f) {
+      takedown_text_timer -= dt;
+  }
+
+  // --- Pending Aerial Takedown Logic ---
+  if (pending_aerial_target) {
+      if (pending_aerial_target->getStats().isDead()) {
+          pending_aerial_target = nullptr; // Abort if target somehow died
+      } else {
+          Vector3 p_pos = player->getPosition();
+          Vector3 e_pos = pending_aerial_target->getPosition();
+          
+          // Smoothly lerp X and Z to the target while falling
+          float lerp_factor = std::fmin(10.0f * dt, 1.0f);
+          float new_x = p_pos.x + (e_pos.x - p_pos.x) * lerp_factor;
+          float new_z = p_pos.z + (e_pos.z - p_pos.z) * lerp_factor;
+          player->setPosition({new_x, p_pos.y, new_z});
+          
+          // If we reach the threshold Y or hit the ground
+          if (p_pos.y - e_pos.y < 0.2f || player->isGrounded()) {
+              takedown_type_str = "AERIAL TAKEDOWN";
+              player->setPosition({e_pos.x, e_pos.y, e_pos.z});
+              player->setVerticalVelocity(0.0f);
+              player->setRotation(pending_aerial_target->getRotation());
+              
+              pending_aerial_target->takeDamage(9999.0f, 0.0f, player.get());
+              player->performTakedown();
+              takedown_text_timer = 2.0f;
+              
+              pending_aerial_target = nullptr;
+          }
+      }
+  }
+
+  // Takedown logic
+  if (!pending_aerial_target && input_manager.isActionPressed(GameAction::Takedown)) {
+      for (auto &enemy_ptr : enemies) {
+          Enemy* enemy = enemy_ptr.get();
+          if (!enemy->getStats().isDead()) {
+              Vector3 p_pos = player->getPosition();
+              Vector3 e_pos = enemy->getPosition();
+              
+              Vector2 p2 = {p_pos.x, p_pos.z};
+              Vector2 e2 = {e_pos.x, e_pos.z};
+              float horiz_dist = Vector2Distance(p2, e2);
+              float vert_dist = p_pos.y - e_pos.y;
+              
+              // Tighter vertical check for grounded takedowns so you don't do grounded takedowns from a ledge
+              bool is_normal_range = (horiz_dist < 2.0f && std::abs(vert_dist) < 0.5f);
+              bool is_aerial_range = (horiz_dist < 2.5f && vert_dist >= 1.5f && vert_dist < 10.0f && !player->isGrounded());
+
+              if (is_normal_range || is_aerial_range) {
+                  // Raycast check to prevent takedowns through walls
+                  bool is_blocked = false;
+                  Vector3 p_head = { p_pos.x, p_pos.y + player->getColliderHeight() * 0.8f, p_pos.z };
+                  Vector3 e_head = { e_pos.x, e_pos.y + enemy->getColliderHeight() * 0.8f, e_pos.z };
+                  
+                  for (const auto& obs : obstacles) {
+                      Vector3 local_obs = Vector3Transform(p_head, obs.getWorldToLocal());
+                      Vector3 local_tgt = Vector3Transform(e_head, obs.getWorldToLocal());
+                      
+                      Ray local_ray;
+                      local_ray.position = local_obs;
+                      local_ray.direction = Vector3Normalize(Vector3Subtract(local_tgt, local_obs));
+                      
+                      RayCollision collision = GetRayCollisionBox(local_ray, obs.getLocalBox());
+                      if (collision.hit) {
+                          float dist_to_tgt_local = Vector3Distance(local_obs, local_tgt);
+                          if (collision.distance < dist_to_tgt_local) {
+                              is_blocked = true;
+                              break;
+                          }
+                      }
+                  }
+
+                  if (is_blocked) continue;
+
+                  bool can_takedown = false;
+                  bool is_aerial = is_aerial_range && !is_normal_range;
+                  StealthState s_state = enemy->getStealthComponent().getStealthState();
+
+                  // 1. Aerial Takedown
+                  if (is_aerial && (s_state == StealthState::Unaware || s_state == StealthState::Suspicious)) {
+                      can_takedown = true;
+                  }
+                  // 2. Stealth Takedown (Must be Unaware or Suspicious, and player closely behind)
+                  else if (s_state == StealthState::Unaware || s_state == StealthState::Suspicious) {
+                      Vector3 enemy_fwd = {std::sin(enemy->getRotation().y * DEG2RAD), 0.0f, std::cos(enemy->getRotation().y * DEG2RAD)};
+                      Vector3 to_player = Vector3Normalize(Vector3Subtract(p_pos, e_pos));
+                      float dot = Vector3DotProduct(enemy_fwd, to_player);
+                      if (dot < -0.8f) { // Narrower cone (approx 74 degrees directly behind)
+                          can_takedown = true;
+                      }
+                  }
+                  // 3. Combat Deathblow (Enemy posture broken)
+                  else if (enemy->getStats().isPostureBroken()) {
+                      can_takedown = true;
+                  }
+
+                  if (can_takedown) {
+                      if (is_aerial) {
+                          // Trigger the drop phase!
+                          pending_aerial_target = enemy;
+                          // Do NOT snap X and Z instantly here; it will lerp smoothly in the update loop
+                          // Let normal gravity handle the fall instead of boosting it
+                      } else {
+                          // Snap rotation and position for grounded takedowns
+                          if (enemy->getStats().isPostureBroken() && s_state != StealthState::Unaware && s_state != StealthState::Suspicious) {
+                              takedown_type_str = "COMBAT DEATHBLOW";
+                              // Combat takedown: face the enemy
+                              Vector3 to_enemy = Vector3Normalize(Vector3Subtract(e_pos, p_pos));
+                              float target_yaw = std::atan2(to_enemy.x, to_enemy.z) * RAD2DEG;
+                              player->setRotation({0.0f, target_yaw, 0.0f});
+                              
+                              // Snap position 1.2 units in front of enemy
+                              player->setPosition({e_pos.x - to_enemy.x * 1.2f, p_pos.y, e_pos.z - to_enemy.z * 1.2f});
+                          } else {
+                              takedown_type_str = "STEALTH TAKEDOWN";
+                              // Stealth backstab: align exactly with enemy's facing direction
+                              player->setRotation(enemy->getRotation());
+                              
+                              // Snap position 1.2 units exactly behind the enemy
+                              float enemy_yaw = enemy->getRotation().y * DEG2RAD;
+                              Vector3 backward = {-std::sin(enemy_yaw), 0.0f, -std::cos(enemy_yaw)};
+                              player->setPosition({e_pos.x + backward.x * 1.2f, p_pos.y, e_pos.z + backward.z * 1.2f});
+                          }
+                          
+                          enemy->takeDamage(9999.0f, 0.0f, player.get());
+                          player->performTakedown();
+                          takedown_text_timer = 2.0f;
+                      }
+                      break; // Only execute one enemy
+                  }
+              }
+          }
+      }
+  }
+
   return StateAction::KeepCurrent;
 }
 
@@ -135,6 +284,7 @@ void GameplayState::draw() {
   // Collision debug wireframes — must stay inside the 3D scope.
   physics_manager.drawDebug(active_characters, obstacles);
   combat_manager.drawDebug(active_characters);
+  stealth_manager.drawDebug(active_characters);
 
   EndMode3D();
 
@@ -145,6 +295,13 @@ void GameplayState::draw() {
   player->drawHPBar2D();
   for (const auto &enemy : enemies) {
     enemy->drawHPBar(camera_controller->getCamera());
+  }
+
+  if (takedown_text_timer > 0.0f) {
+      const char* text = takedown_type_str.c_str();
+      int font_size = 40;
+      int text_width = MeasureText(text, font_size);
+      DrawText(text, GetScreenWidth() / 2 - text_width / 2, GetScreenHeight() / 2 - 100, font_size, RED);
   }
 }
 

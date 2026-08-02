@@ -13,6 +13,9 @@ public:
     
     // Returns 0.0f if not detected. Returns > 0.0f (usually 0.0f to 1.0f) representing the strength of detection.
     virtual float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles) const = 0;
+    
+    // Renders the sensor boundaries in 3D for debugging
+    virtual void drawDebug(const Character* observer) const {}
 };
 
 class RadiusSensor : public Sensor {
@@ -91,11 +94,47 @@ public:
         float normalized_dist = dist / radius;
         
         // Logarithmic scale: Drops rapidly at first, then tails off.
-        // log10(1 + 9x) goes from 0 (at x=0) to 1 (at x=1).
         // Strength scales from 5.0x (point blank) down to 0.25x (farthest).
         float strength = 5.0f - 4.75f * std::log10(1.0f + normalized_dist * 9.0f);
         
+        // Scale by angle logarithmically: 1.5x directly in front, dropping to 0.5x at the edge
+        float max_angle = cone_angle_degrees / 2.0f;
+        float normalized_angle = angle_to_target / max_angle;
+        float angle_factor = 1.5f - std::log10(1.0f + 9.0f * normalized_angle);
+        strength *= angle_factor;
+
+        if (target->isCrouching()) {
+            strength *= 0.4f; // Harder to see when crouching
+        }
+
         return strength;
+    }
+
+    void drawDebug(const Character* observer) const override {
+        Vector3 pos = observer->getPosition();
+        float yaw_rad = observer->getRotation().y * DEG2RAD;
+        float half_cone = (cone_angle_degrees / 2.0f) * DEG2RAD;
+
+        Vector3 left_dir = {std::sin(yaw_rad - half_cone), 0.0f, std::cos(yaw_rad - half_cone)};
+        Vector3 right_dir = {std::sin(yaw_rad + half_cone), 0.0f, std::cos(yaw_rad + half_cone)};
+
+        Vector3 left_pt = {pos.x + left_dir.x * radius, pos.y + 0.1f, pos.z + left_dir.z * radius};
+        Vector3 right_pt = {pos.x + right_dir.x * radius, pos.y + 0.1f, pos.z + right_dir.z * radius};
+        Vector3 center_pt = {pos.x, pos.y + 0.1f, pos.z};
+
+        DrawLine3D(center_pt, left_pt, RED);
+        DrawLine3D(center_pt, right_pt, RED);
+        
+        int segments = 10;
+        float angle_step = cone_angle_degrees * DEG2RAD / segments;
+        Vector3 prev_pt = left_pt;
+        for(int i = 1; i <= segments; ++i) {
+            float angle = (yaw_rad - half_cone) + i * angle_step;
+            Vector3 dir = {std::sin(angle), 0.0f, std::cos(angle)};
+            Vector3 pt = {pos.x + dir.x * radius, pos.y + 0.1f, pos.z + dir.z * radius};
+            DrawLine3D(prev_pt, pt, RED);
+            prev_pt = pt;
+        }
     }
 };
 
@@ -129,6 +168,72 @@ public:
         // Logarithmic scale for distance (5.0x at point blank down to 0.25x at max radius)
         float dist_strength = 5.0f - 4.75f * std::log10(1.0f + normalized_dist * 9.0f);
         
-        return speed_factor * dist_strength;
+        float strength = speed_factor * dist_strength;
+        if (target->isCrouching()) {
+            strength *= 0.1f; // Sneaking is very quiet
+        }
+        
+        return strength;
+    }
+
+    void drawDebug(const Character* observer) const override {
+        Vector3 pos = observer->getPosition();
+        int segments = 20;
+        float angle_step = 2.0f * PI / segments;
+        Vector3 prev_pt = {pos.x + radius, pos.y + 0.1f, pos.z};
+        for(int i = 1; i <= segments; ++i) {
+            float angle = i * angle_step;
+            Vector3 pt = {pos.x + std::cos(angle) * radius, pos.y + 0.1f, pos.z + std::sin(angle) * radius};
+            DrawLine3D(prev_pt, pt, BLUE);
+            prev_pt = pt;
+        }
+    }
+};
+
+class ProximitySensor : public Sensor {
+public:
+    float radius;
+    
+    ProximitySensor(float detection_radius) : radius(detection_radius) {}
+
+    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles) const override {
+        float dist_sq = Vector3DistanceSqr(observer->getPosition(), target->getPosition());
+        if (dist_sq <= (radius * radius)) {
+            // Check if blocked by walls (so you can't be instantly detected through a thin wall if you bump it)
+            Vector3 obs_head = { observer->getPosition().x, observer->getPosition().y + observer->getColliderHeight() * 0.8f, observer->getPosition().z };
+            Vector3 tgt_head = { target->getPosition().x, target->getPosition().y + target->getColliderHeight() * 0.8f, target->getPosition().z };
+            
+            for (const auto& obs : obstacles) {
+                Vector3 local_obs = Vector3Transform(obs_head, obs.getWorldToLocal());
+                Vector3 local_tgt = Vector3Transform(tgt_head, obs.getWorldToLocal());
+                
+                Ray local_ray;
+                local_ray.position = local_obs;
+                local_ray.direction = Vector3Normalize(Vector3Subtract(local_tgt, local_obs));
+                
+                RayCollision collision = GetRayCollisionBox(local_ray, obs.getLocalBox());
+                if (collision.hit) {
+                    float dist_to_tgt_local = Vector3Distance(local_obs, local_tgt);
+                    if (collision.distance < dist_to_tgt_local) {
+                        return 0.0f; // Blocked by wall
+                    }
+                }
+            }
+            return 9999.0f; // Instant detect
+        }
+        return 0.0f;
+    }
+
+    void drawDebug(const Character* observer) const override {
+        Vector3 pos = observer->getPosition();
+        int segments = 10;
+        float angle_step = 2.0f * PI / segments;
+        Vector3 prev_pt = {pos.x + radius, pos.y + 0.1f, pos.z};
+        for(int i = 1; i <= segments; ++i) {
+            float angle = i * angle_step;
+            Vector3 pt = {pos.x + std::cos(angle) * radius, pos.y + 0.1f, pos.z + std::sin(angle) * radius};
+            DrawLine3D(prev_pt, pt, MAGENTA);
+            prev_pt = pt;
+        }
     }
 };

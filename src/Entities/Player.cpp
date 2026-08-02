@@ -159,6 +159,10 @@ void Player::drawHPBar2D() const {
   DrawRectangle(x, posture_y, (int)(bar_width * post_fill), (int)bar_height,
                 ORANGE);
   DrawRectangleLines(x, posture_y, (int)bar_width, (int)bar_height, WHITE);
+
+  if (locomotion.getStance() == Stance::Crouching) {
+      DrawText("CROUCHING", x, y - 24, 20, SKYBLUE);
+  }
 }
 
 float Player::getColliderRadius() const { return BODY_RADIUS; }
@@ -309,6 +313,13 @@ void Player::handleCombatAndUtilityInputs(const UpdateContext &ctx,
     // Leave the ground on this frame so PhysicsManager starts integrating
     // gravity immediately; it only applies gravity to airborne characters.
     setGrounded(false);
+  }
+  if (input_manager.isActionPressed(GameAction::Crouch)) {
+      if (locomotion.getStance() == Stance::Crouching) {
+          locomotion.setStance(Stance::Standing);
+      } else {
+          locomotion.setStance(Stance::Crouching);
+      }
   }
   if (input_manager.isActionPressed(GameAction::LockOn)) {
   }
