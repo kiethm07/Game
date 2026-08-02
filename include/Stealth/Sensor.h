@@ -50,16 +50,22 @@ public:
             return 0.0f;
         }
 
-        Vector3 to_target = Vector3Subtract(tgt_pos, obs_pos);
-        to_target.y = 0.0f; // Ignore height for the cone calculation
+        // --- Line of Sight Raycast preparation ---
+        // Calculate true 3D angle from head/eyes to head/eyes
+        Vector3 obs_head = { obs_pos.x, obs_pos.y + observer->getColliderHeight() * 0.8f, obs_pos.z };
+        Vector3 tgt_head = { tgt_pos.x, tgt_pos.y + target->getColliderHeight() * 0.8f, tgt_pos.z };
+        
+        Vector3 to_target = Vector3Subtract(tgt_head, obs_head);
         if (Vector3LengthSqr(to_target) < 0.001f) return 1.0f; // Standing exactly on same spot
         
         to_target = Vector3Normalize(to_target);
         
-        // Observer's forward vector based on rotation.y
+        // Observer's forward vector based on rotation.y (assuming looking horizontally)
+        // If enemies can pitch their head, we'd include pitch here, but for now yaw is enough.
         float yaw_rad = observer->getRotation().y * DEG2RAD;
         Vector3 forward = {std::sin(yaw_rad), 0.0f, std::cos(yaw_rad)};
         
+        // True 3D dot product calculates the spherical cone angle
         float dot = Vector3DotProduct(forward, to_target);
         float angle_to_target = std::acos(dot) * RAD2DEG;
         
@@ -68,25 +74,40 @@ public:
         }
 
         // --- Line of Sight Raycast ---
-        // Cast from head/eyes to head/eyes
-        Vector3 obs_head = { obs_pos.x, obs_pos.y + observer->getColliderHeight() * 0.8f, obs_pos.z };
-        Vector3 tgt_head = { tgt_pos.x, tgt_pos.y + target->getColliderHeight() * 0.8f, tgt_pos.z };
+        // Cast from observer head to target head AND target feet
+        Vector3 tgt_foot = tgt_pos; 
+        bool head_blocked = false;
+        bool feet_blocked = false;
         
         for (const auto& obs : obstacles) {
             Vector3 local_obs = Vector3Transform(obs_head, obs.getWorldToLocal());
-            Vector3 local_tgt = Vector3Transform(tgt_head, obs.getWorldToLocal());
             
-            Ray local_ray;
-            local_ray.position = local_obs;
-            local_ray.direction = Vector3Normalize(Vector3Subtract(local_tgt, local_obs));
-            
-            RayCollision collision = GetRayCollisionBox(local_ray, obs.getLocalBox());
-            if (collision.hit) {
-                float dist_to_tgt_local = Vector3Distance(local_obs, local_tgt);
-                if (collision.distance < dist_to_tgt_local) {
-                    // Blocked by this obstacle
-                    return 0.0f;
+            // Check Head Ray
+            if (!head_blocked) {
+                Vector3 local_tgt_head = Vector3Transform(tgt_head, obs.getWorldToLocal());
+                Ray ray_head;
+                ray_head.position = local_obs;
+                ray_head.direction = Vector3Normalize(Vector3Subtract(local_tgt_head, local_obs));
+                RayCollision col_head = GetRayCollisionBox(ray_head, obs.getLocalBox());
+                if (col_head.hit && col_head.distance < Vector3Distance(local_obs, local_tgt_head)) {
+                    head_blocked = true;
                 }
+            }
+
+            // Check Feet Ray
+            if (!feet_blocked) {
+                Vector3 local_tgt_foot = Vector3Transform(tgt_foot, obs.getWorldToLocal());
+                Ray ray_foot;
+                ray_foot.position = local_obs;
+                ray_foot.direction = Vector3Normalize(Vector3Subtract(local_tgt_foot, local_obs));
+                RayCollision col_foot = GetRayCollisionBox(ray_foot, obs.getLocalBox());
+                if (col_foot.hit && col_foot.distance < Vector3Distance(local_obs, local_tgt_foot)) {
+                    feet_blocked = true;
+                }
+            }
+            
+            if (head_blocked && feet_blocked) {
+                return 0.0f;
             }
         }
         

@@ -11,6 +11,7 @@
 #include <Entities/Player.h>
 #include <GameManager/CombatManager.h>
 #include <GameManager/PhysicsManager.h>
+#include <AI/NavGraph.h>
 #include <States/GameState.h>
 
 #include <Rendering/GameRenderer.h>
@@ -49,5 +50,8 @@ private:
   float takedown_text_timer = 0.0f;
   std::string takedown_type_str = "";
   
-  Enemy* pending_aerial_target = nullptr;
+  NavGraph nav_graph;
+
+  /// Used strictly for debugging takedown mechanics across frames.
+  Character *pending_aerial_target = nullptr;
 };

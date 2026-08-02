@@ -23,11 +23,14 @@ private:
 
   AnimStateMachine<SwordmanAnimState> anim;
 
+  std::vector<Vector3> current_path;
+  float path_recalc_timer = 0.0f;
+
   const float BODY_HEIGHT = 1.8f;
   const float BODY_RADIUS = 0.5f;
   const float ATTACK_REACH = 1.2f;
   const float ATTACK_RADIUS = 0.8f;
-  const float MOVEMENT_SPEED = 5.0f;
+  const float MOVEMENT_SPEED = 2.0f;
   const float ROTATION_SPEED = 100.0f;
   void setupBehaviorTree();
   const UpdateContext* current_ctx = nullptr;
