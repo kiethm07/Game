@@ -65,6 +65,35 @@ GameplayState::GameplayState(const InputManager &input_manager)
   obstacles.emplace_back(Vector3{-2.0f, 0.0f, -2.1f},
                          Vector3{2.0f, 4.5f, -2.0f}, 0.0f, ORANGE);
 
+  // --- TAKEDOWN DROP TARGET ---
+  obstacles.emplace_back(Vector3{0.0f, 0.0f, 15.0f}, Vector3{2.0f, 1.0f, 17.0f},
+                         0.0f, YELLOW);
+
+  // --- NAVGRAPH SETUP ---
+  // Ground network
+  int n_ground_stair = nav_graph.addNode({-7.5f, 0.0f, -4.0f}); // Base of stairs 1
+  int n_ground_center = nav_graph.addNode({-3.0f, 0.0f, 5.0f}); // Center open area
+  int n_ground_right = nav_graph.addNode({5.0f, 0.0f, -3.0f});  // Right side of map
+  int n_ground_back = nav_graph.addNode({5.0f, 0.0f, 15.0f});   // Back right of map
+
+  // Link ground nodes to form a path around pillars
+  nav_graph.addUndirectedEdge(n_ground_stair, n_ground_center);
+  nav_graph.addUndirectedEdge(n_ground_center, n_ground_right);
+  nav_graph.addUndirectedEdge(n_ground_right, n_ground_back);
+  nav_graph.addUndirectedEdge(n_ground_center, n_ground_back);
+
+  // Stairs & Floors
+  int n_stair1_mid = nav_graph.addNode({-7.5f, 1.75f, 3.0f}); // Mid stairs 1
+  int n_floor1 = nav_graph.addNode({0.0f, 3.5f, 10.0f});      // Floor 1
+  int n_stair2_mid = nav_graph.addNode({7.5f, 5.5f, 10.0f});  // Mid stairs 2
+  int n_floor2 = nav_graph.addNode({0.0f, 7.5f, 10.0f});      // Floor 2
+  
+  // Link verticality
+  nav_graph.addUndirectedEdge(n_ground_stair, n_stair1_mid);
+  nav_graph.addUndirectedEdge(n_stair1_mid, n_floor1);
+  nav_graph.addUndirectedEdge(n_floor1, n_stair2_mid);
+  nav_graph.addUndirectedEdge(n_stair2_mid, n_floor2);
+
   renderer = std::make_unique<GameRenderer>(asset_manager);
 }
 
@@ -78,7 +107,7 @@ StateAction GameplayState::update(float dt) {
   Vector3 player_pos = player->getPosition();
   const UpdateContext ctx{dt, camera_controller->getCameraForward(),
                           camera_controller->getCameraRight(), player_pos,
-                          &asset_manager};
+                          &asset_manager, &nav_graph, &obstacles};
 
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());
