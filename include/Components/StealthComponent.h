@@ -59,6 +59,21 @@ public:
     Vector3 getLastKnownPlayerPos() const { return last_known_player_pos; }
     void setLastKnownPlayerPos(const Vector3& pos) { last_known_player_pos = pos; }
 
+    // Used for alert propagation
+    void forceAwareness(float level) {
+        awareness_level = level;
+        if (awareness_level >= 200.0f) {
+            current_state = StealthState::Aware;
+            debug_state = "DETECTED";
+        } else if (awareness_level >= 100.0f) {
+            current_state = StealthState::Suspicious;
+            debug_state = "SUSPICIOUS";
+        } else {
+            current_state = StealthState::Unaware;
+            debug_state = "UNAWARE";
+        }
+    }
+
 private:
     std::vector<std::shared_ptr<Sensor>> sensors;
     StealthState current_state = StealthState::Unaware;

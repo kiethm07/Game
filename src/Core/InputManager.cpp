@@ -13,6 +13,8 @@ InputManager::InputManager() {
     action_states[GameAction::Parry]        = InputState::Idle;
     action_states[GameAction::Dodge]        = InputState::Idle;
     action_states[GameAction::LockOn]       = InputState::Idle;
+    action_states[GameAction::Takedown]     = InputState::Idle;
+    action_states[GameAction::Crouch]       = InputState::Idle;
     
     raw_mouse_delta = { 0.0f, 0.0f };
 }
@@ -24,7 +26,8 @@ void InputManager::registerDefaultBindings() {
     key_bindings[KEY_D]          = GameAction::MoveRight;
     key_bindings[KEY_SPACE]      = GameAction::Jump;
     key_bindings[KEY_LEFT_SHIFT] = GameAction::Dodge;
-    key_bindings[KEY_F]          = GameAction::LockOn;
+    key_bindings[KEY_F]          = GameAction::Takedown;
+    key_bindings[KEY_C]          = GameAction::Crouch;
 
     mouse_bindings[MOUSE_BUTTON_LEFT]  = GameAction::Attack;
     mouse_bindings[MOUSE_BUTTON_RIGHT] = GameAction::Parry;

@@ -37,6 +37,7 @@ public:
   void setPosition(const Vector3 &new_position) { position = new_position; }
 
   Vector3 getRotation() const { return rotation; }
+  void setRotation(const Vector3 &new_rotation) { rotation = new_rotation; }
 
   const Stats &getStats() const { return stats; }
   Faction getFaction() const { return faction; }
@@ -54,6 +55,8 @@ public:
 
   bool isGrounded() const { return is_grounded; }
   void setGrounded(bool grounded) { is_grounded = grounded; }
+
+  virtual bool isCrouching() const { return false; }
 
   virtual float getColliderRadius() const = 0;
   virtual float getColliderHeight() const = 0;

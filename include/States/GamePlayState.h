@@ -45,4 +45,9 @@ private:
   std::vector<CharacterRenderData> renderList;
 
   const InputManager &input_manager;
+  
+  float takedown_text_timer = 0.0f;
+  std::string takedown_type_str = "";
+  
+  Enemy* pending_aerial_target = nullptr;
 };
