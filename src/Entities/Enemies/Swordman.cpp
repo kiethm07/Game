@@ -32,14 +32,22 @@ void Swordman::update(const UpdateContext &ctx) {
     ai_component.update();
   }
 
+  // A broken guard is a full stop. Read after the tick, not before it: the
+  // window may have expired on this very frame, and the tree is entitled to
+  // start chasing again the moment it does. The tree's own posture checks only
+  // return early — they never touch velocity — so whatever the chase last wrote
+  // would otherwise keep sliding the body through the whole deathblow window,
+  // which is the one moment the enemy is supposed to be a stationary target.
+  if (combat_component.getCurrentState() == CombatState::PostureBroken)
+    setHorizontalVelocity({0.0f, 0.0f, 0.0f});
+
   animator.updateFlinch(dt, ctx.assets);
 
   SwordmanAnimator::Frame frame;
   frame.combat = &combat_component;
   frame.assets = ctx.assets;
-  // Nothing writes an enemy's velocity yet, so this is false every frame today.
-  // Read from the same field PhysicsManager integrates, so the stride starts
-  // the moment something does.
+  // Read from the same field PhysicsManager integrates, so the stride matches
+  // the travel exactly.
   const Vector3 velocity = getHorizontalVelocity();
   frame.moving = (velocity.x != 0.0f || velocity.z != 0.0f);
   frame.dead = dead;

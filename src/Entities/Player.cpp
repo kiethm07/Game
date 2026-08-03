@@ -7,6 +7,7 @@ Player::Player(const InputManager &input_manager)
     : Character(Faction::Player), input_manager(input_manager) {
   stats = Stats(1000.0f, 100.0f, 15.0f);
   combo = {AttackID::PlayerLight1, AttackID::PlayerLight2};
+  execution_combo = {AttackID::PlayerExecution};
   position = {0, 0, 0};
   rotation = {0, 180.0f, 0};
 }
@@ -92,6 +93,15 @@ void Player::update(const UpdateContext &ctx) {
 bool Player::isDashing() const {
   return gait == Gait::Sprinting ||
          combat_component.getCurrentState() == CombatState::Dodging;
+}
+
+bool Player::isExecuting() const {
+  // Identity, not equality: the registry hands out references to entries in an
+  // unordered_map that is filled once and never touched again, so the address
+  // of an attack's data is a stable name for that attack. getActiveAttack()
+  // returns null outside the three attack phases, which compares false here.
+  return combat_component.getActiveAttack() ==
+         &AttackRegistry::instance().getAttackData(AttackID::PlayerExecution);
 }
 
 void Player::updateLocomotionVelocity(const UpdateContext &ctx,

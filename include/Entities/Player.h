@@ -28,8 +28,13 @@ public:
 
   CombatComponent& getCombatComponent() { return combat_component; }
 
+  /// Plays the deathblow swing. Interrupts first because the damage has already
+  /// been dealt by the time this is called: initiateCombo() only takes from Idle
+  /// or from the recovery of the same combo, so a takedown pressed out of a
+  /// guard or a dodge would otherwise kill the target with no animation at all.
   void performTakedown() {
-      combat_component.initiateCombo(combo);
+      combat_component.interrupt();
+      combat_component.initiateCombo(execution_combo);
   }
 
   /// Whether the player is dashing — mid-dodge or sprinting. Asked by the
@@ -41,6 +46,15 @@ public:
   /// Walking *during* a dodge — sprinting is what the key means once the dash
   /// it began has finished — so the dodge has to be tested on its own.
   bool isDashing() const;
+
+  /// Whether the deathblow swing is on screen right now. Asked by the camera,
+  /// which holds its shot for exactly as long as this is true.
+  ///
+  /// Read from the attack actually running rather than from a timer started
+  /// alongside it: the two cannot drift, and an execution cut short — a landing
+  /// stagger interrupts one — drops the shot on the same frame it drops the
+  /// animation, instead of leaving the camera composed on a swing that stopped.
+  bool isExecuting() const;
 
 private:
   const InputManager &input_manager;
@@ -71,6 +85,10 @@ private:
   CombatComponent combat_component;
   MovementComponent movement_component;
   Combo combo;
+
+  /// The deathblow, held as a one-attack combo of its own so it never chains
+  /// into the light combo and the light combo never chains into it.
+  Combo execution_combo;
 
   /// Stance and landing recovery, and the one function that decides what the
   /// player is allowed to do with them.
