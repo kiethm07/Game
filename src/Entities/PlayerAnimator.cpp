@@ -42,7 +42,12 @@ const PlayerAnimator::Machine::Desc *PlayerAnimator::descTable() {
       // this in resolve().
       /* Attack      */ {"Slash", false, 1.0f, false, 0.05f},
       /* HitReact    */ {"Impact_2", false, 1.0f, false, 0.05f},
-      /* PostureBreak*/ {nullptr, false, 1.0f, false, 0.05f},
+      // Loops: the clip is a 9.4s idle and the broken window is 3s, so it is
+      // only ever seen part-way through, but it is an idle and reads as one.
+      // The name is the asset's, exactly — "Injured-Idle", which this row used
+      // to say, matches no clip in Paladin.rootmotion.glb, so the rung guarded
+      // on clipFor() >= 0 never fired and the break rendered as a normal Idle.
+      /* PostureBreak*/ {"InjuredIdle", true, 1.0f, false, 0.10f},
       /* Death       */ {"Death", false, 1.0f, false, 0.10f},
   };
   return table;
@@ -76,7 +81,8 @@ bool PlayerAnimator::resolveClips(const AssetManager &assets) {
   // No matching playback rate to report: unlike the run's, every cycle's rate
   // is now settled per frame against the speed the gate allows that frame, so
   // the authored figure is the only part of it fixed at load.
-  const RootMotion::Track &walkTrack = anim.track(assets, PlayerAnimState::Walk);
+  const RootMotion::Track &walkTrack =
+      anim.track(assets, PlayerAnimState::Walk);
   if (walkTrack.hasMotion)
     TraceLog(LOG_INFO, "Player: walk clip authored at %.2f u/s",
              walkTrack.authoredSpeed);
@@ -188,8 +194,9 @@ PlayerAnimator::resolve(const Frame &frame) const {
   // Highest priority first. A committed state outranks the locomotion states
   // below it, which is what makes an attack or dodge started in mid-air show
   // its own clip rather than the jump.
-  
-  if (state == CombatState::PostureBroken && anim.clipFor(PlayerAnimState::PostureBreak) >= 0)
+
+  if (state == CombatState::PostureBroken &&
+      anim.clipFor(PlayerAnimState::PostureBreak) >= 0)
     return anim.select(PlayerAnimState::PostureBreak, combat.getActionId());
 
   // Which of the four dodges was decided when the dodge started; this rung only

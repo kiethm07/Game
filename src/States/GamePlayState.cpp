@@ -140,12 +140,23 @@ StateAction GameplayState::update(float dt) {
   // same way the UpdateContext above is, so the camera never reaches back into
   // the player for it — and so that the framing, which is a decision about the
   // world rather than about the camera, is made where the world is known.
+  // The deathblow shot lasts exactly as long as the swing does — the animation
+  // is what the camera is framing, so it is what decides when to let go. The
+  // victim is dropped at the same moment, which is what stops a stale pointer
+  // from ever reaching the camera.
+  if (!player->isExecuting())
+    deathblow_victim = nullptr;
+
   CameraFrame shot;
   shot.target = player->getPosition();
   shot.look = input_manager.getRawMouseDelta();
   shot.dt = dt;
   shot.framing =
       player->isDashing() ? CameraFraming::Wide : CameraFraming::Close;
+  if (deathblow_victim) {
+    shot.shot = CameraShot::Deathblow;
+    shot.focus = deathblow_victim->getPosition();
+  }
   camera_controller->update(shot);
 
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
@@ -179,8 +190,9 @@ StateAction GameplayState::update(float dt) {
               
               pending_aerial_target->takeDamage(9999.0f, 0.0f, player.get());
               player->performTakedown();
+              deathblow_victim = pending_aerial_target;
               takedown_text_timer = 2.0f;
-              
+
               pending_aerial_target = nullptr;
           }
       }
@@ -281,6 +293,7 @@ StateAction GameplayState::update(float dt) {
                           
                           enemy->takeDamage(9999.0f, 0.0f, player.get());
                           player->performTakedown();
+                          deathblow_victim = enemy;
                           takedown_text_timer = 2.0f;
                       }
                       break; // Only execute one enemy

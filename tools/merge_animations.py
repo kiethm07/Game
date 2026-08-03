@@ -83,6 +83,25 @@ CLIP_NAMES = {
     # local copy would carry that turn along and swing the shield off to the
     # left instead of leading with it.
     "Armature.058": "BlockWalk",
+    # .059 and .060 arrived as two imports of the same idle, so .059 was once
+    # skipped as the redundant one. `.060` was later reused for the kneel, which
+    # leaves .059 the ONLY copy of the idle -- dropping it now would silently
+    # lose the clip. Verified identical to the action .060 used to hold: every
+    # bone agrees to 0.0 across all 281 frames.
+    #
+    # It sits on Mixamo's reduced skeleton, whose rest pose differs from the main
+    # rig by up to 37 deg at the shoulders and 49 deg in the fingers. Clips store
+    # rotations RELATIVE to rest, so this does not reproduce the authored pose
+    # exactly. Land and Fall have the identical deviation and always have
+    # shipped that way; retargeting the three through armature space is the fix
+    # if it ever reads wrong.
+    "Armature.059": "InjuredIdle",
+    # Retimed in pack.blend: the standing->kneel transition (source frames 1-94)
+    # resampled to 32.5% of its duration, 3.13s -> 1.03s, while the settled kneel
+    # after it runs 1:1 and stays bit-identical to the source. The untouched
+    # original is kept in the file as `mixamo.com.065` -- re-derive any further
+    # retime from THAT, not from the retimed action, so passes never compound.
+    "Armature.060": "FallToKneel",
 }
 
 

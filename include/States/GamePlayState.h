@@ -54,4 +54,11 @@ private:
 
   /// Used strictly for debugging takedown mechanics across frames.
   Character *pending_aerial_target = nullptr;
+
+  /// Who is being executed, held for as long as the swing runs so the camera
+  /// has a second point to compose its shot around. Cleared by the camera step
+  /// once Player::isExecuting() goes false, so a victim outliving the animation
+  /// is not possible. Safe to hold raw: enemies are owned by `enemies` for the
+  /// whole life of the state and are never erased, only killed.
+  Character *deathblow_victim = nullptr;
 };

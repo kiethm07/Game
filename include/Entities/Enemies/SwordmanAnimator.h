@@ -12,10 +12,8 @@
 enum class SwordmanAnimState {
   Idle,
 
-  /// The approach. Wired but never selected today: nothing writes an enemy's
-  /// horizontal velocity yet, so the behavior tree only ever turns to face the
-  /// player. It costs one row, and the frame that gives an enemy a chase gets
-  /// its stride for free.
+  /// The approach, selected whenever the behavior tree's chase has written a
+  /// horizontal velocity.
   Walk,
 
   /// The flinch, split the way the player's is: a hit that landed on a raised
@@ -27,6 +25,13 @@ enum class SwordmanAnimState {
   HitReact,
 
   Attack,
+
+  /// Guard broken: the deathblow window. Outranks the swing and the flinch
+  /// because the break is what the player is being told about — the hit that
+  /// caused it queues a flinch on the same frame, and showing that instead
+  /// would hide the one pose the whole mechanic hangs on.
+  PostureBreak,
+
   Death,
 
   Count
