@@ -22,7 +22,15 @@ public:
   float getColliderHeight() const override;
   std::vector<HurtBox> getHurtBoxes() const override;
   std::vector<HitBox> getActiveHitBoxes() const override;
-  void takeDamage(float health_damage, float posture_damage) override;
+  void takeDamage(float health_damage, float posture_damage, Character* attacker) override;
+
+  bool isCrouching() const override { return locomotion.getStance() == Stance::Crouching; }
+
+  CombatComponent& getCombatComponent() { return combat_component; }
+
+  void performTakedown() {
+      combat_component.initiateCombo(combo);
+  }
 
   /// Whether the player is dashing — mid-dodge or sprinting. Asked by the
   /// camera, which frames a dash wider than a walk. One question with one

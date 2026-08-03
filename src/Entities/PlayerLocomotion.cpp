@@ -87,8 +87,11 @@ ActionGate PlayerLocomotion::gate(const CombatComponent &combat, bool grounded,
   if (stance == Stance::Crouching) {
     // A dodge out of a crouch would have to stand, roll and re-crouch inside
     // one clip; there is no such animation, and the stance exists to be
-    // deliberate.
+    // deliberate. Same for attacks and blocks.
     g.canDodge = false;
+    g.canAttack = false;
+    g.canGuard = false;
+    g.canJump = false;
     // The slower of the stance and the gait, not the stance outright: a crouch
     // is a ceiling on speed, and one that overwrote the walk would have
     // crouching *accelerate* a player who was not sprinting.
@@ -102,7 +105,7 @@ ActionGate PlayerLocomotion::gate(const CombatComponent &combat, bool grounded,
 
   // Nothing to jump from in mid-air, and a player who may not move — mid-swing,
   // mid-dodge — may not leave the ground either.
-  g.canJump = grounded && g.canMove;
+  g.canJump = g.canJump && grounded && g.canMove;
 
   return g;
 }

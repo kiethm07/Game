@@ -188,6 +188,10 @@ PlayerAnimator::resolve(const Frame &frame) const {
   // Highest priority first. A committed state outranks the locomotion states
   // below it, which is what makes an attack or dodge started in mid-air show
   // its own clip rather than the jump.
+  
+  if (state == CombatState::PostureBroken && anim.clipFor(PlayerAnimState::PostureBreak) >= 0)
+    return anim.select(PlayerAnimState::PostureBreak, combat.getActionId());
+
   // Which of the four dodges was decided when the dodge started; this rung only
   // holds it for the length of the roll.
   if (state == CombatState::Dodging && anim.clipFor(dodge_state) >= 0)
