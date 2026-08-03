@@ -33,10 +33,17 @@ const PlayerAnimator::Machine::Desc *PlayerAnimator::descTable() {
       // settling after the travel has finished; time-scaling it brings the
       // recovery — and so the length of the commitment, which is taken from the
       // scaled duration — into line with the other three.
-      /* DodgeFwd    */ {"Dodge_Forward", false, 1.0f, true, 0.05f},
-      /* DodgeBack   */ {"Dodge_Back", false, 1.5f, true, 0.05f},
-      /* DodgeLeft   */ {"Dodge_Left", false, 1.0f, true, 0.05f},
-      /* DodgeRight  */ {"Dodge_Right", false, 1.0f, true, 0.05f},
+      //
+      // All four then carry a further 1.3x for feel, which is why the backstep
+      // reads 1.95 rather than 1.3: the two factors multiply, so its alignment
+      // with the other three survives. Speeding them up here rather than
+      // retiming the clips keeps the authored travel exact — rate only changes
+      // how fast the same root offset is consumed — and keeps the i-frame
+      // window in step, since dodgeDuration() divides the clip by this rate.
+      /* DodgeFwd    */ {"Dodge_Forward", false, 1.50f, true, 0.05f},
+      /* DodgeBack   */ {"Dodge_Back", false, 1.95f, true, 0.05f},
+      /* DodgeLeft   */ {"Dodge_Left", false, 1.50f, true, 0.05f},
+      /* DodgeRight  */ {"Dodge_Right", false, 1.50f, true, 0.05f},
       // Fallback swing, used when an attack names no clip or names one the
       // loaded asset does not contain. Attacks that do name a clip override
       // this in resolve().

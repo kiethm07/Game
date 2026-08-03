@@ -49,4 +49,10 @@ private:
   std::unordered_map<GameAction, InputState> action_states;
 
   Vector2 raw_mouse_delta;
+
+  bool mouse_settled = false;
+
+  bool was_focused = true;
+
+  static constexpr float MAX_MOUSE_DELTA = 200.0f;
 };

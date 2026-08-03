@@ -69,7 +69,7 @@ private:
   float recenter_timer = 0.0f;
 
   static constexpr float CLOSE_DISTANCE = 3.2f;
-  static constexpr float WIDE_DISTANCE = 5.2f;
+  static constexpr float WIDE_DISTANCE = 4.2f;
 
   // uplift height from the feet of the character
   static constexpr float AIM_HEIGHT = 1.3f;
