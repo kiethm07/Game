@@ -10,7 +10,8 @@ enum class CombatState {
     AttackRecovery,
     Parrying,
     Blocking,
-    Dodging
+    Dodging,
+    PostureBroken
 };
 
 class CombatComponent {
@@ -34,6 +35,10 @@ public:
     /// moot — a landing stagger arriving mid-swing, whose hitbox must not stay
     /// live through a recovery the player no longer controls.
     void interrupt();
+
+    /// Forces the component into the PostureBroken state for the given duration,
+    /// blocking movement and actions until it recovers.
+    void breakPosture(float duration);
 
     bool canMove() const;
     bool canDodge() const;

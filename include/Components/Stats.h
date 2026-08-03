@@ -28,6 +28,7 @@ public:
     float getMaxPosture() const { return max_posture; }
     float getPosturePercentage() const { return (max_posture > 0.0f) ? (current_posture / max_posture) : 0.0f; }
     bool isPostureBroken() const { return current_posture >= max_posture; }
+    void resetPosture() { current_posture = 0.0f; }
 
     bool getIsInvincible() const { return is_invincible; }
 

@@ -7,7 +7,10 @@
 #include <Components/Stats.h>
 #include <Rendering/AssetManager.h>
 #include <Rendering/RenderData.h>
+#include <Components/PhysicsObstacle.h>
 #include <vector>
+
+class NavGraph;
 
 /// Everything an entity needs to advance one tick. Passed through the virtual
 /// update() so subclasses share a single polymorphic entry point.
@@ -21,6 +24,12 @@ struct UpdateContext {
   /// displacing states (attacks, dodges) and set locomotion speed. Never null
   /// in the normal update path.
   const AssetManager *assets = nullptr;
+  
+  /// Read-only access to the navigation graph for AI pathfinding.
+  const NavGraph *nav_graph = nullptr;
+  
+  /// Read-only access to obstacles for local steering avoidance.
+  const std::vector<PhysicsObstacle> *obstacles = nullptr;
 };
 
 class Character {
@@ -37,6 +46,7 @@ public:
   void setPosition(const Vector3 &new_position) { position = new_position; }
 
   Vector3 getRotation() const { return rotation; }
+  void setRotation(const Vector3 &new_rotation) { rotation = new_rotation; }
 
   const Stats &getStats() const { return stats; }
   Faction getFaction() const { return faction; }
@@ -55,6 +65,8 @@ public:
   bool isGrounded() const { return is_grounded; }
   void setGrounded(bool grounded) { is_grounded = grounded; }
 
+  virtual bool isCrouching() const { return false; }
+
   virtual float getColliderRadius() const = 0;
   virtual float getColliderHeight() const = 0;
 
@@ -72,7 +84,7 @@ public:
 
   virtual std::vector<HurtBox> getHurtBoxes() const = 0;
   virtual std::vector<HitBox> getActiveHitBoxes() const = 0;
-  virtual void takeDamage(float health_damage, float posture_damage) = 0;
+  virtual void takeDamage(float health_damage, float posture_damage, Character* attacker = nullptr) = 0;
 
 protected:
   unsigned int id;
