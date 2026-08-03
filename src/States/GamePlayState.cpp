@@ -9,90 +9,53 @@ GameplayState::GameplayState(const InputManager &input_manager)
     : input_manager(input_manager) {
   camera_controller = std::make_unique<CameraController>();
   player = std::make_unique<Player>(input_manager);
+  player->setPosition({0.0f, 0.0f, -13.0f}); // Spawn north of the central hub
 
-  // Spawn test enemies via factory
+  // Enemies
   enemies.push_back(
-      EnemyFactory::createEnemy(EnemyType::Swordman, {0.0f, 0.0f, 5.0f}));
+      EnemyFactory::createEnemy(EnemyType::Swordman, {8.0f, 0.0f, 8.0f})); // South-East
   enemies.push_back(
-      EnemyFactory::createEnemy(EnemyType::Swordman, {3.0f, 0.0f, 8.0f}));
+      EnemyFactory::createEnemy(EnemyType::Swordman, {-8.0f, 0.0f, 8.0f})); // South-West
   
   // Test enemy for wall-takedown
   enemies.push_back(
-      EnemyFactory::createEnemy(EnemyType::Swordman, {0.0f, 0.0f, -3.0f}));
+      EnemyFactory::createEnemy(EnemyType::Swordman, {8.0f, 0.0f, -8.0f})); // North-East
 
-  // --- MULTI-LEVEL BUILDING EXAMPLE ---
-
-  // Floor 1 (Ceiling for Ground)
-  // Walk under this (Z=5 to 15) to test flat overhead ceilings!
-  obstacles.emplace_back(Vector3{-6.0f, 3.0f, 5.0f}, Vector3{6.0f, 3.5f, 15.0f},
-                         0.0f, DARKBLUE);
-
-  // Staircase 1: Ground (Y=0) to Floor 1 (Y=3.5)
-  // Placed on the left side. Walk under this to test slanted ramp ceilings!
-  obstacles.emplace_back(Vector2{-9.0f, -2.0f}, Vector2{-6.0f, 8.0f}, 0.0f,
-                         3.5f, 0.0f, SKYBLUE);
-
-  // Floor 2 (Ceiling for Floor 1)
-  obstacles.emplace_back(Vector3{-6.0f, 7.0f, 5.0f}, Vector3{6.0f, 7.5f, 15.0f},
-                         0.0f, DARKGREEN);
-
-  // Staircase 2: Floor 1 (Y=3.5) to Floor 2 (Y=7.5)
-  // Placed on the right side.
-  obstacles.emplace_back(Vector2{6.0f, 5.0f}, Vector2{9.0f, 15.0f}, 3.5f, 7.5f,
-                         0.0f, LIME);
-
-  // Rotated Pillar supporting the center
-  // obstacles.emplace_back(Vector3{-2.0f, 0.0f, 8.0f},
-  // Vector3{2.0f, 7.0f, 12.0f},
-  //                        45.0f, RED);
-
-  // 4 x 4 grid of pillars
-  for (int i = 0; i < 4; ++i) {
-    for (int j = 0; j < 4; ++j) {
-      obstacles.emplace_back(Vector3{i * 2.0f, 0.0f, j * 2.0f},
-                             Vector3{(i + 1) * 2.0f, 10.0f, (j + 1) * 2.0f},
-                             0.0f, BLUE);
-    }
-  }
-
-  // --- THIN WALL FOR TUNNELING TEST ---
-  // A wall that is only 0.05 units thick!
-  obstacles.emplace_back(Vector3{-5.0f, 0.0f, -5.0f},
-                         Vector3{-4.95f, 4.5f, 5.0f}, 0.0f, MAGENTA);
-
-  // --- WALL FOR TAKEDOWN TEST ---
-  // Blocks the enemy at Z=-3.0f
-  obstacles.emplace_back(Vector3{-2.0f, 0.0f, -2.1f},
-                         Vector3{2.0f, 4.5f, -2.0f}, 0.0f, ORANGE);
-
-  // --- TAKEDOWN DROP TARGET ---
-  obstacles.emplace_back(Vector3{0.0f, 0.0f, 15.0f}, Vector3{2.0f, 1.0f, 17.0f},
-                         0.0f, YELLOW);
-
-  // --- NAVGRAPH SETUP ---
-  // Ground network
-  int n_ground_stair = nav_graph.addNode({-7.5f, 0.0f, -4.0f}); // Base of stairs 1
-  int n_ground_center = nav_graph.addNode({-3.0f, 0.0f, 5.0f}); // Center open area
-  int n_ground_right = nav_graph.addNode({5.0f, 0.0f, -3.0f});  // Right side of map
-  int n_ground_back = nav_graph.addNode({5.0f, 0.0f, 15.0f});   // Back right of map
-
-  // Link ground nodes to form a path around pillars
-  nav_graph.addUndirectedEdge(n_ground_stair, n_ground_center);
-  nav_graph.addUndirectedEdge(n_ground_center, n_ground_right);
-  nav_graph.addUndirectedEdge(n_ground_right, n_ground_back);
-  nav_graph.addUndirectedEdge(n_ground_center, n_ground_back);
-
-  // Stairs & Floors
-  int n_stair1_mid = nav_graph.addNode({-7.5f, 1.75f, 3.0f}); // Mid stairs 1
-  int n_floor1 = nav_graph.addNode({0.0f, 3.5f, 10.0f});      // Floor 1
-  int n_stair2_mid = nav_graph.addNode({7.5f, 5.5f, 10.0f});  // Mid stairs 2
-  int n_floor2 = nav_graph.addNode({0.0f, 7.5f, 10.0f});      // Floor 2
+  // --- OPEN SCATTERED ARENA FOR PATHFINDING TEST ---
   
-  // Link verticality
-  nav_graph.addUndirectedEdge(n_ground_stair, n_stair1_mid);
-  nav_graph.addUndirectedEdge(n_stair1_mid, n_floor1);
-  nav_graph.addUndirectedEdge(n_floor1, n_stair2_mid);
-  nav_graph.addUndirectedEdge(n_stair2_mid, n_floor2);
+  // 1. Central Hub Platform
+  obstacles.emplace_back(Vector3{-4.0f, 0.0f, -4.0f}, Vector3{4.0f, 2.5f, 4.0f}, 0.0f, DARKBLUE);
+
+  // 2. Ramps leading up to the Central Hub from 4 directions
+  // North Ramp (Z=-11 to -4)
+  obstacles.emplace_back(Vector2{-2.0f, -11.0f}, Vector2{2.0f, -4.0f}, 0.0f, 2.5f, 0.0f, SKYBLUE);
+  // South Ramp (Z=4 to 11)
+  obstacles.emplace_back(Vector2{-2.0f, 4.0f}, Vector2{2.0f, 11.0f}, 2.5f, 0.0f, 0.0f, SKYBLUE);
+  // West Ramp (X=-11 to -4)
+  obstacles.emplace_back(Vector2{-11.0f, -2.0f}, Vector2{-4.0f, 2.0f}, 0.0f, 2.5f, 0.0f, SKYBLUE);
+  // East Ramp (X=4 to 11)
+  obstacles.emplace_back(Vector2{4.0f, -2.0f}, Vector2{11.0f, 2.0f}, 2.5f, 0.0f, 0.0f, SKYBLUE);
+
+  // 3. Scattered Pillars / Walls
+  // A wall blocking the South Ramp's exit slightly
+  obstacles.emplace_back(Vector3{-4.0f, 0.0f, 13.0f}, Vector3{4.0f, 4.0f, 14.0f}, 0.0f, GRAY);
+  
+  // A large pillar near the West Ramp
+  obstacles.emplace_back(Vector3{-13.0f, 0.0f, -5.0f}, Vector3{-10.0f, 6.0f, -2.0f}, 0.0f, DARKGRAY);
+
+  // A standalone smaller platform with its own ramp in the corner
+  obstacles.emplace_back(Vector3{10.0f, 0.0f, -15.0f}, Vector3{15.0f, 2.0f, -10.0f}, 0.0f, ORANGE);
+  obstacles.emplace_back(Vector2{10.0f, -10.0f}, Vector2{15.0f, -5.0f}, 2.0f, 0.0f, 0.0f, LIME);
+
+  // --- NAVMESH SETUP ---
+  for (const auto& obs : obstacles) {
+      nav_builder.addObstacle(obs);
+  }
+  // Add a massive ground plane so the enemies can walk on the floor
+  PhysicsObstacle ground({-100.0f, -1.0f, -100.0f}, {100.0f, 0.0f, 100.0f});
+  nav_builder.addObstacle(ground);
+  nav_builder.build();
+  nav_query.init(nav_builder.getNavMesh());
 
   renderer = std::make_unique<GameRenderer>(asset_manager);
 }
@@ -107,7 +70,7 @@ StateAction GameplayState::update(float dt) {
   Vector3 player_pos = player->getPosition();
   const UpdateContext ctx{dt, camera_controller->getCameraForward(),
                           camera_controller->getCameraRight(), player_pos,
-                          &asset_manager, &nav_graph, &obstacles};
+                          &asset_manager, &nav_query, &obstacles};
 
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());

@@ -10,7 +10,7 @@
 #include <Components/PhysicsObstacle.h>
 #include <vector>
 
-class NavGraph;
+class NavMeshQuery;
 
 /// Everything an entity needs to advance one tick. Passed through the virtual
 /// update() so subclasses share a single polymorphic entry point.
@@ -25,8 +25,8 @@ struct UpdateContext {
   /// in the normal update path.
   const AssetManager *assets = nullptr;
   
-  /// Read-only access to the navigation graph for AI pathfinding.
-  const NavGraph *nav_graph = nullptr;
+  /// Read-only access to the navigation query for AI pathfinding.
+  const NavMeshQuery *nav_query = nullptr;
   
   /// Read-only access to obstacles for local steering avoidance.
   const std::vector<PhysicsObstacle> *obstacles = nullptr;
