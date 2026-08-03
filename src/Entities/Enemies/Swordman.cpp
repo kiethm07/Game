@@ -3,7 +3,7 @@
 #include <cmath>
 #include <raymath.h>
 #include <rlgl.h>
-#include <AI/NavGraph.h>
+#include <AI/NavMeshQuery.h>
 
 namespace {
 /// Walk.glb carries a single clip, whose name is the armature's rather than
@@ -73,7 +73,7 @@ void Swordman::setupBehaviorTree() {
   });
 
   auto stealthCondition = std::make_shared<Condition>([this]() {
-    return stealth_component.isPlayerDetected();
+    return true; // stealth_component.isPlayerDetected();
   });
 
   auto attackCondition = std::make_shared<Condition>([this]() {
@@ -100,7 +100,7 @@ void Swordman::setupBehaviorTree() {
   });
 
   auto chaseAction = std::make_shared<Action>([this]() {
-    if (!current_ctx || !current_ctx->nav_graph) return NodeState::FAILURE;
+    if (!current_ctx || !current_ctx->nav_query) return NodeState::FAILURE;
     if (combat_component.getCurrentState() == CombatState::PostureBroken) return NodeState::SUCCESS;
 
     auto applyLocalAvoidance = [&](Vector3& target_dir) {
@@ -159,7 +159,7 @@ void Swordman::setupBehaviorTree() {
 
     path_recalc_timer -= current_ctx->dt;
     if (path_recalc_timer <= 0.0f) {
-      current_path = current_ctx->nav_graph->findPath(position, current_ctx->playerPos);
+      current_path = current_ctx->nav_query->findPath(position, current_ctx->playerPos);
       path_recalc_timer = 1.0f; // Recalculate every 1 second
       
       // PATH SMOOTHING: Don't walk backwards to the closest node if we are already on the way
