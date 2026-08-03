@@ -16,12 +16,7 @@ const SwordmanAnimator::Machine::Desc *SwordmanAnimator::descTable() {
       // resolve(), which is how the swordman's combo plays the same authored
       // swings the player's does.
       /* Attack      */ {"Slash", false, 1.0f, false, 0.05f},
-      // The 9.4s injured idle, entered for the 3s the guard stays broken, so it
-      // is only ever seen from the top. Loops rather than holding a final pose
-      // in case that window is ever lengthened. Longer fade than the flinches:
-      // it is usually entered straight off an Impact_2, and the two poses are
-      // far enough apart that snapping between them pops.
-      /* PostureBreak*/ {"InjuredIdle", true, 1.0f, false, 0.15f},
+      /* PostureBreak*/ {"FallToKneel", false, 1.0f, false, 0.08f},
       /* Death       */ {"Death", false, 1.0f, false, 0.10f},
   };
   return table;

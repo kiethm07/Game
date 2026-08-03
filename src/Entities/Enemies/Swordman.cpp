@@ -1,9 +1,9 @@
 #include "Entities/Character.h"
+#include <AI/NavGraph.h>
 #include <Entities/Enemies/Swordman.h>
 #include <cmath>
 #include <raymath.h>
 #include <rlgl.h>
-#include <AI/NavGraph.h>
 
 Swordman::Swordman(Vector3 start_position) : Enemy(start_position) {
   stats = Stats(1000.0f, 100.0f, 15.0f);
@@ -61,34 +61,42 @@ void Swordman::setupBehaviorTree() {
   using namespace BT;
 
   auto orientAction = std::make_shared<Action>([this]() {
-    if (!current_ctx) return NodeState::FAILURE;
-    if (combat_component.getCurrentState() == CombatState::PostureBroken) return NodeState::SUCCESS;
-    
+    if (!current_ctx)
+      return NodeState::FAILURE;
+    if (combat_component.getCurrentState() == CombatState::PostureBroken)
+      return NodeState::SUCCESS;
+
     Vector3 dir = Vector3Subtract(current_ctx->playerPos, position);
     if (dir.x != 0.0f || dir.z != 0.0f) {
       float target_yaw = std::atan2(dir.x, dir.z) * RAD2DEG;
       float angle_diff = target_yaw - rotation.y;
-      while (angle_diff < -180.0f) angle_diff += 360.0f;
-      while (angle_diff > 180.0f) angle_diff -= 360.0f;
-      
+      while (angle_diff < -180.0f)
+        angle_diff += 360.0f;
+      while (angle_diff > 180.0f)
+        angle_diff -= 360.0f;
+
       float alpha = 10.0f * current_ctx->dt;
-      if (alpha > 1.0f) alpha = 1.0f;
-      
+      if (alpha > 1.0f)
+        alpha = 1.0f;
+
       rotation.y += angle_diff * alpha;
-      while (rotation.y < 0.0f) rotation.y += 360.0f;
-      while (rotation.y >= 360.0f) rotation.y -= 360.0f;
+      while (rotation.y < 0.0f)
+        rotation.y += 360.0f;
+      while (rotation.y >= 360.0f)
+        rotation.y -= 360.0f;
     }
     return NodeState::SUCCESS;
   });
 
-  auto stealthCondition = std::make_shared<Condition>([this]() {
-    return stealth_component.isPlayerDetected();
-  });
+  auto stealthCondition = std::make_shared<Condition>(
+      [this]() { return stealth_component.isPlayerDetected(); });
 
   auto attackCondition = std::make_shared<Condition>([this]() {
-    if (!current_ctx) return false;
+    if (!current_ctx)
+      return false;
     float distance = Vector3Distance(position, current_ctx->playerPos);
-    return (distance < 2.0f && combat_component.getCurrentState() == CombatState::Idle);
+    return (distance < 2.0f &&
+            combat_component.getCurrentState() == CombatState::Idle);
   });
 
   auto attackAction = std::make_shared<Action>([this]() {
@@ -102,88 +110,107 @@ void Swordman::setupBehaviorTree() {
   });
 
   auto attackSequence = std::make_shared<Sequence>(std::vector<NodePtr>{
-    stealthCondition,
-    orientAction,
-    attackCondition,
-    attackAction
-  });
+      stealthCondition, orientAction, attackCondition, attackAction});
 
   auto chaseAction = std::make_shared<Action>([this]() {
-    if (!current_ctx || !current_ctx->nav_graph) return NodeState::FAILURE;
-    if (combat_component.getCurrentState() == CombatState::PostureBroken) return NodeState::SUCCESS;
+    if (!current_ctx || !current_ctx->nav_graph)
+      return NodeState::FAILURE;
+    if (combat_component.getCurrentState() == CombatState::PostureBroken)
+      return NodeState::SUCCESS;
 
-    auto applyLocalAvoidance = [&](Vector3& target_dir) {
-      if (!current_ctx->obstacles) return;
-      Vector3 avoidance = {0,0,0};
-      for (const auto& obs : *current_ctx->obstacles) {
-          if (obs.getShape() != ObstacleShape::BOX_SHAPE) continue;
-          BoundingBox box = obs.getApproxBox();
-          
-          // Skip if obstacle is too high or too low
-          if (position.y >= box.max.y || position.y + 1.8f <= box.min.y) continue;
-          
-          float dx = 0.0f, dz = 0.0f;
-          if (position.x < box.min.x) dx = box.min.x - position.x;
-          else if (position.x > box.max.x) dx = position.x - box.max.x;
-          if (position.z < box.min.z) dz = box.min.z - position.z;
-          else if (position.z > box.max.z) dz = position.z - box.max.z;
-          
-          float dist = sqrtf(dx*dx + dz*dz);
-          if (dist < 1.5f) { // Whisker radius
-              Vector3 center = { (box.min.x + box.max.x)/2.0f, 0.0f, (box.min.z + box.max.z)/2.0f };
-              Vector3 push = Vector3Subtract(position, center);
-              push.y = 0.0f;
-              push = Vector3Normalize(push);
-              float strength = (1.5f - dist) / 1.5f;
-              avoidance = Vector3Add(avoidance, Vector3Scale(push, strength * 2.0f));
-          }
+    auto applyLocalAvoidance = [&](Vector3 &target_dir) {
+      if (!current_ctx->obstacles)
+        return;
+      Vector3 avoidance = {0, 0, 0};
+      for (const auto &obs : *current_ctx->obstacles) {
+        if (obs.getShape() != ObstacleShape::BOX_SHAPE)
+          continue;
+        BoundingBox box = obs.getApproxBox();
+
+        // Skip if obstacle is too high or too low
+        if (position.y >= box.max.y || position.y + 1.8f <= box.min.y)
+          continue;
+
+        float dx = 0.0f, dz = 0.0f;
+        if (position.x < box.min.x)
+          dx = box.min.x - position.x;
+        else if (position.x > box.max.x)
+          dx = position.x - box.max.x;
+        if (position.z < box.min.z)
+          dz = box.min.z - position.z;
+        else if (position.z > box.max.z)
+          dz = position.z - box.max.z;
+
+        float dist = sqrtf(dx * dx + dz * dz);
+        if (dist < 1.5f) { // Whisker radius
+          Vector3 center = {(box.min.x + box.max.x) / 2.0f, 0.0f,
+                            (box.min.z + box.max.z) / 2.0f};
+          Vector3 push = Vector3Subtract(position, center);
+          push.y = 0.0f;
+          push = Vector3Normalize(push);
+          float strength = (1.5f - dist) / 1.5f;
+          avoidance =
+              Vector3Add(avoidance, Vector3Scale(push, strength * 2.0f));
+        }
       }
       if (Vector3Length(avoidance) > 0.0f) {
-          target_dir = Vector3Normalize(Vector3Add(target_dir, avoidance));
+        target_dir = Vector3Normalize(Vector3Add(target_dir, avoidance));
       }
     };
 
-    // DIRECT CHASE: If player is visible and on roughly the same height, just walk straight!
-    if (std::abs(current_ctx->playerPos.y - position.y) < 1.5f && stealth_component.isPlayerDetected()) {
+    // DIRECT CHASE: If player is visible and on roughly the same height, just
+    // walk straight!
+    if (std::abs(current_ctx->playerPos.y - position.y) < 1.5f &&
+        stealth_component.isPlayerDetected()) {
       current_path.clear();
       Vector3 dir = Vector3Subtract(current_ctx->playerPos, position);
       Vector3 normalized_dir = Vector3Normalize({dir.x, 0.0f, dir.z});
       applyLocalAvoidance(normalized_dir);
-      this->setHorizontalVelocity({normalized_dir.x * MOVEMENT_SPEED, 0.0f, normalized_dir.z * MOVEMENT_SPEED});
+      this->setHorizontalVelocity({normalized_dir.x * MOVEMENT_SPEED, 0.0f,
+                                   normalized_dir.z * MOVEMENT_SPEED});
 
-      float target_yaw = std::atan2(normalized_dir.x, normalized_dir.z) * RAD2DEG;
+      float target_yaw =
+          std::atan2(normalized_dir.x, normalized_dir.z) * RAD2DEG;
       float angle_diff = target_yaw - rotation.y;
-      while (angle_diff < -180.0f) angle_diff += 360.0f;
-      while (angle_diff > 180.0f) angle_diff -= 360.0f;
+      while (angle_diff < -180.0f)
+        angle_diff += 360.0f;
+      while (angle_diff > 180.0f)
+        angle_diff -= 360.0f;
 
       float alpha = 10.0f * current_ctx->dt;
-      if (alpha > 1.0f) alpha = 1.0f;
+      if (alpha > 1.0f)
+        alpha = 1.0f;
 
       rotation.y += angle_diff * alpha;
-      while (rotation.y < 0.0f) rotation.y += 360.0f;
-      while (rotation.y >= 360.0f) rotation.y -= 360.0f;
-      
+      while (rotation.y < 0.0f)
+        rotation.y += 360.0f;
+      while (rotation.y >= 360.0f)
+        rotation.y -= 360.0f;
+
       return NodeState::RUNNING;
     }
 
     path_recalc_timer -= current_ctx->dt;
     if (path_recalc_timer <= 0.0f) {
-      current_path = current_ctx->nav_graph->findPath(position, current_ctx->playerPos);
+      current_path =
+          current_ctx->nav_graph->findPath(position, current_ctx->playerPos);
       path_recalc_timer = 1.0f; // Recalculate every 1 second
-      
-      // PATH SMOOTHING: Don't walk backwards to the closest node if we are already on the way
+
+      // PATH SMOOTHING: Don't walk backwards to the closest node if we are
+      // already on the way
       if (current_path.size() >= 2) {
         float dist_to_0 = Vector3Distance(position, current_path[0]);
         float dist_to_1 = Vector3Distance(position, current_path[1]);
         float node0_to_1 = Vector3Distance(current_path[0], current_path[1]);
-        
-        // If we are closer to node 1 than the edge length, or very close to node 0, pop node 0
+
+        // If we are closer to node 1 than the edge length, or very close to
+        // node 0, pop node 0
         if (dist_to_1 < node0_to_1 || dist_to_0 < 1.5f) {
-            current_path.erase(current_path.begin());
+          current_path.erase(current_path.begin());
         }
       } else if (current_path.size() == 1) {
         if (Vector3Distance(position, current_path[0]) < 1.5f) {
-            current_path.clear();
+          current_path.clear();
         }
       }
     }
@@ -191,10 +218,11 @@ void Swordman::setupBehaviorTree() {
     if (!current_path.empty()) {
       Vector3 target = current_path.front();
       Vector3 dir = Vector3Subtract(target, position);
-      
+
       // Ignore vertical difference for distance check to waypoint
-      float dist = Vector2Distance({position.x, position.z}, {target.x, target.z});
-      
+      float dist =
+          Vector2Distance({position.x, position.z}, {target.x, target.z});
+
       if (dist < 0.5f) {
         current_path.erase(current_path.begin());
         if (current_path.empty()) {
@@ -207,86 +235,100 @@ void Swordman::setupBehaviorTree() {
 
       Vector3 normalized_dir = Vector3Normalize({dir.x, 0.0f, dir.z});
       applyLocalAvoidance(normalized_dir);
-      this->setHorizontalVelocity({normalized_dir.x * MOVEMENT_SPEED, 0.0f, normalized_dir.z * MOVEMENT_SPEED});
+      this->setHorizontalVelocity({normalized_dir.x * MOVEMENT_SPEED, 0.0f,
+                                   normalized_dir.z * MOVEMENT_SPEED});
 
-      float target_yaw = std::atan2(normalized_dir.x, normalized_dir.z) * RAD2DEG;
+      float target_yaw =
+          std::atan2(normalized_dir.x, normalized_dir.z) * RAD2DEG;
       float angle_diff = target_yaw - rotation.y;
-      while (angle_diff < -180.0f) angle_diff += 360.0f;
-      while (angle_diff > 180.0f) angle_diff -= 360.0f;
+      while (angle_diff < -180.0f)
+        angle_diff += 360.0f;
+      while (angle_diff > 180.0f)
+        angle_diff -= 360.0f;
 
       float alpha = 10.0f * current_ctx->dt;
-      if (alpha > 1.0f) alpha = 1.0f;
+      if (alpha > 1.0f)
+        alpha = 1.0f;
 
       rotation.y += angle_diff * alpha;
-      while (rotation.y < 0.0f) rotation.y += 360.0f;
-      while (rotation.y >= 360.0f) rotation.y -= 360.0f;
+      while (rotation.y < 0.0f)
+        rotation.y += 360.0f;
+      while (rotation.y >= 360.0f)
+        rotation.y -= 360.0f;
     } else {
       // If no path found, just fall back to direct line of sight chasing
       Vector3 dir = Vector3Subtract(current_ctx->playerPos, position);
       Vector3 normalized_dir = Vector3Normalize({dir.x, 0.0f, dir.z});
       applyLocalAvoidance(normalized_dir);
-      this->setHorizontalVelocity({normalized_dir.x * MOVEMENT_SPEED, 0.0f, normalized_dir.z * MOVEMENT_SPEED});
-      
-      float target_yaw = std::atan2(normalized_dir.x, normalized_dir.z) * RAD2DEG;
+      this->setHorizontalVelocity({normalized_dir.x * MOVEMENT_SPEED, 0.0f,
+                                   normalized_dir.z * MOVEMENT_SPEED});
+
+      float target_yaw =
+          std::atan2(normalized_dir.x, normalized_dir.z) * RAD2DEG;
       float angle_diff = target_yaw - rotation.y;
-      while (angle_diff < -180.0f) angle_diff += 360.0f;
-      while (angle_diff > 180.0f) angle_diff -= 360.0f;
+      while (angle_diff < -180.0f)
+        angle_diff += 360.0f;
+      while (angle_diff > 180.0f)
+        angle_diff -= 360.0f;
 
       float alpha = 10.0f * current_ctx->dt;
-      if (alpha > 1.0f) alpha = 1.0f;
+      if (alpha > 1.0f)
+        alpha = 1.0f;
 
       rotation.y += angle_diff * alpha;
-      while (rotation.y < 0.0f) rotation.y += 360.0f;
-      while (rotation.y >= 360.0f) rotation.y -= 360.0f;
+      while (rotation.y < 0.0f)
+        rotation.y += 360.0f;
+      while (rotation.y >= 360.0f)
+        rotation.y -= 360.0f;
     }
 
     return NodeState::RUNNING;
   });
 
-  auto chaseSequence = std::make_shared<Sequence>(std::vector<NodePtr>{
-    stealthCondition,
-    chaseAction
-  });
+  auto chaseSequence = std::make_shared<Sequence>(
+      std::vector<NodePtr>{stealthCondition, chaseAction});
 
   auto susCondition = std::make_shared<Condition>([this]() {
     return stealth_component.getStealthState() == StealthState::Suspicious;
   });
 
   auto susAction = std::make_shared<Action>([this]() {
-    if (!current_ctx) return NodeState::FAILURE;
-    if (combat_component.getCurrentState() == CombatState::PostureBroken) return NodeState::SUCCESS;
-    
+    if (!current_ctx)
+      return NodeState::FAILURE;
+    if (combat_component.getCurrentState() == CombatState::PostureBroken)
+      return NodeState::SUCCESS;
+
     // FIX: Stop moving when suspicious!
     this->setHorizontalVelocity({0, 0, 0});
 
-    Vector3 dir = Vector3Subtract(stealth_component.getLastKnownPlayerPos(), position);
+    Vector3 dir =
+        Vector3Subtract(stealth_component.getLastKnownPlayerPos(), position);
     if (dir.x != 0.0f || dir.z != 0.0f) {
       float target_yaw = std::atan2(dir.x, dir.z) * RAD2DEG;
       float angle_diff = target_yaw - rotation.y;
-      while (angle_diff < -180.0f) angle_diff += 360.0f;
-      while (angle_diff > 180.0f) angle_diff -= 360.0f;
-      
+      while (angle_diff < -180.0f)
+        angle_diff += 360.0f;
+      while (angle_diff > 180.0f)
+        angle_diff -= 360.0f;
+
       float alpha = 10.0f * current_ctx->dt;
-      if (alpha > 1.0f) alpha = 1.0f;
-      
+      if (alpha > 1.0f)
+        alpha = 1.0f;
+
       rotation.y += angle_diff * alpha;
-      while (rotation.y < 0.0f) rotation.y += 360.0f;
-      while (rotation.y >= 360.0f) rotation.y -= 360.0f;
+      while (rotation.y < 0.0f)
+        rotation.y += 360.0f;
+      while (rotation.y >= 360.0f)
+        rotation.y -= 360.0f;
     }
     return NodeState::SUCCESS;
   });
 
-  auto susSequence = std::make_shared<Sequence>(std::vector<NodePtr>{
-    susCondition,
-    susAction
-  });
+  auto susSequence =
+      std::make_shared<Sequence>(std::vector<NodePtr>{susCondition, susAction});
 
   auto rootSelector = std::make_shared<Selector>(std::vector<NodePtr>{
-    attackSequence,
-    chaseSequence,
-    susSequence,
-    idleAction
-  });
+      attackSequence, chaseSequence, susSequence, idleAction});
 
   ai_component.setRoot(rootSelector);
 }

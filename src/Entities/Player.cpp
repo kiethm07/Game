@@ -105,8 +105,7 @@ bool Player::isExecuting() const {
 }
 
 void Player::updateLocomotionVelocity(const UpdateContext &ctx,
-                                      Vector3 moveDirection,
-                                      float speedScale) {
+                                      Vector3 moveDirection, float speedScale) {
   const float dt = ctx.dt;
 
   // Produce desired velocity + ease facing; PhysicsManager integrates position.
@@ -187,7 +186,7 @@ void Player::drawHPBar2D() const {
   DrawRectangleLines(x, posture_y, (int)bar_width, (int)bar_height, WHITE);
 
   if (locomotion.getStance() == Stance::Crouching) {
-      DrawText("CROUCHING", x, y - 24, 20, SKYBLUE);
+    DrawText("CROUCHING", x, y - 24, 20, SKYBLUE);
   }
 }
 
@@ -225,11 +224,13 @@ std::vector<HitBox> Player::getActiveHitBoxes() const {
   return active_hitboxes;
 }
 
-void Player::takeDamage(float health_damage, float posture_damage, Character* attacker) {
+void Player::takeDamage(float health_damage, float posture_damage,
+                        Character *attacker) {
   // 1. Guard check state machine windows
   if (combat_component.getCurrentState() == CombatState::Parrying) {
     // Perfect deflect window: Ignore health damage entirely.
-    // Receive drastically more posture damage than blocking, but it never breaks posture.
+    // Receive drastically more posture damage than blocking, but it never
+    // breaks posture.
     float parry_posture_damage = posture_damage * 2.0f;
     float current = stats.getCurrentPosture();
     float max_p = stats.getMaxPosture();
@@ -341,11 +342,11 @@ void Player::handleCombatAndUtilityInputs(const UpdateContext &ctx,
     setGrounded(false);
   }
   if (input_manager.isActionPressed(GameAction::Crouch)) {
-      if (locomotion.getStance() == Stance::Crouching) {
-          locomotion.setStance(Stance::Standing);
-      } else {
-          locomotion.setStance(Stance::Crouching);
-      }
+    if (locomotion.getStance() == Stance::Crouching) {
+      locomotion.setStance(Stance::Standing);
+    } else {
+      locomotion.setStance(Stance::Crouching);
+    }
   }
   if (input_manager.isActionPressed(GameAction::LockOn)) {
   }
