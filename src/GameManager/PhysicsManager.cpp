@@ -223,7 +223,6 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
             for (int iter = 0; iter < 2; ++iter) {
                 for (const PhysicsObstacle& obs : obstacles) {
                 BoundingBox obox = obs.getApproxBox();
-
                 // ---- RAMP_SHAPE dispatch ----
                 BoundingBox local_box = obs.getLocalBox();
                 Vector3 local_pos = Vector3Transform(pos, obs.getWorldToLocal());

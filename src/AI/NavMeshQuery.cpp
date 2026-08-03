@@ -36,16 +36,18 @@ std::vector<Vector3> NavMeshQuery::findPath(Vector3 start, Vector3 end) const {
     float endPos[3] = { end.x, end.y, end.z };
     
     dtPolyRef startRef;
-    m_navQuery->findNearestPoly(startPos, extents, m_filter, &startRef, nullptr);
+    float nearestStart[3];
+    m_navQuery->findNearestPoly(startPos, extents, m_filter, &startRef, nearestStart);
     
     dtPolyRef endRef;
-    m_navQuery->findNearestPoly(endPos, extents, m_filter, &endRef, nullptr);
+    float nearestEnd[3];
+    m_navQuery->findNearestPoly(endPos, extents, m_filter, &endRef, nearestEnd);
     
     if (!startRef || !endRef) return path;
     
     dtPolyRef pathPolys[256];
     int pathCount = 0;
-    m_navQuery->findPath(startRef, endRef, startPos, endPos, m_filter, pathPolys, &pathCount, 256);
+    m_navQuery->findPath(startRef, endRef, nearestStart, nearestEnd, m_filter, pathPolys, &pathCount, 256);
     
     if (pathCount > 0) {
         float straightPath[256 * 3];
@@ -53,7 +55,7 @@ std::vector<Vector3> NavMeshQuery::findPath(Vector3 start, Vector3 end) const {
         dtPolyRef straightPathPolys[256];
         int straightPathCount = 0;
         
-        m_navQuery->findStraightPath(startPos, endPos, pathPolys, pathCount,
+        m_navQuery->findStraightPath(nearestStart, nearestEnd, pathPolys, pathCount,
                                      straightPath, straightPathFlags, straightPathPolys,
                                      &straightPathCount, 256, 0);
                                      

@@ -102,10 +102,12 @@ void NavMeshBuilder::addObstacle(const PhysicsObstacle& obs) {
         float minZ = local.min.z;
         float maxZ = local.max.z;
         
-        Vector3 b0_l = { minX, local.min.y, minZ };
-        Vector3 b1_l = { maxX, local.min.y, minZ };
-        Vector3 b2_l = { maxX, local.min.y, maxZ };
-        Vector3 b3_l = { minX, local.min.y, maxZ };
+        // Drop the bottom by 10 meters to prevent NavMesh from routing under or into the side of the ramp
+        float dropped_y = local.min.y - 10.0f;
+        Vector3 b0_l = { minX, dropped_y, minZ };
+        Vector3 b1_l = { maxX, dropped_y, minZ };
+        Vector3 b2_l = { maxX, dropped_y, maxZ };
+        Vector3 b3_l = { minX, dropped_y, maxZ };
         
         Vector3 b0_w = Vector3Transform(b0_l, localToWorld);
         Vector3 b1_w = Vector3Transform(b1_l, localToWorld);
@@ -141,6 +143,36 @@ void NavMeshBuilder::addObstacle(const PhysicsObstacle& obs) {
         for (int i = 0; i < 36; ++i) {
             m_geom.triangles.push_back(startVertex + tris[i]);
         }
+
+        // Add 4 guardrail vertices at the top to prevent stepping onto the ramp from the sides
+        Vector3 guard_corners[4] = {
+            { t0_w.x, t0_w.y + 2.0f, t0_w.z },
+            { t1_w.x, t1_w.y + 2.0f, t1_w.z },
+            { t2_w.x, t2_w.y + 2.0f, t2_w.z },
+            { t3_w.x, t3_w.y + 2.0f, t3_w.z }
+        };
+        for (int i = 0; i < 4; ++i) {
+            m_geom.vertices.push_back(guard_corners[i].x);
+            m_geom.vertices.push_back(guard_corners[i].y);
+            m_geom.vertices.push_back(guard_corners[i].z);
+        }
+        
+        bool slopes_z = std::abs(t3_w.y - t0_w.y) > 0.01f;
+        if (slopes_z) {
+            // Left face: t0(4), t3(7), g3(11), g0(8)
+            int left_tris[] = { 4, 7, 11, 4, 11, 8 };
+            // Right face: t1(5), t2(6), g2(10), g1(9)
+            int right_tris[] = { 5, 10, 6, 5, 9, 10 };
+            for (int i = 0; i < 6; ++i) m_geom.triangles.push_back(startVertex + left_tris[i]);
+            for (int i = 0; i < 6; ++i) m_geom.triangles.push_back(startVertex + right_tris[i]);
+        } else {
+            // Front face: t0(4), t1(5), g1(9), g0(8)
+            int front_tris[] = { 4, 5, 9, 4, 9, 8 };
+            // Back face: t3(7), t2(6), g2(10), g3(11)
+            int back_tris[] = { 7, 10, 6, 7, 11, 10 };
+            for (int i = 0; i < 6; ++i) m_geom.triangles.push_back(startVertex + front_tris[i]);
+            for (int i = 0; i < 6; ++i) m_geom.triangles.push_back(startVertex + back_tris[i]);
+        }
     }
 }
 
@@ -153,10 +185,10 @@ bool NavMeshBuilder::build() {
     memset(&cfg, 0, sizeof(cfg));
     cfg.cs = 0.3f; // Cell size
     cfg.ch = 0.2f; // Cell height
-    cfg.walkableSlopeAngle = 45.0f;
+    cfg.walkableSlopeAngle = 60.0f; // Matches Physics COS_MAX_SLOPE
     cfg.walkableHeight = (int)std::ceil(2.0f / cfg.ch); // Agent height ~2m
     cfg.walkableClimb = (int)std::floor(0.9f / cfg.ch); // Agent max climb ~0.9m
-    cfg.walkableRadius = (int)std::ceil(0.8f / cfg.cs); // Agent radius 0.6m + 0.2m safety margin
+    cfg.walkableRadius = (int)std::ceil(0.6f / cfg.cs); // Agent radius 0.5m + 0.1m safety margin
     cfg.maxEdgeLen = (int)(12.0f / cfg.cs);
     cfg.maxSimplificationError = 1.3f;
     cfg.minRegionArea = (int)rcSqr(8.0f);
@@ -222,7 +254,7 @@ bool NavMeshBuilder::build() {
     params.detailTris = dmesh->tris;
     params.detailTriCount = dmesh->ntris;
     params.walkableHeight = 2.0f;
-    params.walkableRadius = 0.8f;
+    params.walkableRadius = 0.6f;
     params.walkableClimb = 0.9f;
     params.bmin[0] = pmesh->bmin[0];
     params.bmin[1] = pmesh->bmin[1];
