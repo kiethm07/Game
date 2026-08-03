@@ -73,7 +73,7 @@ void Swordman::setupBehaviorTree() {
   });
 
   auto stealthCondition = std::make_shared<Condition>([this]() {
-    return true; // stealth_component.isPlayerDetected();
+    return stealth_component.isPlayerDetected();
   });
 
   auto attackCondition = std::make_shared<Condition>([this]() {
