@@ -20,19 +20,16 @@ void StealthManager::update(const std::vector<Character*>& characters, Character
                 }
             }
             
+            if (max_detection > 0.0f) {
+                stealth.setLastKnownPlayerPos(player->getPosition());
+            }
+
             StealthState old_state = stealth.getStealthState();
             stealth.updateAwareness(max_detection, dt);
             StealthState new_state = stealth.getStealthState();
             
             if (new_state == StealthState::Aware) {
-                stealth.setLastKnownPlayerPos(player->getPosition());
                 aware_enemies.push_back(enemy);
-            } else if (new_state == StealthState::Suspicious) {
-                // Only update look target when first getting suspicious.
-                // Do not update continuously to prevent lock-on behavior.
-                if (old_state == StealthState::Unaware) {
-                    stealth.setLastKnownPlayerPos(player->getPosition());
-                }
             }
         }
     }
