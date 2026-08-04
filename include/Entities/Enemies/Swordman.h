@@ -34,4 +34,11 @@ private:
   const float ROTATION_SPEED = 100.0f;
   void setupBehaviorTree();
   const UpdateContext* current_ctx = nullptr;
+
+  Vector3 spawn_position;
+  float spawn_yaw = 0.0f;
+  float attack_cooldown_timer = 0.0f;
+  float investigation_timer = 0.0f;
+  float circle_direction = 1.0f;
+  float circle_timer = 0.0f;
 };

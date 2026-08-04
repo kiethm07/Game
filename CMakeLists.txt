@@ -15,6 +15,22 @@ FetchContent_Declare(raylib
 )
 FetchContent_MakeAvailable(raylib)
 
+# Fetch RecastNavigation
+set(RECASTNAVIGATION_DEMO OFF CACHE BOOL "" FORCE)
+set(RECASTNAVIGATION_TESTS OFF CACHE BOOL "" FORCE)
+set(RECASTNAVIGATION_EXAMPLES OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(recastnavigation
+    GIT_REPOSITORY https://github.com/recastnavigation/recastnavigation.git
+    GIT_TAG main
+    GIT_SHALLOW ON
+)
+# Fix for MinGW/GCC missing INTPTR_MAX in RecastAlloc.h
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_definitions(INTPTR_MAX=__INTPTR_MAX__)
+endif()
+
+FetchContent_MakeAvailable(recastnavigation)
+
 # Enable raylib's GPU skinning path. Without this, raylib's config.h defaults
 # SUPPORT_GPU_SKINNING to 0, so it never uploads per-vertex bone index/weight
 # VBOs — a skinning shader then skins every vertex by bone 0, freezing the mesh
@@ -29,7 +45,7 @@ add_executable(${PROJECT_NAME} ${SRC_FILES} ${HEADER_FILES})
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
 
-target_link_libraries(${PROJECT_NAME} PRIVATE raylib)
+target_link_libraries(${PROJECT_NAME} PRIVATE raylib Recast Detour)
 
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME})
 
