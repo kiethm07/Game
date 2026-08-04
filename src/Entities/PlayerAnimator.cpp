@@ -19,7 +19,7 @@ const PlayerAnimator::Machine::Desc *PlayerAnimator::descTable() {
       // is the whole point of the clip, and easing into it over a fifth of a
       // second reads as the character sinking to the floor rather than hitting
       // it.
-      /* Land        */ {"Land", false, 1.0f, false, 0.06f, LAND_CONTACT},
+      /* Land        */ {"Land", false, 2.0f, false, 0.06f, LAND_CONTACT},
       /* GuardImpact */ {"Impact", false, 1.0f, false, 0.05f},
       // Loops, and time-scaled per frame like the other two cycles — the 1.0
       // here is what one with no authored travel falls back to. Fades like the
@@ -40,10 +40,10 @@ const PlayerAnimator::Machine::Desc *PlayerAnimator::descTable() {
       // retiming the clips keeps the authored travel exact — rate only changes
       // how fast the same root offset is consumed — and keeps the i-frame
       // window in step, since dodgeDuration() divides the clip by this rate.
-      /* DodgeFwd    */ {"Dodge_Forward", false, 1.50f, true, 0.05f},
-      /* DodgeBack   */ {"Dodge_Back", false, 1.95f, true, 0.05f},
-      /* DodgeLeft   */ {"Dodge_Left", false, 1.50f, true, 0.05f},
-      /* DodgeRight  */ {"Dodge_Right", false, 1.50f, true, 0.05f},
+      /* DodgeFwd    */ {"Dodge_Forward", false, 1.75f, true, 0.05f},
+      /* DodgeBack   */ {"Dodge_Back", false, 2.0f, true, 0.05f},
+      /* DodgeLeft   */ {"Dodge_Left", false, 1.75f, true, 0.05f},
+      /* DodgeRight  */ {"Dodge_Right", false, 1.75f, true, 0.05f},
       // Fallback swing, used when an attack names no clip or names one the
       // loaded asset does not contain. Attacks that do name a clip override
       // this in resolve().

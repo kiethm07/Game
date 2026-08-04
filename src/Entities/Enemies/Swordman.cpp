@@ -1,3 +1,4 @@
+#include "AI/NavMeshQuery.h"
 #include "Entities/Character.h"
 #include <Entities/Enemies/Swordman.h>
 #include <cmath>
@@ -26,30 +27,34 @@ void Swordman::update(const UpdateContext &ctx) {
   if (ctx.assets)
     animator.resolveClips(*ctx.assets);
 
-  combat_component.update(dt);
-
+  const bool dead = stats.isDead();
+  if (!dead) {
+    combat_component.update(dt);
+    ai_component.update();
+  }
   if (attack_cooldown_timer > 0.0f) attack_cooldown_timer -= dt;
   if (investigation_timer > 0.0f) investigation_timer -= dt;
   if (circle_timer > 0.0f) circle_timer -= dt;
 
-  ai_component.update();
 
   if (combat_component.getCurrentState() == CombatState::PostureBroken)
     setHorizontalVelocity({0.0f, 0.0f, 0.0f});
 
   animator.updateFlinch(dt, ctx.assets);
 
-  // Resolved by name rather than by assuming an index. The model carries
-  // exactly one clip, so a name the export toolchain has renamed still leaves
-  // index 0 as the only possibility worth falling back to.
-  if (ctx.assets && anim.resolveClips(*ctx.assets) &&
-      anim.clipFor(SwordmanAnimState::Idle) < 0)
-    anim.setClip(SwordmanAnimState::Idle, 0);
+  SwordmanAnimator::Frame frame;
+  frame.combat = &combat_component;
+  frame.assets = ctx.assets;
+  // Read from the same field PhysicsManager integrates, so the stride matches
+  // the travel exactly.
+  const Vector3 velocity = getHorizontalVelocity();
+  frame.moving = (velocity.x != 0.0f || velocity.z != 0.0f);
+  frame.dead = dead;
 
-  // Advancing playback here is what the original code omitted, which left
-  // enemies rendering frozen on frame 0.
-  anim.apply(ctx.assets, dt, anim.select(SwordmanAnimState::Idle));
+  animator.update(frame, dt);
 }
+
+void Swordman::onDamaged(bool blocked) { animator.queueReaction(blocked); }
 
 void Swordman::setupBehaviorTree() {
   using namespace BT;

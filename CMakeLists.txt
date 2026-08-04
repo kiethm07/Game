@@ -47,6 +47,18 @@ target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE raylib Recast Detour)
 
+# RecastNavigation compiles itself with -fno-rtti, so it never emits typeinfo
+# for rcContext. NavMeshBuilder.cpp derives BuildContext from it; under the
+# Itanium ABI (Clang/GCC) typeinfo for a polymorphic class lives only in the TU
+# defining its key function, so the derived typeinfo we emit here references a
+# base typeinfo that does not exist anywhere -> undefined symbol at link.
+# MSVC emits type descriptors per-TU as COMDATs, which is why Windows links
+# fine and only macOS/Linux hit this. BuildContext is file-local, so dropping
+# RTTI for just this source is safe and matches the ABI Recast was built with.
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set_source_files_properties(src/AI/NavMeshBuilder.cpp PROPERTIES COMPILE_OPTIONS -fno-rtti)
+endif()
+
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME})
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
