@@ -34,7 +34,8 @@ public:
     // characters on different floors would shove each other. The push-out itself
     // stays on the XZ plane so separation never launches anyone vertically.
     static bool resolveCylinderCylinder(Vector3& pos_a, float radius_a, float height_a,
-                                        Vector3& pos_b, float radius_b, float height_b) {
+                                        Vector3& pos_b, float radius_b, float height_b,
+                                        float weight_a = 0.5f, float weight_b = 0.5f) {
         // Vertical span test. The epsilon keeps a character standing exactly on
         // another's head (spans meeting at a single point) from registering.
         const float SPAN_EPS = 0.001f;
@@ -58,10 +59,11 @@ public:
         }
 
         float overlap = combined_radius - dist;
-        Vector3 half_push = Vector3Scale(push_dir, overlap * 0.5f);
+        Vector3 push_a = Vector3Scale(push_dir, overlap * weight_a);
+        Vector3 push_b = Vector3Scale(push_dir, overlap * weight_b);
 
-        pos_a = Vector3Add(pos_a, half_push);
-        pos_b = Vector3Subtract(pos_b, half_push);
+        pos_a = Vector3Add(pos_a, push_a);
+        pos_b = Vector3Subtract(pos_b, push_b);
 
         return true;
     }
