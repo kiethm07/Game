@@ -17,7 +17,7 @@ const AnimStateMachine<SwordmanAnimState>::Desc kAnimTable[] = {
 } // namespace
 
 Swordman::Swordman(Vector3 start_position) : Enemy(start_position) {
-  stats = Stats(1000.0f, 100.0f, 15.0f);
+  stats = Stats(1000.0f, 100.0f, 10.0f);
   combo = {AttackID::PlayerLight1};
   stealth_component.addSensor(std::make_shared<VisionSensor>(20.0f, 70.0f));
   stealth_component.addSensor(std::make_shared<SoundSensor>(6.0f));
@@ -135,9 +135,11 @@ void Swordman::setupBehaviorTree() {
   auto combatAction = std::make_shared<Action>([this, moveAlongPath]() {
     if (!current_ctx) return NodeState::FAILURE;
     if (combat_component.getCurrentState() == CombatState::PostureBroken) return NodeState::SUCCESS;
-    if (combat_component.getCurrentState() != CombatState::Idle) {
+    
+    // 1. If currently attacking, parrying, or STAGGERED (flinching), don't interrupt with movement/new attacks!
+    if (combat_component.getCurrentState() != CombatState::Idle || animator.isFlinching()) {
       this->setHorizontalVelocity({0, 0, 0});
-      return NodeState::RUNNING; // Currently attacking/staggered
+      return NodeState::RUNNING; // Currently attacking or staggered
     }
     
     Vector3 target_pos = stealth_component.getLastKnownPlayerPos();

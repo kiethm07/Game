@@ -121,6 +121,7 @@ StateAction GameplayState::update(float dt) {
     shot.shot = CameraShot::Deathblow;
     shot.focus = deathblow_victim->getPosition();
   }
+  shot.obstacles = &obstacles;
   camera_controller->update(shot);
 
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
