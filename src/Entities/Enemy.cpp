@@ -139,6 +139,11 @@ void Enemy::takeDamage(float health_damage, float posture_damage, Character* att
   // Once per hit that connected, and only then: a hit swallowed by i-frames is
   // not something the character should be seen reacting to. After the execute
   // above, so a subclass asking whether it is dead gets this hit's answer.
-  if (hit_applied)
-    onDamaged(blocked);
+  if (hit_applied) {
+      if (attacker) {
+          stealth_component.forceAwareness(200.0f);
+          stealth_component.setLastKnownPlayerPos(attacker->getPosition());
+      }
+      onDamaged(blocked);
+  }
 }

@@ -81,6 +81,9 @@ public:
   /// Starts whatever flinch queueReaction() left, and ages the running one.
   void updateFlinch(float dt, const AssetManager *assets);
 
+  /// Returns true if the enemy is currently staggered/flinching.
+  bool isFlinching() const { return reaction_timer > 0.0f; }
+
   /// Runs the ladder for this frame and drives the clock from what it picked.
   void update(const Frame &frame, float dt);
 

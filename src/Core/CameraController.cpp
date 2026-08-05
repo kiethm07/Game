@@ -1,4 +1,5 @@
 #include <Core/CameraController.h>
+#include <Components/PhysicsObstacle.h>
 #include <math.h>
 #include <raymath.h>
 
@@ -12,6 +13,7 @@ CameraController::CameraController() {
 
   // Default orbital settings
   distance = CLOSE_DISTANCE; // The player starts idle, so start framed for it
+  current_distance = -1.0f; // Will snap to target_dist on the first frame
   pitch = FOLLOW_PITCH;      // Looking slightly down at the player
   yaw = 0.0f;                // Looking straight ahead
   sensitivity = 0.2f;        // Adjust this to make the mouse feel right
@@ -126,18 +128,85 @@ void CameraController::update(const CameraFrame &frame) {
   float pitchRad = pitch * DEG2RAD;
   float yawRad = yaw * DEG2RAD;
 
-  // 4. Calculate the Camera's position using Spherical to Cartesian math
-  // This orbits the camera around the framed point based on the yaw and pitch
-  camera.position.x =
-      framed_target.x + distance * cosf(pitchRad) * sinf(yawRad);
+  // 4. Calculate the Camera's ideal position using the original orbital math (orbits the feet)
+  camera.position.x = framed_target.x + distance * cosf(pitchRad) * sinf(yawRad);
   camera.position.y = framed_target.y + distance * sinf(pitchRad);
-  camera.position.z =
-      framed_target.z + distance * cosf(pitchRad) * cosf(yawRad);
+  camera.position.z = framed_target.z + distance * cosf(pitchRad) * cosf(yawRad);
 
-  // camera target at some point, raised by AIM_HEIGHT so the shot is centred on
-  // the body
-  camera.target = {framed_target.x, framed_target.y + AIM_HEIGHT,
-                   framed_target.z};
+  // camera target at some point, raised by AIM_HEIGHT so the shot is centred on the body
+  camera.target = {framed_target.x, framed_target.y + AIM_HEIGHT, framed_target.z};
+
+  // 5. To prevent the camera from sliding down to the feet when zooming in,
+  // we must zoom it directly along the line of sight from the chest (target) to the camera.
+  Vector3 chest_to_cam = Vector3Subtract(camera.position, camera.target);
+  float ideal_los_dist = Vector3Length(chest_to_cam);
+  Vector3 ray_dir = Vector3Scale(chest_to_cam, 1.0f / ideal_los_dist);
+  Vector3 ray_origin = camera.target;
+
+  float target_dist = ideal_los_dist;
+
+  if (frame.obstacles) {
+      for (const auto& obs : *frame.obstacles) {
+          if (obs.getShape() == ObstacleShape::RAMP_SHAPE) {
+              int steps = 10;
+              for (int i = 1; i <= steps; ++i) {
+                  float frac = (float)i / steps;
+                  Vector3 p = Vector3Lerp(ray_origin, camera.position, frac);
+                  if (obs.containsXZ(p, 0.2f)) {
+                      float h = obs.getHeightAt(p);
+                      if (p.y < h + 0.2f) { // The ray dipped under the floor
+                          float hit_dist = Vector3Distance(ray_origin, p);
+                          if (hit_dist < target_dist) {
+                              target_dist = hit_dist - 0.2f;
+                              if (target_dist < 0.3f) target_dist = 0.3f;
+                          }
+                          break;
+                      }
+                  }
+              }
+              continue;
+          }
+
+          Vector3 local_ray_origin = Vector3Transform(ray_origin, obs.getWorldToLocal());
+          Vector3 local_ray_target = Vector3Transform(camera.position, obs.getWorldToLocal());
+          
+          Ray local_ray;
+          local_ray.position = local_ray_origin;
+          local_ray.direction = Vector3Normalize(Vector3Subtract(local_ray_target, local_ray_origin));
+          
+          RayCollision collision = GetRayCollisionBox(local_ray, obs.getLocalBox());
+          if (collision.hit) {
+              float dist_to_cam_local = Vector3Distance(local_ray_origin, local_ray_target);
+              if (collision.distance < dist_to_cam_local) {
+                  Vector3 hit_world = Vector3Transform(collision.point, obs.getLocalToWorld());
+                  float hit_dist = Vector3Distance(ray_origin, hit_world);
+                  if (hit_dist < target_dist) {
+                      target_dist = hit_dist - 0.2f; // Offset slightly so it doesn't clip into the wall
+                      if (target_dist < 0.3f) target_dist = 0.3f; // extreme minimum zoom
+                  }
+              }
+          }
+      }
+  }
+
+  // Smoothly recover distance, and use a fast interpolation when pushed in to avoid jarring snaps
+  if (current_distance < 0.0f) {
+      current_distance = target_dist; // First frame snap
+  } else if (target_dist < current_distance) {
+      // Fast interpolation when compressed by a wall to feel smooth but prevent deep clipping
+      current_distance += (target_dist - current_distance) * (30.0f * frame.dt);
+      // Failsafe: If the camera is severely clipping (gap > 1.5 units), snap it to catch up
+      if (current_distance - target_dist > 1.5f) {
+          current_distance = target_dist + 1.5f;
+      }
+  } else {
+      // Slower interpolation when recovering back to normal distance
+      current_distance += (target_dist - current_distance) * (5.0f * frame.dt);
+  }
+
+  // Recalculate camera position by sliding it straight along the line of sight!
+  // This completely prevents the pitch/orientation from changing when squeezed by a wall.
+  camera.position = Vector3Add(camera.target, Vector3Scale(ray_dir, current_distance));
 }
 
 Camera3D CameraController::getCamera() const { return camera; }
