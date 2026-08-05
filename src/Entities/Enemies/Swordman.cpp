@@ -4,6 +4,16 @@
 #include <cmath>
 #include <raymath.h>
 #include <rlgl.h>
+#include <AI/NavMeshQuery.h>
+#include <Stealth/CombatSenseSensor.h>
+
+namespace {
+/// Walk.glb carries a single clip, whose name is the armature's rather than
+/// anything descriptive.
+const AnimStateMachine<SwordmanAnimState>::Desc kAnimTable[] = {
+    /* Idle */ {"Armature|mixamo.com|Layer0", true, 1.0f, false, 0.0f},
+};
+} // namespace
 
 Swordman::Swordman(Vector3 start_position) : Enemy(start_position) {
   stats = Stats(1000.0f, 100.0f, 15.0f);
@@ -11,6 +21,7 @@ Swordman::Swordman(Vector3 start_position) : Enemy(start_position) {
   stealth_component.addSensor(std::make_shared<VisionSensor>(20.0f, 70.0f));
   stealth_component.addSensor(std::make_shared<SoundSensor>(6.0f));
   stealth_component.addSensor(std::make_shared<ProximitySensor>(1.2f));
+  stealth_component.addSensor(std::make_shared<CombatSenseSensor>(10.0f));
   
   spawn_position = start_position;
   spawn_yaw = 0.0f; // Could be randomized or passed in
@@ -126,8 +137,9 @@ void Swordman::setupBehaviorTree() {
       return NodeState::RUNNING; // Currently attacking/staggered
     }
     
-    float distance = Vector3Distance(position, current_ctx->playerPos);
-    Vector3 to_player = Vector3Subtract(current_ctx->playerPos, position);
+    Vector3 target_pos = stealth_component.getLastKnownPlayerPos();
+    float distance = Vector3Distance(position, target_pos);
+    Vector3 to_player = Vector3Subtract(target_pos, position);
     to_player.y = 0.0f;
     Vector3 to_player_norm = Vector3Normalize(to_player);
     
@@ -185,7 +197,7 @@ void Swordman::setupBehaviorTree() {
     path_recalc_timer -= current_ctx->dt;
     if (path_recalc_timer <= 0.0f) {
       if (current_ctx->nav_query) {
-          current_path = current_ctx->nav_query->findPath(position, current_ctx->playerPos);
+          current_path = current_ctx->nav_query->findPath(position, stealth_component.getLastKnownPlayerPos());
       }
       path_recalc_timer = 0.25f;
     }

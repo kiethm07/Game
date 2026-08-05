@@ -26,11 +26,15 @@ public:
 
     void updateAwareness(float detection_strength, float dt) {
         if (detection_strength > 0.0f) {
+            time_since_last_seen = 0.0f;
             awareness_level += detection_strength * build_rate * dt;
             if (awareness_level > 200.0f) awareness_level = 200.0f;
         } else {
-            awareness_level -= decay_rate * dt;
-            if (awareness_level < 0.0f) awareness_level = 0.0f;
+            time_since_last_seen += dt;
+            if (time_since_last_seen >= memory_time) {
+                awareness_level -= decay_rate * dt;
+                if (awareness_level < 0.0f) awareness_level = 0.0f;
+            }
         }
 
         if (awareness_level < 100.0f) {
@@ -81,6 +85,9 @@ private:
     
     Vector3 last_known_player_pos = {0.0f, 0.0f, 0.0f};
     
+    float time_since_last_seen = 0.0f;
+    float memory_time = 3.0f; // Seconds before awareness starts decaying
+
     float build_rate = 50.0f; // Points per second
     float decay_rate = 25.0f; // Points per second
     std::string debug_state = "UNAWARE";
