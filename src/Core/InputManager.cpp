@@ -31,6 +31,7 @@ void InputManager::registerDefaultBindings() {
 
     mouse_bindings[MOUSE_BUTTON_LEFT]  = GameAction::Attack;
     mouse_bindings[MOUSE_BUTTON_RIGHT] = GameAction::Parry;
+    mouse_bindings[MOUSE_BUTTON_MIDDLE]= GameAction::LockOn;
 }
 
 void InputManager::update() {

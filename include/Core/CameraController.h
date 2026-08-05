@@ -6,7 +6,7 @@
 class PhysicsObstacle;
 
 /// How the camera frames the action.
-enum class CameraShot { Follow, Deathblow };
+enum class CameraShot { Follow, Deathblow, LockOn };
 
 enum class CameraFraming { Close, Wide };
 

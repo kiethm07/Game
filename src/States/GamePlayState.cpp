@@ -99,6 +99,92 @@ StateAction GameplayState::update(float dt) {
   // 3. Resolve Combat
   combat_manager.update(active_characters);
 
+  auto checkLineOfSight = [&](Vector3 start, Vector3 end) {
+    for (const auto &obs : obstacles) {
+      if (obs.getShape() == ObstacleShape::RAMP_SHAPE) {
+        int steps = 10;
+        for (int i = 1; i <= steps; ++i) {
+          float frac = (float)i / steps;
+          Vector3 p = Vector3Lerp(start, end, frac);
+          if (obs.containsXZ(p, 0.0f)) {
+            float h = obs.getHeightAt(p);
+            if (p.y < h) return false;
+          }
+        }
+        continue;
+      }
+      Vector3 local_start = Vector3Transform(start, obs.getWorldToLocal());
+      Vector3 local_end = Vector3Transform(end, obs.getWorldToLocal());
+      Ray local_ray;
+      local_ray.position = local_start;
+      local_ray.direction = Vector3Normalize(Vector3Subtract(local_end, local_start));
+      RayCollision collision = GetRayCollisionBox(local_ray, obs.getLocalBox());
+      if (collision.hit) {
+        float dist_to_tgt_local = Vector3Distance(local_start, local_end);
+        if (collision.distance < dist_to_tgt_local) return false;
+      }
+    }
+    return true;
+  };
+
+  // Helper to get chest height position for raycasting
+  auto getChestPos = [](Character* c) {
+    Vector3 pos = c->getPosition();
+    pos.y += c->getColliderHeight() * 0.8f;
+    return pos;
+  };
+
+  // Lock-on target validation
+  if (locked_target) {
+    bool is_visible = checkLineOfSight(getChestPos(player.get()), getChestPos(locked_target));
+    if (locked_target->getStats().isDead() || 
+        Vector3Distance(player->getPosition(), locked_target->getPosition()) > 20.0f ||
+        !is_visible) {
+      locked_target = nullptr;
+    }
+  }
+
+  if (input_manager.isActionPressed(GameAction::LockOn)) {
+    if (locked_target) {
+      locked_target = nullptr;
+    } else {
+      float best_score = 10000.0f;
+      Character* best_target = nullptr;
+      Vector3 cam_pos = camera_controller->getCamera().position;
+      Vector3 cam_fwd = camera_controller->getCameraForward();
+
+      for (const auto& enemy : enemies) {
+        if (!enemy->getStats().isDead()) {
+          float dist_to_player = Vector3Distance(player->getPosition(), enemy->getPosition());
+          Vector3 to_enemy = Vector3Subtract(enemy->getPosition(), cam_pos);
+          float dist_to_cam = Vector3Length(to_enemy);
+          
+          if (dist_to_cam < 25.0f) { // Must be within a certain distance from camera
+            Vector3 dir = Vector3Scale(to_enemy, 1.0f / dist_to_cam);
+            float dot = Vector3DotProduct(cam_fwd, dir);
+            
+            if (dot > 0.0f) { 
+              float angle = acosf(dot) * RAD2DEG;
+              if (angle < 45.0f) { // Must be within a 45 degree arc from camera center
+                // Score heavily penalizes being off-center, then considers distance
+                float score = angle * 2.0f + dist_to_player;
+                
+                if (score < best_score) {
+                  bool is_visible = checkLineOfSight(getChestPos(player.get()), getChestPos(enemy.get()));
+                  if (is_visible) {
+                    best_score = score;
+                    best_target = enemy.get();
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      locked_target = best_target;
+    }
+  }
+
   // 4. Update the camera tracking matrix using that position. Built here the
   // same way the UpdateContext above is, so the camera never reaches back into
   // the player for it — and so that the framing, which is a decision about the
@@ -120,6 +206,9 @@ StateAction GameplayState::update(float dt) {
   if (deathblow_victim) {
     shot.shot = CameraShot::Deathblow;
     shot.focus = deathblow_victim->getPosition();
+  } else if (locked_target) {
+    shot.shot = CameraShot::LockOn;
+    shot.focus = locked_target->getPosition();
   }
   shot.obstacles = &obstacles;
   camera_controller->update(shot);
@@ -322,6 +411,18 @@ void GameplayState::draw() {
   physics_manager.drawDebug(active_characters, obstacles);
   combat_manager.drawDebug(active_characters);
   stealth_manager.drawDebug(active_characters);
+
+  if (locked_target) {
+    Vector3 chest_pos = locked_target->getPosition();
+    chest_pos.y += 1.3f; // Approximate chest height
+    
+    // Pull the sphere towards the camera so it doesn't get submerged in the model
+    Vector3 cam_pos = camera_controller->getCamera().position;
+    Vector3 to_cam = Vector3Normalize(Vector3Subtract(cam_pos, chest_pos));
+    chest_pos = Vector3Add(chest_pos, Vector3Scale(to_cam, locked_target->getColliderRadius() + 0.1f));
+    
+    DrawSphere(chest_pos, 0.04f, WHITE);
+  }
 
   EndMode3D();
 
