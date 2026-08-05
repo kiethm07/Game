@@ -31,7 +31,8 @@ void CameraController::update(const CameraFrame &frame) {
   const Vector3 target_position = frame.target;
 
   const bool cinematic = (frame.shot == CameraShot::Deathblow);
-  if (cinematic)
+  const bool locked_on = (frame.shot == CameraShot::LockOn);
+  if (cinematic || locked_on)
     focus_point = frame.focus;
 
   // Every eased quantity below closes a constant fraction of its remaining
@@ -71,6 +72,16 @@ void CameraController::update(const CameraFrame &frame) {
     // Armed for as long as the shot runs, so it is full the frame the shot
     // lets go however long the shot lasted.
     recenter_timer = RECENTER_DURATION;
+  } else if (locked_on) {
+    // Camera wants to be behind the player relative to the locked target.
+    // The vector from enemy to player is (target_position - focus_point).
+    const Vector3 axis = Vector3Subtract(target_position, focus_point);
+    if (axis.x != 0.0f || axis.z != 0.0f) {
+      const float desired_yaw = atan2f(axis.x, axis.z) * RAD2DEG;
+      yaw += shortestAngleDelta(yaw, desired_yaw) * unwind_alpha;
+    }
+    pitch += (FOLLOW_PITCH - pitch) * unwind_alpha;
+    recenter_timer = 0.0f; // Don't recenter after lock-on ends
   } else if (recenter_timer > 0.0f && fabsf(frame.look.x) <= RECENTER_YIELD &&
              fabsf(frame.look.y) <= RECENTER_YIELD) {
     recenter_timer -= frame.dt;

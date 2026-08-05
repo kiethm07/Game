@@ -63,4 +63,5 @@ private:
   /// is not possible. Safe to hold raw: enemies are owned by `enemies` for the
   /// whole life of the state and are never erased, only killed.
   Character *deathblow_victim = nullptr;
+  Character *locked_target = nullptr;
 };
