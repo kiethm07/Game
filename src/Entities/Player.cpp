@@ -216,28 +216,37 @@ std::vector<HitBox> Player::getActiveHitBoxes() const {
   std::vector<HitBox> active_hitboxes;
 
   if (combat_component.getCurrentState() == CombatState::AttackActive) {
+    const AttackData* active_attack = combat_component.getActiveAttack();
+    if (!active_attack) return active_hitboxes;
+
     float yaw_rad = rotation.y * DEG2RAD;
     Vector3 forward = {std::sin(yaw_rad), 0.0f, std::cos(yaw_rad)};
+    Vector3 right = {-std::cos(yaw_rad), 0.0f, std::sin(yaw_rad)};
+    Vector3 up = {0.0f, 1.0f, 0.0f};
 
-    // Position attack sphere in front of the player at chest height
-    Vector3 hitbox_center = {position.x + forward.x * ATTACK_REACH,
-                             position.y + (BODY_HEIGHT * 0.5f),
-                             position.z + forward.z * ATTACK_REACH};
+    for (const auto& def : active_attack->getHitBoxDefs()) {
+        if (def.type == HitBoxShapeType::Sphere) {
+            Vector3 center = position;
+            center = Vector3Add(center, Vector3Scale(forward, def.forward_offset));
+            center = Vector3Add(center, Vector3Scale(up, def.vertical_offset));
+            
+            Sphere sphere(center, def.radius);
+            active_hitboxes.emplace_back(sphere, def.health_damage, def.posture_damage, getFaction(), getId());
+        } else if (def.type == HitBoxShapeType::Capsule) {
+            Vector3 start = position;
+            start = Vector3Add(start, Vector3Scale(right, def.start_offset.x));
+            start = Vector3Add(start, Vector3Scale(up, def.start_offset.y));
+            start = Vector3Add(start, Vector3Scale(forward, def.start_offset.z));
 
-    Sphere attack_sphere(hitbox_center, ATTACK_RADIUS);
+            Vector3 end = position;
+            end = Vector3Add(end, Vector3Scale(right, def.end_offset.x));
+            end = Vector3Add(end, Vector3Scale(up, def.end_offset.y));
+            end = Vector3Add(end, Vector3Scale(forward, def.end_offset.z));
 
-    float health_dmg = 25.0f;
-    float posture_dmg = 15.0f;
-
-    const AttackData* active_attack = combat_component.getActiveAttack();
-    if (active_attack && active_attack == &AttackRegistry::instance().getAttackData(AttackID::PlayerExecution)) {
-        health_dmg = 9999.0f; // Instant kill
+            Capsule capsule(start, end, def.capsule_radius);
+            active_hitboxes.emplace_back(capsule, def.health_damage, def.posture_damage, getFaction(), getId());
+        }
     }
-
-    active_hitboxes.emplace_back(attack_sphere,
-                                 health_dmg,
-                                 posture_dmg,
-                                 getFaction(), getId());
   }
 
   return active_hitboxes;
