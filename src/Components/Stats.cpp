@@ -8,10 +8,25 @@ void Stats::update(float dt) {
         // No regeneration in the first 3 seconds
         float current_regen_rate = 0.0f;
 
-        // After 3 seconds without taking damage, speed increases non-linearly
-        if (time_since_last_damage > 3.0f) {
+        float hp_ratio = getHealthPercentage();
+
+        if (hp_ratio <= 0.40f) {
+            // Under 40% HP, posture can't recover at all
+            current_regen_rate = 0.0f;
+        } else if (time_since_last_damage > 3.0f) {
+            // After 3 seconds without taking damage, speed increases non-linearly
             float time_past_delay = time_since_last_damage - 3.0f;
-            current_regen_rate += posture_regen_rate * (time_past_delay * 0.5f);
+            float base_rate = posture_regen_rate * (time_past_delay * 0.5f);
+
+            // Scale the recovery rate non-linearly based on remaining health above 40%
+            float normalized_hp = (hp_ratio - 0.40f) / 0.60f; // Maps 40%-100% HP to 0.0-1.0
+            
+            // To punish the player, we use an inverted quadratic curve. 
+            // This means the enemy retains high recovery speed until their HP gets very close to 40%.
+            float inverse_hp = 1.0f - normalized_hp;
+            float hp_multiplier = 1.0f - (inverse_hp * inverse_hp);
+            
+            current_regen_rate = base_rate * hp_multiplier;
         }
 
         current_posture -= current_regen_rate * dt;

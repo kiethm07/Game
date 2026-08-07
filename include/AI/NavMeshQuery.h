@@ -16,6 +16,9 @@ public:
     // Returns a smooth path from start to end
     std::vector<Vector3> findPath(Vector3 start, Vector3 end) const;
 
+    // Constrains an intended movement destination to the NavMesh boundaries
+    Vector3 getConstrainedPosition(Vector3 start, Vector3 intendedEnd) const;
+
 private:
     dtNavMeshQuery* m_navQuery;
     dtQueryFilter* m_filter;

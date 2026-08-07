@@ -11,7 +11,7 @@ public:
     CombatSenseSensor(float detection_radius) 
         : radius(detection_radius) {}
 
-    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles) const override {
+    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const std::vector<SmokeCloud>& smoke_clouds) const override {
         // Only active if the observer is an Enemy and is already in Combat (Aware)
         const Enemy* enemy = dynamic_cast<const Enemy*>(observer);
         if (!enemy || enemy->getStealthComponent().getStealthState() != StealthState::Aware) {

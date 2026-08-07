@@ -30,8 +30,25 @@ void PhysicsManager::resolveCharacterCollisions(const std::vector<Character*>& c
             float   height_a = char_a->getColliderHeight();
             float   height_b = char_b->getColliderHeight();
 
+            float weight_a = 0.5f;
+            float weight_b = 0.5f;
+
+            // If they are on different teams, they act as solid walls to each other (body block)
+            if (char_a->getFaction() != char_b->getFaction()) {
+                float speed_a = Vector3Length(char_a->getHorizontalVelocity());
+                float speed_b = Vector3Length(char_b->getHorizontalVelocity());
+                
+                if (speed_a > 0.1f || speed_b > 0.1f) {
+                    float sum = speed_a + speed_b;
+                    // The one moving faster takes more of the correction, meaning they bounce off the slower one
+                    weight_a = speed_a / sum;
+                    weight_b = speed_b / sum;
+                }
+            }
+
             bool resolved = CollisionMath::resolveCylinderCylinder(pos_a, radius_a, height_a,
-                                                                   pos_b, radius_b, height_b);
+                                                                   pos_b, radius_b, height_b,
+                                                                   weight_a, weight_b);
             if (resolved) {
                 positions[i] = pos_a;
                 positions[j] = pos_b;

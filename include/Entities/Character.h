@@ -11,6 +11,14 @@
 #include <vector>
 
 class NavMeshQuery;
+struct SmokeCloud;
+
+enum class DamageResult {
+    IGNORED,
+    HIT,
+    BLOCKED,
+    PARRIED
+};
 
 /// Everything an entity needs to advance one tick. Passed through the virtual
 /// update() so subclasses share a single polymorphic entry point.
@@ -30,6 +38,9 @@ struct UpdateContext {
   
   /// Read-only access to obstacles for local steering avoidance.
   const std::vector<PhysicsObstacle> *obstacles = nullptr;
+  
+  /// Read-only access to current active smoke clouds.
+  const std::vector<SmokeCloud> *smoke_clouds = nullptr;
 };
 
 class Character {
@@ -84,7 +95,7 @@ public:
 
   virtual std::vector<HurtBox> getHurtBoxes() const = 0;
   virtual std::vector<HitBox> getActiveHitBoxes() const = 0;
-  virtual void takeDamage(float health_damage, float posture_damage, Character* attacker = nullptr) = 0;
+  virtual DamageResult takeDamage(float health_damage, float posture_damage, Character* attacker = nullptr) = 0;
 
 protected:
   unsigned int id;
