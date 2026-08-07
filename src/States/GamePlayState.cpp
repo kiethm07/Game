@@ -108,7 +108,7 @@ StateAction GameplayState::update(float dt) {
   combat_manager.update(active_characters, &particle_manager);
 
   auto checkLineOfSight = [&](Vector3 start, Vector3 end) {
-    for (const auto &obs : obstacles) {
+    for (const auto &obs : level.obstacles) {
       if (obs.getShape() == ObstacleShape::RAMP_SHAPE) {
         int steps = 10;
         for (int i = 1; i <= steps; ++i) {
@@ -218,7 +218,7 @@ StateAction GameplayState::update(float dt) {
     shot.shot = CameraShot::LockOn;
     shot.focus = locked_target->getPosition();
   }
-  shot.obstacles = &obstacles;
+  shot.obstacles = &level.obstacles;
   camera_controller->update(shot);
 
   // Debug affordance, not a game action, so it stays off InputManager's
