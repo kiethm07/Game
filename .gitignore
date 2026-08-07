@@ -15,3 +15,11 @@
 /_deps/
 /.agents/
 *.tree_structure.txt
+
+# Blender writes a .blend1 backup beside every save. The .blend itself IS
+# tracked -- it is the authoring source of truth for a level, and losing it
+# would mean re-kitbashing the map from nothing.
+*.blend1
+*.blend2
+
+.DS_Store

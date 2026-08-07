@@ -31,6 +31,17 @@ endif()
 
 FetchContent_MakeAvailable(recastnavigation)
 
+# Level files are JSON. Fetched from the packaged release archive rather than
+# the git repo: the repo carries a large test-data suite that FetchContent would
+# clone in full, while json.tar.xz is the headers plus a CMake package and
+# nothing else.
+set(JSON_BuildTests OFF CACHE INTERNAL "")
+FetchContent_Declare(nlohmann_json
+    URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+    URL_HASH SHA256=d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d
+)
+FetchContent_MakeAvailable(nlohmann_json)
+
 # Enable raylib's GPU skinning path. Without this, raylib's config.h defaults
 # SUPPORT_GPU_SKINNING to 0, so it never uploads per-vertex bone index/weight
 # VBOs — a skinning shader then skins every vertex by bone 0, freezing the mesh
@@ -45,7 +56,7 @@ add_executable(${PROJECT_NAME} ${SRC_FILES} ${HEADER_FILES})
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
 
-target_link_libraries(${PROJECT_NAME} PRIVATE raylib Recast Detour)
+target_link_libraries(${PROJECT_NAME} PRIVATE raylib Recast Detour nlohmann_json::nlohmann_json)
 
 # RecastNavigation compiles itself with -fno-rtti, so it never emits typeinfo
 # for rcContext. NavMeshBuilder.cpp derives BuildContext from it; under the

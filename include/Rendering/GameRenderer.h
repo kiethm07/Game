@@ -2,6 +2,7 @@
 
 #include <Components/PhysicsObstacle.h>
 #include <Core/CameraController.h>
+#include <Level/Level.h>
 #include <Rendering/AssetManager.h>
 #include <Rendering/IEntityRenderer.h>
 #include <Rendering/RenderData.h>
@@ -15,13 +16,28 @@ public:
   /// Does not own the asset store. Root motion is gameplay data as much as it
   /// is render data, so the owner sits above both (see GameplayState) and hands
   /// the same AssetManager to entities through UpdateContext.
-  explicit GameRenderer(AssetManager &assets);
+  ///
+  /// The level is read for its visual mesh and its bounds and is not retained;
+  /// the caller keeps owning it, and its obstacles arrive per-frame through the
+  /// render calls below rather than being cached here.
+  GameRenderer(AssetManager &assets, const Level &level);
   ~GameRenderer();
 
   GameRenderer(const GameRenderer &) = delete;
   GameRenderer &operator=(const GameRenderer &) = delete;
 
   void initializeAssets();
+
+  /// F2: draw the collision proxies as wireframes over the level mesh, plus the
+  /// world grid.
+  ///
+  /// This is the check that the Blender export lined up: the proxies come from
+  /// level.json via this engine's own coordinate conversion, the mesh comes
+  /// from the same .blend via Blender's glTF exporter, and the two only
+  /// coincide if both conversions agree. A uniform rotation offset means a yaw
+  /// sign is wrong; a mirrored layout means the Y/Z swap is.
+  void setDebugOverlay(bool on) { debugOverlay = on; }
+  bool debugOverlayEnabled() const { return debugOverlay; }
 
   /// PASS 1 — depth from the light's point of view, once per shadow cascade.
   ///
@@ -57,15 +73,35 @@ private:
 
   ShadowMap shadowMap;
 
-  /// Lit, shadow-receiving shader for the ground plane and every obstacle.
-  /// Distinct from the character shader because this geometry comes through
-  /// rlgl immediate mode, already in world space — see world.vs.
+  /// Lit, shadow-receiving shader for every obstacle. Distinct from the
+  /// character shader because this geometry comes through rlgl immediate mode,
+  /// already in world space — see world.vs.
   Shader worldShader{};
+
+  /// Same lighting as worldShader, but for a Model rather than the
+  /// immediate-mode batch, and with an albedo texture. See level.vs for why the
+  /// two cannot share a vertex stage.
+  Shader levelShader{};
+
+  /// The level's visual mesh. Owned here rather than by AssetManager, whose
+  /// cache is keyed on the AssetID enum — one entry per level would mean an
+  /// enum edit and a rebuild per map, which is exactly what moving levels into
+  /// data was meant to stop.
+  Model levelModel{};
+  bool hasLevelModel = false;
+
+  bool debugOverlay = false;
 
   /// 3D world pass: environment + every entity's skinned/proxy geometry.
   void drawWorld(const CameraController &camera,
                  const std::vector<PhysicsObstacle> &obstacles,
                  const std::vector<CharacterRenderData> &entitiesToDraw);
   void drawEnvironment(const std::vector<PhysicsObstacle> &obstacles);
+
+  /// Load the level's mesh and point its materials at levelShader. Also
+  /// substitutes raylib's default white texture for any material that arrived
+  /// without an albedo map, so level.fs samples white instead of whatever
+  /// happened to be bound.
+  void loadLevelModel(const Level &level);
 };
 

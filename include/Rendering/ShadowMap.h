@@ -14,8 +14,9 @@
 ///   * cascade 0 (near) -- 16m, recentred on the player every frame and snapped
 ///     to its own texel grid so the edges do not crawl as he walks. ~1.6 screen
 ///     pixels per texel at the camera's usual distance.
-///   * cascade 1 (far)  -- 48m, static, covering the whole arena. Identical to
-///     the single map this replaced, and what keeps distant shadows alive.
+///   * cascade 1 (far)  -- static, framed on the loaded level's bounds by
+///     setBounds(). What keeps distant shadows alive, and stable: a frustum
+///     that does not move cannot shimmer.
 ///
 /// The near cascade needs no lateral margin for casters just outside it: under
 /// an *orthographic* light projection a caster and its shadow share the same
@@ -35,6 +36,16 @@ public:
   /// should skip the depth pass; applyTo() stays safe to call and leaves the
   /// scene fully lit rather than fully black.
   bool isReady() const { return ready; }
+
+  /// Frame the far cascade over a level. Call once when the level is loaded,
+  /// before the first depth pass.
+  ///
+  /// The far cascade is static by design, so it needs to be told where the
+  /// world is; without this it stays on its default 48m box at the origin, and
+  /// a level authored anywhere else loses its distant shadows entirely. Pass
+  /// bounds covering the visual mesh as well as the collision proxies — a roof
+  /// with no proxy still casts.
+  void setBounds(BoundingBox bounds);
 
   /// Recentre the near cascade on `focus` (the player). Call once per frame,
   /// before the depth passes.
@@ -88,6 +99,11 @@ private:
   Cascade cascades[kCascadeCount]{};
   Shader staticDepthShader{};
   Vector3 lightDirection{};
+
+  /// Where the far cascade is parked. Set by setBounds(); the centre of the
+  /// level rather than of the camera, because a static frustum is what keeps
+  /// distant shadows from shimmering as the player walks.
+  Vector3 farCentre{};
 
   bool ready = false;
 
