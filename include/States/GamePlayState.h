@@ -13,6 +13,7 @@
 #include <GameManager/PhysicsManager.h>
 #include <AI/NavMeshBuilder.h>
 #include <AI/NavMeshQuery.h>
+#include <Level/Level.h>
 #include <States/GameState.h>
 
 #include <Rendering/GameRenderer.h>
@@ -36,6 +37,10 @@ private:
   /// reverse-declaration order, so the renderer dies first.
   AssetManager asset_manager;
 
+  /// The loaded map. Also declared before `renderer`, which reads its visual
+  /// mesh path and bounds during construction.
+  Level level;
+
   std::unique_ptr<CameraController> camera_controller;
   std::unique_ptr<Player> player;
   std::vector<std::unique_ptr<Enemy>> enemies;
@@ -43,7 +48,6 @@ private:
   CombatManager combat_manager;
   PhysicsManager physics_manager;
   StealthManager stealth_manager;
-  std::vector<PhysicsObstacle> obstacles;
   std::vector<CharacterRenderData> renderList;
 
   const InputManager &input_manager;

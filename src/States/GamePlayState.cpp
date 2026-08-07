@@ -5,59 +5,67 @@
 #include <cassert>
 #include <cmath>
 
+namespace {
+/// The level this state loads. One map for now — StateAction carries no
+/// payload, so there is nowhere for a level choice to come from until there is
+/// a map-select screen to make it.
+constexpr const char *kLevelPath = ASSET_DIR "/levels/greybox/level.json";
+} // namespace
+
 GameplayState::GameplayState(const InputManager &input_manager)
     : input_manager(input_manager) {
   camera_controller = std::make_unique<CameraController>();
+
+  // The world, authored in Blender and exported by tools/export_level.py.
+  // Everything below reads from `level` rather than from literals: geometry,
+  // spawns, and the extent the shadow cascades are framed against.
+  level = LevelLoader::load(kLevelPath);
+  if (!level.valid) {
+    // Deliberately not fatal. The player still lands on PhysicsManager's y=0
+    // floor clamp, so the game comes up empty and obviously broken with the
+    // reason already logged, rather than crashing on startup and taking the
+    // reason with it.
+    TraceLog(LOG_ERROR,
+             "GameplayState: level '%s' failed to load; starting with an "
+             "empty world.",
+             kLevelPath);
+  }
   player = std::make_unique<Player>(input_manager);
-  player->setPosition({0.0f, 0.0f, -13.0f}); // Spawn north of the central hub
+  player->setPosition(level.playerSpawn.position);
+  player->setRotation({0.0f, level.playerSpawn.yaw, 0.0f});
 
-  // Enemies
-  enemies.push_back(
-      EnemyFactory::createEnemy(EnemyType::Swordman, {8.0f, 0.0f, 8.0f})); // South-East
-  enemies.push_back(
-      EnemyFactory::createEnemy(EnemyType::Swordman, {-8.0f, 0.0f, 8.0f})); // South-West
-  
-  // Test enemy for wall-takedown
-  enemies.push_back(
-      EnemyFactory::createEnemy(EnemyType::Swordman, {8.0f, 0.0f, -8.0f})); // North-East
-
-  // --- OPEN SCATTERED ARENA FOR PATHFINDING TEST ---
-  
-  // 1. Central Hub Platform
-  obstacles.emplace_back(Vector3{-4.0f, 0.0f, -4.0f}, Vector3{4.0f, 2.5f, 4.0f}, 0.0f, DARKBLUE);
-
-  // 2. Ramps leading up to the Central Hub from 4 directions
-  // North Ramp (Z=-11 to -4)
-  obstacles.emplace_back(Vector2{-2.0f, -11.0f}, Vector2{2.0f, -4.0f}, 0.0f, 2.5f, 0.0f, SKYBLUE);
-  // South Ramp (Z=4 to 11)
-  obstacles.emplace_back(Vector2{-2.0f, 4.0f}, Vector2{2.0f, 11.0f}, 2.5f, 0.0f, 0.0f, SKYBLUE);
-  // West Ramp (X=-11 to -4)
-  obstacles.emplace_back(Vector2{-11.0f, -2.0f}, Vector2{-4.0f, 2.0f}, 0.0f, 2.5f, 0.0f, SKYBLUE);
-  // East Ramp (X=4 to 11)
-  obstacles.emplace_back(Vector2{4.0f, -2.0f}, Vector2{11.0f, 2.0f}, 2.5f, 0.0f, 0.0f, SKYBLUE);
-
-  // 3. Scattered Pillars / Walls
-  // A wall blocking the South Ramp's exit slightly
-  obstacles.emplace_back(Vector3{-4.0f, 0.0f, 13.0f}, Vector3{4.0f, 4.0f, 14.0f}, 0.0f, GRAY);
-  
-  // A large pillar near the West Ramp
-  obstacles.emplace_back(Vector3{-13.0f, 0.0f, -5.0f}, Vector3{-10.0f, 6.0f, -2.0f}, 0.0f, DARKGRAY);
-
-  // A standalone smaller platform with its own ramp in the corner
-  obstacles.emplace_back(Vector3{10.0f, 0.0f, -15.0f}, Vector3{15.0f, 2.0f, -10.0f}, 0.0f, ORANGE);
-  obstacles.emplace_back(Vector2{10.0f, -10.0f}, Vector2{15.0f, -5.0f}, 2.0f, 0.0f, 0.0f, LIME);
+  for (const EnemySpawn &spawn : level.enemySpawns) {
+    auto enemy = EnemyFactory::createEnemy(spawn.type, spawn.at.position);
+    enemy->setRotation({0.0f, spawn.at.yaw, 0.0f});
+    enemies.push_back(std::move(enemy));
+  }
 
   // --- NAVMESH SETUP ---
-  for (const auto& obs : obstacles) {
-      nav_builder.addObstacle(obs);
+  // Obstacles must be complete before build(): the navmesh is baked once, here,
+  // and there is no runtime rebuild path. The floor is one of them now — it
+  // used to be a 200x200 plate fabricated on the spot for Recast alone, which
+  // meant the floor the AI walked on, the floor the renderer drew, and the
+  // floor physics clamped to were three separate things that could disagree.
+  for (const auto &obs : level.obstacles) {
+    nav_builder.addObstacle(obs);
   }
-  // Add a massive ground plane so the enemies can walk on the floor
-  PhysicsObstacle ground({-100.0f, -1.0f, -100.0f}, {100.0f, 0.0f, 100.0f});
-  nav_builder.addObstacle(ground);
-  nav_builder.build();
+  if (!nav_builder.build()) {
+    // Silently discarding this used to be survivable when the geometry was a
+    // literal in this file. Now that it comes from a level file, a bake that
+    // fails is an authoring problem the author needs told about — otherwise it
+    // presents as enemies that simply never move.
+    TraceLog(LOG_ERROR,
+             "GameplayState: navmesh bake failed for level '%s'. Enemies will "
+             "not path. Check that the level has a floor proxy and that gaps "
+             "are wider than the 0.6m agent radius.",
+             level.name.c_str());
+  } else {
+    TraceLog(LOG_INFO, "GameplayState: navmesh baked from %d obstacles",
+             (int)level.obstacles.size());
+  }
   nav_query.init(nav_builder.getNavMesh());
 
-  renderer = std::make_unique<GameRenderer>(asset_manager);
+  renderer = std::make_unique<GameRenderer>(asset_manager, level);
 }
 
 void GameplayState::enter() {
@@ -70,7 +78,7 @@ StateAction GameplayState::update(float dt) {
   Vector3 player_pos = player->getPosition();
   const UpdateContext ctx{dt, camera_controller->getCameraForward(),
                           camera_controller->getCameraRight(), player_pos,
-                          &asset_manager, &nav_query, &obstacles};
+                          &asset_manager, &nav_query, &level.obstacles};
 
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());
@@ -81,7 +89,7 @@ StateAction GameplayState::update(float dt) {
   }
 
   // 1.5. Evaluate Stealth before AI update so AI can react in the same frame
-  stealth_manager.update(active_characters, player.get(), obstacles, dt);
+  stealth_manager.update(active_characters, player.get(), level.obstacles, dt);
 
   player->update(ctx);
   for (auto &enemy : enemies) {
@@ -91,7 +99,7 @@ StateAction GameplayState::update(float dt) {
   // 2. Resolve Physics Pipeline (4-Step: Gravity -> Integration -> Ejection
   // Loop -> Ground Snap)
   std::vector<Vector3> new_positions =
-      physics_manager.updatePhysics(active_characters, obstacles, dt);
+      physics_manager.updatePhysics(active_characters, level.obstacles, dt);
   for (size_t i = 0; i < active_characters.size(); ++i) {
     active_characters[i]->setPosition(new_positions[i]);
   }
@@ -128,6 +136,12 @@ StateAction GameplayState::update(float dt) {
   // checked against where the arena actually is.
   if (IsKeyPressed(KEY_F1)) {
     show_shadow_map = !show_shadow_map;
+  }
+
+  // F2: collision proxies over the level mesh. The check that the Blender
+  // export lined up — see GameRenderer::setDebugOverlay.
+  if (IsKeyPressed(KEY_F2)) {
+    renderer->setDebugOverlay(!renderer->debugOverlayEnabled());
   }
 
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
@@ -198,7 +212,7 @@ StateAction GameplayState::update(float dt) {
           Vector3 e_head = {
               e_pos.x, e_pos.y + enemy->getColliderHeight() * 0.8f, e_pos.z};
 
-          for (const auto &obs : obstacles) {
+          for (const auto &obs : level.obstacles) {
             Vector3 local_obs = Vector3Transform(p_head, obs.getWorldToLocal());
             Vector3 local_tgt = Vector3Transform(e_head, obs.getWorldToLocal());
 
@@ -310,14 +324,14 @@ void GameplayState::draw() {
   // happen before the scene is cleared, and it needs the same render list the
   // scene pass gets or the shadows would be a frame stale. The player position
   // is what the near cascade recentres on.
-  renderer->renderShadowPass(obstacles, renderList, player->getPosition());
+  renderer->renderShadowPass(level.obstacles, renderList, player->getPosition());
 
   // PASS 2 — the scene.
   ClearBackground(RAYWHITE);
   BeginMode3D(camera_controller->getCamera());
 
-  // Ground, obstacles and entities, drawn into the 3D scope opened above.
-  renderer->renderGameplay(*camera_controller, obstacles, renderList);
+  // Level mesh, obstacles and entities, drawn into the 3D scope opened above.
+  renderer->renderGameplay(*camera_controller, level.obstacles, renderList);
 
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());
@@ -327,7 +341,7 @@ void GameplayState::draw() {
   }
 
   // Collision debug wireframes — must stay inside the 3D scope.
-  physics_manager.drawDebug(active_characters, obstacles);
+  physics_manager.drawDebug(active_characters, level.obstacles);
   combat_manager.drawDebug(active_characters);
   stealth_manager.drawDebug(active_characters);
 

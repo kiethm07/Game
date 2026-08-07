@@ -8,15 +8,30 @@ namespace {
 
 constexpr int kResolution = 2048;
 
-/// Cascade extents. The near one is sized so a texel lands at roughly one
-/// screen pixel at the camera's orbit distance: 16m/2048 = 7.8mm, against
-/// ~4.8mm per screen pixel at CLOSE_DISTANCE. The far one covers the authored
-/// arena (x in [-13, 15], z in [-15, 14]) with margin.
+/// Near cascade extent, sized so a texel lands at roughly one screen pixel at
+/// the camera's orbit distance: 16m/2048 = 7.8mm, against ~4.8mm per screen
+/// pixel at CLOSE_DISTANCE.
 constexpr float kNearExtent = 16.0f;
-constexpr float kFarExtent = 48.0f;
 
-/// The far cascade never moves, so distant shadows never shimmer.
-const Vector3 kArenaCentre = {0.0f, 0.0f, 0.0f};
+/// Far cascade defaults, used until setBounds() hears from a level. The far
+/// cascade used to be a hardcoded 48m box at the world origin, sized by hand to
+/// the one arena that existed; a level authored anywhere else would have fallen
+/// straight out of it.
+constexpr float kDefaultFarExtent = 48.0f;
+const Vector3 kDefaultFarCentre = {0.0f, 0.0f, 0.0f};
+
+/// Ceiling on how far the far cascade will stretch to cover a level.
+///
+/// It is a resolution limit, not an arbitrary one: at 2048 texels a 200m
+/// cascade is ~10cm per texel, which is already coarse enough that a shadow's
+/// edge is visibly stepped. Past this the answer is not a bigger box but a
+/// third cascade, so growing silently would hide the real problem. Levels over
+/// this size keep their shadows near the centre and lose them at the rim.
+constexpr float kMaxFarExtent = 200.0f;
+
+/// Minimum margin around the level bounds, so geometry exactly on the edge is
+/// not clipped by the ortho frustum's own boundary.
+constexpr float kFarMargin = 4.0f;
 
 /// How far back along the light each ortho camera sits, and the depth slab it
 /// captures. Left at BeginMode3D's defaults the slab would be 0.05..4000, and
@@ -81,8 +96,9 @@ ShadowMap::ShadowMap() {
 
   cascades[0].extent = kNearExtent;
   cascades[0].textureSlot = kNearSlot;
-  cascades[1].extent = kFarExtent;
+  cascades[1].extent = kDefaultFarExtent;
   cascades[1].textureSlot = kFarSlot;
+  farCentre = kDefaultFarCentre;
 
   staticDepthShader = LoadShader(ASSET_DIR "/shaders/glsl330/depth.vs",
                                  ASSET_DIR "/shaders/glsl330/depth.fs");
@@ -94,20 +110,52 @@ ShadowMap::ShadowMap() {
             (cascades[i].target.depth.id != 0);
     // Static framing up front, so a missed update() still renders something
     // sane rather than a frustum parked at the origin of an uninitialised camera.
-    computeCascade(i, kArenaCentre);
+    computeCascade(i, farCentre);
   }
 
   if (!ready) {
     TraceLog(LOG_ERROR,
              "ShadowMap: unavailable; the scene will render unshadowed.");
   } else {
-    TraceLog(LOG_INFO,
-             "ShadowMap: %d cascades at %dx%d -- near %.0fm (%.1fmm/texel), "
-             "far %.0fm (%.1fmm/texel)",
+    TraceLog(LOG_INFO, "ShadowMap: %d cascades at %dx%d -- near %.0fm (%.1fmm/texel)",
              kCascadeCount, kResolution, kResolution, kNearExtent,
-             1000.0f * kNearExtent / kResolution, kFarExtent,
-             1000.0f * kFarExtent / kResolution);
+             1000.0f * kNearExtent / kResolution);
   }
+}
+
+void ShadowMap::setBounds(BoundingBox bounds) {
+  // Framed on the level's XZ footprint. Height is deliberately not part of the
+  // extent: the cascade is a square box perpendicular to the light, and a tall
+  // level needs depth range (which kNearPlane..kFarPlane already provides),
+  // not a wider box.
+  const float width = bounds.max.x - bounds.min.x;
+  const float depth = bounds.max.z - bounds.min.z;
+
+  float extent = std::fmax(width, depth) + kFarMargin;
+  if (extent > kMaxFarExtent) {
+    TraceLog(LOG_WARNING,
+             "ShadowMap: level spans %.0fm, past the %.0fm the far cascade can "
+             "cover at %d texels. Distant shadows will be missing at the rim.",
+             extent, kMaxFarExtent, kResolution);
+    extent = kMaxFarExtent;
+  }
+  // Never let the far cascade end up finer than the near one -- the blend in
+  // shadowFactor() assumes cascade 0 is the sharper of the two, and a tiny
+  // level would otherwise invert that.
+  extent = std::fmax(extent, kNearExtent * 1.5f);
+
+  farCentre = {(bounds.min.x + bounds.max.x) * 0.5f,
+               (bounds.min.y + bounds.max.y) * 0.5f,
+               (bounds.min.z + bounds.max.z) * 0.5f};
+
+  cascades[1].extent = extent;
+  computeCascade(1, farCentre);
+
+  TraceLog(LOG_INFO,
+           "ShadowMap: far cascade framed on the level -- %.0fm at "
+           "(%.1f, %.1f, %.1f), %.1fmm/texel",
+           extent, farCentre.x, farCentre.y, farCentre.z,
+           1000.0f * extent / kResolution);
 }
 
 ShadowMap::~ShadowMap() {
@@ -126,9 +174,9 @@ Texture2D ShadowMap::getDepthTexture(int cascade) const {
 void ShadowMap::computeCascade(int index, Vector3 focus) {
   Cascade &c = cascades[index];
 
-  // Cascade 1 is anchored to the arena and ignores the focus entirely, so
+  // Cascade 1 is anchored to the level and ignores the focus entirely, so
   // distant shadows are perfectly stable no matter where the player walks.
-  Vector3 centre = (index == 0) ? focus : kArenaCentre;
+  Vector3 centre = (index == 0) ? focus : farCentre;
 
   if (index == 0) {
     // Texel snapping. Without this the near cascade's texel grid slides
