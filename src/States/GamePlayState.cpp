@@ -234,6 +234,12 @@ StateAction GameplayState::update(float dt) {
     renderer->setDebugOverlay(!renderer->debugOverlayEnabled());
   }
 
+  // F3: cycle what the depth pass renders, for measuring its cost against the
+  // fragment-side cost. The stats readout comes up with the F2 overlay.
+  if (IsKeyPressed(KEY_F3)) {
+    renderer->cycleShadowMode();
+  }
+
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
     return StateAction::ChangeToMenu;
   }
