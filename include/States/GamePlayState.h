@@ -54,6 +54,9 @@ private:
   NavMeshBuilder nav_builder;
   NavMeshQuery nav_query;
 
+  /// F1: overlay the raw shadow depth map in the corner.
+  bool show_shadow_map = false;
+
   /// Used strictly for debugging takedown mechanics across frames.
   Character *pending_aerial_target = nullptr;
 

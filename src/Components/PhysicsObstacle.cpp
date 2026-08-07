@@ -132,27 +132,28 @@ float PhysicsObstacle::getHeightAt(Vector3 position) const {
     return Vector3Transform(surface_local, localToWorld).y;
 }
 
-Vector3 PhysicsObstacle::getNormal() const {
-    Vector3 local_normal;
+Vector3 PhysicsObstacle::getLocalNormal() const {
     if (shape == ObstacleShape::BOX_SHAPE) {
-        local_normal = { 0.0f, 1.0f, 0.0f };
-    } else {
-        float dz = ramp_max_xz.y - ramp_min_xz.y;
-        float dx = ramp_max_xz.x - ramp_min_xz.x;
-        float dy = ramp_end_y - ramp_start_y;
-
-        Vector3 raw;
-        if (std::abs(dz) >= std::abs(dx)) {
-            raw = { 0.0f, dz, -dy };
-        } else {
-            raw = { -dy, std::abs(dx), 0.0f };
-        }
-        local_normal = Vector3Normalize(raw);
+        return { 0.0f, 1.0f, 0.0f };
     }
 
+    float dz = ramp_max_xz.y - ramp_min_xz.y;
+    float dx = ramp_max_xz.x - ramp_min_xz.x;
+    float dy = ramp_end_y - ramp_start_y;
+
+    Vector3 raw;
+    if (std::abs(dz) >= std::abs(dx)) {
+        raw = { 0.0f, dz, -dy };
+    } else {
+        raw = { -dy, std::abs(dx), 0.0f };
+    }
+    return Vector3Normalize(raw);
+}
+
+Vector3 PhysicsObstacle::getNormal() const {
     // Transform normal to world space (rotation only)
     Matrix rot_only = MatrixRotateY(yaw * DEG2RAD);
-    return Vector3Transform(local_normal, rot_only);
+    return Vector3Transform(getLocalNormal(), rot_only);
 }
 
 bool PhysicsObstacle::containsXZ(Vector3 position, float radius) const {
@@ -163,9 +164,13 @@ bool PhysicsObstacle::containsXZ(Vector3 position, float radius) const {
            local_pos.z + radius >= local_box.min.z && local_pos.z - radius <= local_box.max.z;
 }
 
-void PhysicsObstacle::draw() const {
+// Local geometry is submitted under rlMultMatrixf(localToWorld). rlgl applies
+// that transform on the CPU as each vertex and normal is submitted, so
+// everything reaches the shader already in world space — which is exactly what
+// world.vs and depth.vs expect. See the comment at the top of world.vs.
+void PhysicsObstacle::pushTransform() const {
     rlPushMatrix();
-    
+
     float mat[16] = {
         localToWorld.m0, localToWorld.m1, localToWorld.m2, localToWorld.m3,
         localToWorld.m4, localToWorld.m5, localToWorld.m6, localToWorld.m7,
@@ -173,53 +178,92 @@ void PhysicsObstacle::draw() const {
         localToWorld.m12, localToWorld.m13, localToWorld.m14, localToWorld.m15
     };
     rlMultMatrixf(mat);
+}
+
+void PhysicsObstacle::rampCorners(Vector3 top[4], Vector3 bottom[4]) const {
+    auto getLocalY = [&](float x, float z) {
+        float dz = ramp_max_xz.y - ramp_min_xz.y;
+        float dx = ramp_max_xz.x - ramp_min_xz.x;
+        float t = 0.0f;
+        if (std::abs(dz) >= std::abs(dx)) t = (std::abs(dz)>0.0001f)? (z - ramp_min_xz.y)/dz : 0.0f;
+        else t = (std::abs(dx)>0.0001f)? (x - ramp_min_xz.x)/dx : 0.0f;
+        return ramp_start_y + t * (ramp_end_y - ramp_start_y);
+    };
+
+    top[0] = { ramp_min_xz.x, getLocalY(ramp_min_xz.x, ramp_min_xz.y), ramp_min_xz.y };
+    top[1] = { ramp_max_xz.x, getLocalY(ramp_max_xz.x, ramp_min_xz.y), ramp_min_xz.y };
+    top[2] = { ramp_max_xz.x, getLocalY(ramp_max_xz.x, ramp_max_xz.y), ramp_max_xz.y };
+    top[3] = { ramp_min_xz.x, getLocalY(ramp_min_xz.x, ramp_max_xz.y), ramp_max_xz.y };
+
+    float b_y = std::min(ramp_start_y, ramp_end_y);
+    bottom[0] = { ramp_min_xz.x, b_y, ramp_min_xz.y };
+    bottom[1] = { ramp_max_xz.x, b_y, ramp_min_xz.y };
+    bottom[2] = { ramp_max_xz.x, b_y, ramp_max_xz.y };
+    bottom[3] = { ramp_min_xz.x, b_y, ramp_max_xz.y };
+}
+
+void PhysicsObstacle::drawSolid() const {
+    pushTransform();
 
     if (shape == ObstacleShape::BOX_SHAPE) {
         Vector3 size   = Vector3Subtract(local_box.max, local_box.min);
         Vector3 center = Vector3Add(local_box.min, Vector3Scale(size, 0.5f));
+        // DrawCube emits its own rlNormal3f per face, so boxes light correctly
+        // with no help from us.
         DrawCube(center, size.x, size.y, size.z, color);
+    } else {
+        Vector3 t[4], b[4];
+        rampCorners(t, b);
+
+        // DrawTriangle3D submits no normal of its own — it inherits whatever
+        // rlNormal3f last set, which before this was leftover state from some
+        // unrelated draw. Set one per face, in LOCAL space: rlNormal3f applies
+        // the rotation part of the transform pushed above.
+        //
+        // The windings below were already correct for backface culling; the
+        // normals here match them, outward in every case.
+
+        // Top (the slope itself)
+        Vector3 slope = getLocalNormal();
+        rlNormal3f(slope.x, slope.y, slope.z);
+        DrawTriangle3D(t[0], t[2], t[1], color); DrawTriangle3D(t[0], t[3], t[2], color);
+        // Bottom
+        rlNormal3f(0.0f, -1.0f, 0.0f);
+        DrawTriangle3D(b[0], b[1], b[2], color); DrawTriangle3D(b[0], b[2], b[3], color);
+        // Front (min z)
+        rlNormal3f(0.0f, 0.0f, -1.0f);
+        DrawTriangle3D(b[0], t[1], b[1], color); DrawTriangle3D(b[0], t[0], t[1], color);
+        // Back (max z)
+        rlNormal3f(0.0f, 0.0f, 1.0f);
+        DrawTriangle3D(b[2], t[2], b[3], color); DrawTriangle3D(b[3], t[2], t[3], color);
+        // Left (min x)
+        rlNormal3f(-1.0f, 0.0f, 0.0f);
+        DrawTriangle3D(b[3], t[3], b[0], color); DrawTriangle3D(b[0], t[3], t[0], color);
+        // Right (max x)
+        rlNormal3f(1.0f, 0.0f, 0.0f);
+        DrawTriangle3D(b[1], t[1], b[2], color); DrawTriangle3D(b[2], t[1], t[2], color);
+    }
+
+    rlPopMatrix();
+}
+
+void PhysicsObstacle::drawWires() const {
+    pushTransform();
+
+    if (shape == ObstacleShape::BOX_SHAPE) {
+        Vector3 size   = Vector3Subtract(local_box.max, local_box.min);
+        Vector3 center = Vector3Add(local_box.min, Vector3Scale(size, 0.5f));
         DrawCubeWires(center, size.x, size.y, size.z, BLACK);
     } else {
-        auto getLocalY = [&](float x, float z) {
-            float dz = ramp_max_xz.y - ramp_min_xz.y;
-            float dx = ramp_max_xz.x - ramp_min_xz.x;
-            float t = 0.0f;
-            if (std::abs(dz) >= std::abs(dx)) t = (std::abs(dz)>0.0001f)? (z - ramp_min_xz.y)/dz : 0.0f;
-            else t = (std::abs(dx)>0.0001f)? (x - ramp_min_xz.x)/dx : 0.0f;
-            return ramp_start_y + t * (ramp_end_y - ramp_start_y);
-        };
+        Vector3 t[4], b[4];
+        rampCorners(t, b);
 
-        // Top corners
-        Vector3 t0 = { ramp_min_xz.x, getLocalY(ramp_min_xz.x, ramp_min_xz.y), ramp_min_xz.y };
-        Vector3 t1 = { ramp_max_xz.x, getLocalY(ramp_max_xz.x, ramp_min_xz.y), ramp_min_xz.y };
-        Vector3 t2 = { ramp_max_xz.x, getLocalY(ramp_max_xz.x, ramp_max_xz.y), ramp_max_xz.y };
-        Vector3 t3 = { ramp_min_xz.x, getLocalY(ramp_min_xz.x, ramp_max_xz.y), ramp_max_xz.y };
-
-        // Bottom corners (min_y)
-        float b_y = std::min(ramp_start_y, ramp_end_y);
-        Vector3 b0 = { ramp_min_xz.x, b_y, ramp_min_xz.y };
-        Vector3 b1 = { ramp_max_xz.x, b_y, ramp_min_xz.y };
-        Vector3 b2 = { ramp_max_xz.x, b_y, ramp_max_xz.y };
-        Vector3 b3 = { ramp_min_xz.x, b_y, ramp_max_xz.y };
-
-        // Draw 6 faces (two triangles each)
-        // Top
-        DrawTriangle3D(t0, t2, t1, color); DrawTriangle3D(t0, t3, t2, color);
-        // Bottom
-        DrawTriangle3D(b0, b1, b2, color); DrawTriangle3D(b0, b2, b3, color);
-        // Front (min z)
-        DrawTriangle3D(b0, t1, b1, color); DrawTriangle3D(b0, t0, t1, color);
-        // Back (max z)
-        DrawTriangle3D(b2, t2, b3, color); DrawTriangle3D(b3, t2, t3, color);
-        // Left (min x)
-        DrawTriangle3D(b3, t3, b0, color); DrawTriangle3D(b0, t3, t0, color);
-        // Right (max x)
-        DrawTriangle3D(b1, t1, b2, color); DrawTriangle3D(b2, t1, t2, color);
-
-        // Edges
-        DrawLine3D(t0, t1, BLACK); DrawLine3D(t1, t2, BLACK); DrawLine3D(t2, t3, BLACK); DrawLine3D(t3, t0, BLACK);
-        DrawLine3D(b0, b1, BLACK); DrawLine3D(b1, b2, BLACK); DrawLine3D(b2, b3, BLACK); DrawLine3D(b3, b0, BLACK);
-        DrawLine3D(t0, b0, BLACK); DrawLine3D(t1, b1, BLACK); DrawLine3D(t2, b2, BLACK); DrawLine3D(t3, b3, BLACK);
+        DrawLine3D(t[0], t[1], BLACK); DrawLine3D(t[1], t[2], BLACK);
+        DrawLine3D(t[2], t[3], BLACK); DrawLine3D(t[3], t[0], BLACK);
+        DrawLine3D(b[0], b[1], BLACK); DrawLine3D(b[1], b[2], BLACK);
+        DrawLine3D(b[2], b[3], BLACK); DrawLine3D(b[3], b[0], BLACK);
+        DrawLine3D(t[0], b[0], BLACK); DrawLine3D(t[1], b[1], BLACK);
+        DrawLine3D(t[2], b[2], BLACK); DrawLine3D(t[3], b[3], BLACK);
     }
 
     rlPopMatrix();

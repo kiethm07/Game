@@ -12,10 +12,12 @@ in vec4 vertexBoneWeights;
 
 // Input uniform values
 uniform mat4 mvp;
+uniform mat4 matModel;
 uniform mat4 matNormal;
 uniform mat4 boneMatrices[MAX_BONE_NUM];
 
 // Output vertex attributes (to fragment shader)
+out vec3 fragPosition;
 out vec2 fragTexCoord;
 out vec4 fragColor;
 out vec3 fragNormal;
@@ -40,6 +42,13 @@ void main()
         vertexBoneWeights.w*(boneMatrices[boneIndex3]*vec4(vertexNormal, 0.0));
     skinnedNormal.w = 0.0;
 
+    // World-space position of the *posed* vertex, for the shadow lookup in the
+    // fragment stage. It has to be built from skinnedPosition, not
+    // vertexPosition: the position VBO still holds the bind pose, so using it
+    // would sample the shadow map wherever the T-pose happens to be standing.
+    // raylib supplies matModel from DrawMesh, and mvp below is that same matrix
+    // times view*projection.
+    fragPosition = vec3(matModel*skinnedPosition);
     fragTexCoord = vertexTexCoord;
     fragColor = vertexColor;
     fragNormal = normalize(vec3(matNormal*skinnedNormal));

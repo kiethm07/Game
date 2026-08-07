@@ -40,6 +40,17 @@ public:
     /// (hasMotion == false), so callers never need to bounds-check.
     const RootMotion::Track& getRootMotion(AssetID id, int animIndex) const;
 
+    /// The shader skinned models are drawn with. Handed out so ShadowMap can
+    /// push its lightVP/shadowMap uniforms into it once per frame — by
+    /// reference, because those uniforms have to land on the very Shader the
+    /// materials hold, not a copy.
+    Shader& getSkinningShader() { return skinningShader; }
+
+    /// Depth-only counterpart of the skinning shader, for the shadow pass.
+    /// Assign it onto a model's materials (not BeginShaderMode) so raylib still
+    /// uploads the bone matrices — see SkinnedEntityRenderer.
+    Shader getSkinnedDepthShader() const { return skinnedDepthShader; }
+
     /// Index of the clip named `name`, or -1 if the asset has no such clip.
     ///
     /// Prefer this over hardcoded indices: clip order is an artifact of the
@@ -56,6 +67,13 @@ private:
     // materials so animation runs on the GPU (bone-matrix uniform) instead of
     // re-skinning + re-uploading the whole mesh on the CPU each frame.
     Shader skinningShader{};
+
+    // Same vertex format, position only: what the shadow depth pass swaps onto
+    // the materials. Loaded and unloaded alongside skinningShader because the
+    // two only make sense as a pair — a pose skinned differently between them
+    // would be a shadow that disagrees with the model.
+    Shader skinnedDepthShader{};
+
     bool skinningShaderLoaded = false;
     void ensureSkinningShader();
     void setupGpuSkinning(Model &model);

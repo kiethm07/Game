@@ -475,7 +475,10 @@ void PhysicsManager::drawDebug(
     for (const PhysicsObstacle& obs : obstacles) {
         BoundingBox obox = obs.getApproxBox();
         DrawBoundingBox(obox, DARKBLUE);
-        obs.draw();
+        // No obs.draw() here. GameRenderer owns obstacle drawing now, under the
+        // lit, shadow-receiving world shader. Redrawing them here would repaint
+        // them through raylib's default unlit shader on top, erasing every
+        // shadow that had landed on the level geometry.
     }
 
     for (const Character* character : characters) {

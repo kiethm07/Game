@@ -123,6 +123,13 @@ StateAction GameplayState::update(float dt) {
   }
   camera_controller->update(shot);
 
+  // Debug affordance, not a game action, so it stays off InputManager's
+  // GameAction enum. Shows the raw depth map so the light frustum can be
+  // checked against where the arena actually is.
+  if (IsKeyPressed(KEY_F1)) {
+    show_shadow_map = !show_shadow_map;
+  }
+
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
     return StateAction::ChangeToMenu;
   }
@@ -293,22 +300,24 @@ StateAction GameplayState::update(float dt) {
 }
 
 void GameplayState::draw() {
-  ClearBackground(RAYWHITE);
-  BeginMode3D(camera_controller->getCamera());
-
-  // Draw all obstacles (walls, ramps, platforms)
-  for (const PhysicsObstacle &obs : obstacles) {
-    obs.draw();
-  }
-
   renderList.clear();
   renderList.push_back(player->getRenderData());
   for (const auto &enemy : enemies) {
     renderList.push_back(enemy->getRenderData());
   }
 
-  // World + entities, drawn into the 3D scope opened above.
-  renderer->renderGameplay(*camera_controller, renderList);
+  // PASS 1 — shadow depth. Renders into its own framebuffers, so it has to
+  // happen before the scene is cleared, and it needs the same render list the
+  // scene pass gets or the shadows would be a frame stale. The player position
+  // is what the near cascade recentres on.
+  renderer->renderShadowPass(obstacles, renderList, player->getPosition());
+
+  // PASS 2 — the scene.
+  ClearBackground(RAYWHITE);
+  BeginMode3D(camera_controller->getCamera());
+
+  // Ground, obstacles and entities, drawn into the 3D scope opened above.
+  renderer->renderGameplay(*camera_controller, obstacles, renderList);
 
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());
@@ -326,6 +335,9 @@ void GameplayState::draw() {
 
   // 2D overlay pass (after the 3D scope is closed).
   renderer->drawUI();
+  if (show_shadow_map) {
+    renderer->drawShadowMapDebug();
+  }
 
   // --- HEALTH BARS ---
   player->drawHPBar2D();

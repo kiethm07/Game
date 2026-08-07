@@ -36,11 +36,17 @@ void AssetManager::ensureSkinningShader() {
   // Desktop raylib uses OpenGL 3.3 → GLSL 330.
   skinningShader = LoadShader(ASSET_DIR "/shaders/glsl330/skinning.vs",
                               ASSET_DIR "/shaders/glsl330/skinning.fs");
+  skinnedDepthShader = LoadShader(ASSET_DIR "/shaders/glsl330/skinning_depth.vs",
+                                  ASSET_DIR "/shaders/glsl330/depth.fs");
   skinningShaderLoaded = true; // guard the load attempt even if compile fails
   if (skinningShader.id == 0) {
     TraceLog(LOG_ERROR,
              "AssetManager: failed to load GPU skinning shader; skinned "
              "models will fall back to CPU skinning.");
+  }
+  if (skinnedDepthShader.id == 0) {
+    TraceLog(LOG_ERROR, "AssetManager: failed to load skinned depth shader; "
+                        "characters will not cast shadows.");
   }
 }
 
@@ -201,11 +207,13 @@ void AssetManager::unloadAll() {
   }
   animations.clear();
 
-  // We own the skinning shader (UnloadModel never unloads material shaders),
-  // so unload it exactly once here.
-  if (skinningShaderLoaded && skinningShader.id != 0) {
-    UnloadShader(skinningShader);
+  // We own the skinning shaders (UnloadModel never unloads material shaders),
+  // so unload them exactly once here.
+  if (skinningShaderLoaded) {
+    if (skinningShader.id != 0) UnloadShader(skinningShader);
+    if (skinnedDepthShader.id != 0) UnloadShader(skinnedDepthShader);
   }
   skinningShaderLoaded = false;
   skinningShader = Shader{};
+  skinnedDepthShader = Shader{};
 }
