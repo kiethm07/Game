@@ -5,14 +5,14 @@
 #include <Entities/Character.h>
 #include <Components/PhysicsObstacle.h>
 #include <cmath>
-#include <vector>
+#include <GameManager/SmokeCloud.h>
 
 class Sensor {
 public:
     virtual ~Sensor() = default;
     
     // Returns 0.0f if not detected. Returns > 0.0f (usually 0.0f to 1.0f) representing the strength of detection.
-    virtual float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles) const = 0;
+    virtual float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const std::vector<SmokeCloud>& smoke_clouds) const = 0;
     
     // Renders the sensor boundaries in 3D for debugging
     virtual void drawDebug(const Character* observer) const {}
@@ -24,7 +24,7 @@ public:
     
     RadiusSensor(float detection_radius) : radius(detection_radius) {}
 
-    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles) const override {
+    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const std::vector<SmokeCloud>& smoke_clouds) const override {
         float dist_sq = Vector3DistanceSqr(observer->getPosition(), target->getPosition());
         if (dist_sq <= (radius * radius)) {
             return 1.0f; // Could scale by distance later
@@ -41,7 +41,7 @@ public:
     VisionSensor(float detection_radius, float angle_degrees = 90.0f) 
         : radius(detection_radius), cone_angle_degrees(angle_degrees) {}
 
-    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles) const override {
+    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const std::vector<SmokeCloud>& smoke_clouds) const override {
         Vector3 obs_pos = observer->getPosition();
         Vector3 tgt_pos = target->getPosition();
         
@@ -111,7 +111,28 @@ public:
             }
         }
         
-        float dist = std::sqrt(dist_sq);
+        // --- Smoke Cloud Intersection ---
+        float distance_to_target = std::sqrt(dist_sq);
+        for (const auto& smoke : smoke_clouds) {
+            if (smoke.owner == observer) continue; // Immune to own smoke
+
+            Vector3 L = Vector3Subtract(smoke.position, obs_head);
+            float tca = Vector3DotProduct(L, to_target);
+            if (tca < 0.0f) continue;
+
+            float d2 = Vector3DotProduct(L, L) - tca * tca;
+            float r2 = smoke.radius * smoke.radius;
+            if (d2 > r2) continue;
+
+            float thc = std::sqrt(r2 - d2);
+            float t0 = tca - thc; // first hit distance
+
+            if (t0 < distance_to_target && t0 > 0.0f) {
+                return 0.0f; // Vision blocked by smoke!
+            }
+        }
+        
+        float dist = distance_to_target;
         float normalized_dist = dist / radius;
         
         // Logarithmic scale: Drops rapidly at first, then tails off.
@@ -165,7 +186,7 @@ public:
     
     SoundSensor(float detection_radius) : radius(detection_radius) {}
 
-    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles) const override {
+    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const std::vector<SmokeCloud>& smoke_clouds) const override {
         float dist_sq = Vector3DistanceSqr(observer->getPosition(), target->getPosition());
         if (dist_sq > (radius * radius)) {
             return 0.0f;
@@ -217,7 +238,7 @@ public:
     
     ProximitySensor(float detection_radius) : radius(detection_radius) {}
 
-    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles) const override {
+    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const std::vector<SmokeCloud>& smoke_clouds) const override {
         float dist_sq = Vector3DistanceSqr(observer->getPosition(), target->getPosition());
         if (dist_sq <= (radius * radius)) {
             // Check if blocked by walls (so you can't be instantly detected through a thin wall if you bump it)

@@ -1,9 +1,12 @@
 #pragma once
 #include <raylib.h>
 #include <raymath.h>
+#include <vector>
+
+class PhysicsObstacle;
 
 /// How the camera frames the action.
-enum class CameraShot { Follow, Deathblow };
+enum class CameraShot { Follow, Deathblow, LockOn };
 
 enum class CameraFraming { Close, Wide };
 
@@ -21,6 +24,8 @@ struct CameraFrame {
   /// player" is a fact about the world, and the camera has no other way to know
   /// which way that is.
   float targetYaw = 0.0f;
+  
+  const std::vector<PhysicsObstacle>* obstacles = nullptr;
 };
 
 class CameraController {
@@ -38,6 +43,7 @@ public:
 private:
   Camera3D camera;
   float distance;
+  float current_distance;
   float pitch; // Up/Down angle
   float yaw;   // Left/Right angle
 
@@ -68,8 +74,8 @@ private:
   /// only way out.
   float recenter_timer = 0.0f;
 
-  static constexpr float CLOSE_DISTANCE = 3.2f;
-  static constexpr float WIDE_DISTANCE = 4.2f;
+  static constexpr float CLOSE_DISTANCE = 4.2f;
+  static constexpr float WIDE_DISTANCE = 5.2f;
 
   // uplift height from the feet of the character
   static constexpr float AIM_HEIGHT = 1.3f;

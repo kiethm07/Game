@@ -1,6 +1,8 @@
 #pragma once
 
 #include <GameManager/StealthManager.h>
+#include <GameManager/SmokeCloud.h>
+#include <Rendering/ParticleManager.h>
 
 #include <Components/PhysicsObstacle.h>
 #include <Core/CameraController.h>
@@ -48,12 +50,16 @@ private:
   CombatManager combat_manager;
   PhysicsManager physics_manager;
   StealthManager stealth_manager;
+  std::vector<PhysicsObstacle> obstacles;
+  std::vector<SmokeCloud> smoke_clouds;
+  ParticleManager particle_manager;
   std::vector<CharacterRenderData> renderList;
 
   const InputManager &input_manager;
   
   float takedown_text_timer = 0.0f;
   std::string takedown_type_str = "";
+  float smoke_cooldown_timer = 0.0f;
   
   NavMeshBuilder nav_builder;
   NavMeshQuery nav_query;
@@ -70,4 +76,5 @@ private:
   /// is not possible. Safe to hold raw: enemies are owned by `enemies` for the
   /// whole life of the state and are never erased, only killed.
   Character *deathblow_victim = nullptr;
+  Character *locked_target = nullptr;
 };

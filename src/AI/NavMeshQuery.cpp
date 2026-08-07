@@ -66,3 +66,25 @@ std::vector<Vector3> NavMeshQuery::findPath(Vector3 start, Vector3 end) const {
     
     return path;
 }
+
+Vector3 NavMeshQuery::getConstrainedPosition(Vector3 start, Vector3 intendedEnd) const {
+    if (!m_navQuery) return intendedEnd;
+
+    float extents[3] = { 2.0f, 4.0f, 2.0f };
+    float startPos[3] = { start.x, start.y, start.z };
+    float endPos[3] = { intendedEnd.x, intendedEnd.y, intendedEnd.z };
+
+    dtPolyRef startRef;
+    float nearestStart[3];
+    m_navQuery->findNearestPoly(startPos, extents, m_filter, &startRef, nearestStart);
+
+    if (!startRef) return intendedEnd;
+
+    float resultPos[3];
+    dtPolyRef visited[16];
+    int visitedCount = 0;
+
+    m_navQuery->moveAlongSurface(startRef, nearestStart, endPos, m_filter, resultPos, visited, &visitedCount, 16);
+
+    return { resultPos[0], resultPos[1], resultPos[2] };
+}

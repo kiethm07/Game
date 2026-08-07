@@ -1,11 +1,13 @@
 #include "AI/NavMeshQuery.h"
 #include "Entities/Character.h"
 #include <Entities/Enemies/Swordman.h>
+#include <cstdlib>
 #include <cmath>
 #include <raymath.h>
 #include <rlgl.h>
 #include <AI/NavMeshQuery.h>
 #include <Stealth/CombatSenseSensor.h>
+#include <GameManager/SmokeCloud.h>
 
 namespace {
 /// Walk.glb carries a single clip, whose name is the armature's rather than
@@ -16,7 +18,7 @@ const AnimStateMachine<SwordmanAnimState>::Desc kAnimTable[] = {
 } // namespace
 
 Swordman::Swordman(Vector3 start_position) : Enemy(start_position) {
-  stats = Stats(1000.0f, 100.0f, 15.0f);
+  stats = Stats(1000.0f, 100.0f, 10.0f);
   combo = {AttackID::PlayerLight1};
   stealth_component.addSensor(std::make_shared<VisionSensor>(20.0f, 70.0f));
   stealth_component.addSensor(std::make_shared<SoundSensor>(6.0f));
@@ -40,10 +42,32 @@ void Swordman::update(const UpdateContext &ctx) {
 
   const bool dead = stats.isDead();
   if (!dead) {
-    combat_component.update(dt);
-    ai_component.update();
+    bool in_smoke = false;
+    if (ctx.smoke_clouds) {
+        for (const auto& smoke : *ctx.smoke_clouds) {
+            if (smoke.owner == this) continue;
+            if (Vector3DistanceSqr(position, smoke.position) <= smoke.radius * smoke.radius) {
+                in_smoke = true;
+                break;
+            }
+        }
+    }
+
+    if (in_smoke) {
+        stealth_component.blind();
+        combat_component.interrupt();
+        setHorizontalVelocity({0.0f, 0.0f, 0.0f});
+        if (!animator.isFlinching()) {
+            animator.queueReaction(false);
+        }
+    } else {
+        combat_component.update(dt);
+        ai_component.update();
+    }
   }
-  if (attack_cooldown_timer > 0.0f) attack_cooldown_timer -= dt;
+  if (combat_component.getCurrentState() == CombatState::Idle) {
+    if (attack_cooldown_timer > 0.0f) attack_cooldown_timer -= dt;
+  }
   if (investigation_timer > 0.0f) investigation_timer -= dt;
   if (circle_timer > 0.0f) circle_timer -= dt;
 
@@ -110,6 +134,38 @@ void Swordman::setupBehaviorTree() {
     
     return NodeState::RUNNING;
   };
+  
+  auto truncatePathBySmoke = [this](std::vector<Vector3>& path) {
+      if (!current_ctx || !current_ctx->smoke_clouds) return;
+      for (size_t i = 0; i < path.size() - 1; ++i) {
+          Vector3 A = path[i];
+          Vector3 B = path[i + 1];
+          Vector3 dir = Vector3Subtract(B, A);
+          float len = Vector3Length(dir);
+          if (len == 0.0f) continue;
+          Vector3 norm_dir = Vector3Scale(dir, 1.0f / len);
+          
+          for (const auto& smoke : *current_ctx->smoke_clouds) {
+              if (smoke.owner == this) continue;
+              
+              Vector3 L = Vector3Subtract(smoke.position, A);
+              float tca = Vector3DotProduct(L, norm_dir);
+              if (tca < 0.0f) continue; // going away
+              float d2 = Vector3DotProduct(L, L) - tca * tca;
+              float r2 = smoke.radius * smoke.radius;
+              if (d2 > r2) continue; // misses sphere
+              float thc = std::sqrt(r2 - d2);
+              float t0 = tca - thc;
+              
+              if (t0 > 0.0f && t0 < len) {
+                  Vector3 hit_pos = Vector3Add(A, Vector3Scale(norm_dir, t0));
+                  path.resize(i + 1);
+                  path.push_back(hit_pos);
+                  return; // Path truncated
+              }
+          }
+      }
+  };
 
   // ---------------------------------------------------------
   // Conditions
@@ -129,12 +185,26 @@ void Swordman::setupBehaviorTree() {
   // ---------------------------------------------------------
   // Aware Node (Combat)
   // ---------------------------------------------------------
-  auto combatAction = std::make_shared<Action>([this, moveAlongPath]() {
+  auto combatAction = std::make_shared<Action>([this, moveAlongPath, truncatePathBySmoke]() {
     if (!current_ctx) return NodeState::FAILURE;
     if (combat_component.getCurrentState() == CombatState::PostureBroken) return NodeState::SUCCESS;
-    if (combat_component.getCurrentState() != CombatState::Idle) {
+    
+    // 1. If currently attacking, parrying, or STAGGERED (flinching), don't interrupt with movement/new attacks!
+    if (combat_component.getCurrentState() != CombatState::Idle || animator.isFlinching()) {
       this->setHorizontalVelocity({0, 0, 0});
-      return NodeState::RUNNING; // Currently attacking/staggered
+      
+      // Allow smooth tracking during the wind-up/startup phase of an attack
+      if (combat_component.getCurrentState() == CombatState::AttackStartup) {
+          Vector3 target_pos = stealth_component.getLastKnownPlayerPos();
+          Vector3 to_player = Vector3Subtract(target_pos, position);
+          float target_yaw = std::atan2(to_player.x, to_player.z) * RAD2DEG;
+          float angle_diff = target_yaw - rotation.y;
+          while (angle_diff < -180.0f) angle_diff += 360.0f;
+          while (angle_diff > 180.0f) angle_diff -= 360.0f;
+          rotation.y += angle_diff * (15.0f * current_ctx->dt);
+      }
+      
+      return NodeState::RUNNING; // Currently attacking or staggered
     }
     
     Vector3 target_pos = stealth_component.getLastKnownPlayerPos();
@@ -148,32 +218,50 @@ void Swordman::setupBehaviorTree() {
     if (distance < 1.8f && attack_cooldown_timer <= 0.0f) {
       this->setHorizontalVelocity({0, 0, 0});
       
-      // Face player instantly for attack
-      rotation.y = std::atan2(to_player_norm.x, to_player_norm.z) * RAD2DEG;
+      // We removed the instant snap here! 
+      // It will now smoothly track the player during the AttackStartup phase (handled above)
       
       combat_component.initiateCombo(combo);
-      attack_cooldown_timer = 2.0f; // 2.0s cooldown
+      
+      // Randomize cooldown and preferred distance for the next cycle
+      attack_cooldown_timer = 1.5f + (rand() % 150) / 100.0f; // 1.5s to 3.0s
+      float base_dist = 3.0f + (rand() % 200) / 100.0f; // 3.0m to 5.0m
+      preferred_distance_min = base_dist;
+      preferred_distance_max = base_dist + 0.5f;
+      
       return NodeState::SUCCESS;
     }
     
-    // 2. If close, don't use NavMesh (prevents jitter), use direct movement
-    if (distance < 5.0f) {
+    // 2. If close and on similar elevation, don't use NavMesh (prevents jitter), use direct movement
+    if (distance < 5.0f && std::abs(position.y - target_pos.y) < 1.0f) {
       Vector3 move_dir = {0, 0, 0};
       float current_speed = MOVEMENT_SPEED * 0.8f;
       
       if (attack_cooldown_timer > 0.0f) {
-        // On Cooldown: Maintain a very large distance (around 3.5m - 4.0m) straight back
-        if (distance < 3.5f) {
-            // Too close, back away aggressively in a straight line
-            move_dir = Vector3Scale(to_player_norm, -1.0f);
+        // Randomize strafe direction occasionally
+        if (circle_timer <= 0.0f) {
+            circle_direction = (rand() % 2 == 0) ? -1.0f : 1.0f;
+            circle_timer = (rand() % 200 + 200) / 100.0f; // 2.0s to 4.0s
+        }
+        
+        // Calculate tangent vector (perpendicular to player direction)
+        Vector3 tangent = {-to_player_norm.z, 0.0f, to_player_norm.x};
+        Vector3 strafe_dir = Vector3Scale(tangent, circle_direction);
+
+        // On Cooldown: Maintain a randomized preferred distance while circling
+        if (distance < preferred_distance_min) {
+            // Too close, back away aggressively while strafing
+            Vector3 back_dir = Vector3Scale(to_player_norm, -1.0f);
+            move_dir = Vector3Normalize(Vector3Add(back_dir, Vector3Scale(strafe_dir, 0.5f)));
             current_speed = MOVEMENT_SPEED * 1.2f; 
-        } else if (distance > 4.0f) {
-            // Too far, close in slightly straight forward
-            move_dir = to_player_norm;
+        } else if (distance > preferred_distance_max) {
+            // Too far, close in slightly while strafing
+            move_dir = Vector3Normalize(Vector3Add(to_player_norm, Vector3Scale(strafe_dir, 0.5f)));
             current_speed = MOVEMENT_SPEED * 0.8f;
         } else {
-            // Sweet spot, just hold ground
-            move_dir = {0, 0, 0};
+            // Sweet spot, purely circle the player
+            move_dir = strafe_dir;
+            current_speed = MOVEMENT_SPEED * 0.7f;
         }
       } else {
         // Attack is ready but out of reach: move directly towards player
@@ -181,7 +269,17 @@ void Swordman::setupBehaviorTree() {
         current_speed = MOVEMENT_SPEED; // Full speed when going in for the kill
       }
       
-      this->setHorizontalVelocity({move_dir.x * current_speed, 0.0f, move_dir.z * current_speed});
+      Vector3 current_velocity = {move_dir.x * current_speed, 0.0f, move_dir.z * current_speed};
+      
+      // Constrain direct movement to the NavMesh to prevent falling off cliffs
+      if (current_ctx->nav_query) {
+          Vector3 intended_pos = Vector3Add(position, Vector3Scale(current_velocity, current_ctx->dt));
+          Vector3 constrained_pos = current_ctx->nav_query->getConstrainedPosition(position, intended_pos);
+          Vector3 constrained_vel = Vector3Scale(Vector3Subtract(constrained_pos, position), 1.0f / current_ctx->dt);
+          this->setHorizontalVelocity(constrained_vel);
+      } else {
+          this->setHorizontalVelocity(current_velocity);
+      }
       
       // ALWAYS keep eye contact with the player during close combat
       float target_yaw = std::atan2(to_player_norm.x, to_player_norm.z) * RAD2DEG;
@@ -193,11 +291,15 @@ void Swordman::setupBehaviorTree() {
       return NodeState::RUNNING;
     }
     
-    // 3. If far (distance >= 3.0f), use NavMesh to chase
+    // 3. If far, use NavMesh to chase
     path_recalc_timer -= current_ctx->dt;
     if (path_recalc_timer <= 0.0f) {
       if (current_ctx->nav_query) {
-          current_path = current_ctx->nav_query->findPath(position, stealth_component.getLastKnownPlayerPos());
+          // Add a small deterministic offset based on enemy ID to prevent them from all aligning in a single straight line
+          Vector3 target_pos = stealth_component.getLastKnownPlayerPos();
+          Vector3 offset = { std::sin(getId() * 1.5f) * 1.5f, 0.0f, std::cos(getId() * 1.5f) * 1.5f };
+          current_path = current_ctx->nav_query->findPath(position, Vector3Add(target_pos, offset));
+          truncatePathBySmoke(current_path);
       }
       path_recalc_timer = 0.25f;
     }
@@ -214,7 +316,7 @@ void Swordman::setupBehaviorTree() {
   // ---------------------------------------------------------
   // Suspicious Node (Investigation)
   // ---------------------------------------------------------
-  auto investigateAction = std::make_shared<Action>([this, moveAlongPath]() {
+  auto investigateAction = std::make_shared<Action>([this, moveAlongPath, truncatePathBySmoke]() {
     if (!current_ctx) return NodeState::FAILURE;
     
     Vector3 target = stealth_component.getLastKnownPlayerPos();
@@ -226,6 +328,7 @@ void Swordman::setupBehaviorTree() {
       if (path_recalc_timer <= 0.0f) {
         if (current_ctx->nav_query) {
             current_path = current_ctx->nav_query->findPath(position, target);
+            truncatePathBySmoke(current_path);
         }
         path_recalc_timer = 1.0f; // Recalculate less often when investigating
       }
@@ -252,7 +355,7 @@ void Swordman::setupBehaviorTree() {
   // ---------------------------------------------------------
   // Unaware Node (Return to Post / Idle)
   // ---------------------------------------------------------
-  auto returnToPostAction = std::make_shared<Action>([this, moveAlongPath]() {
+  auto returnToPostAction = std::make_shared<Action>([this, moveAlongPath, truncatePathBySmoke]() {
     if (!current_ctx) return NodeState::FAILURE;
     
     float dist_to_post = Vector2Distance({position.x, position.z}, {spawn_position.x, spawn_position.z});
@@ -263,6 +366,7 @@ void Swordman::setupBehaviorTree() {
       if (path_recalc_timer <= 0.0f) {
         if (current_ctx->nav_query) {
             current_path = current_ctx->nav_query->findPath(position, spawn_position);
+            truncatePathBySmoke(current_path);
         }
         path_recalc_timer = 1.0f;
       }

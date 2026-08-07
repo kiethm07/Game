@@ -78,7 +78,7 @@ StateAction GameplayState::update(float dt) {
   Vector3 player_pos = player->getPosition();
   const UpdateContext ctx{dt, camera_controller->getCameraForward(),
                           camera_controller->getCameraRight(), player_pos,
-                          &asset_manager, &nav_query, &level.obstacles};
+                          &asset_manager, &nav_query, &level.obstacles, &smoke_clouds};
 
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());
@@ -89,7 +89,7 @@ StateAction GameplayState::update(float dt) {
   }
 
   // 1.5. Evaluate Stealth before AI update so AI can react in the same frame
-  stealth_manager.update(active_characters, player.get(), level.obstacles, dt);
+  stealth_manager.update(active_characters, player.get(), level.obstacles, smoke_clouds, dt);
 
   player->update(ctx);
   for (auto &enemy : enemies) {
@@ -105,7 +105,93 @@ StateAction GameplayState::update(float dt) {
   }
 
   // 3. Resolve Combat
-  combat_manager.update(active_characters);
+  combat_manager.update(active_characters, &particle_manager);
+
+  auto checkLineOfSight = [&](Vector3 start, Vector3 end) {
+    for (const auto &obs : obstacles) {
+      if (obs.getShape() == ObstacleShape::RAMP_SHAPE) {
+        int steps = 10;
+        for (int i = 1; i <= steps; ++i) {
+          float frac = (float)i / steps;
+          Vector3 p = Vector3Lerp(start, end, frac);
+          if (obs.containsXZ(p, 0.0f)) {
+            float h = obs.getHeightAt(p);
+            if (p.y < h) return false;
+          }
+        }
+        continue;
+      }
+      Vector3 local_start = Vector3Transform(start, obs.getWorldToLocal());
+      Vector3 local_end = Vector3Transform(end, obs.getWorldToLocal());
+      Ray local_ray;
+      local_ray.position = local_start;
+      local_ray.direction = Vector3Normalize(Vector3Subtract(local_end, local_start));
+      RayCollision collision = GetRayCollisionBox(local_ray, obs.getLocalBox());
+      if (collision.hit) {
+        float dist_to_tgt_local = Vector3Distance(local_start, local_end);
+        if (collision.distance < dist_to_tgt_local) return false;
+      }
+    }
+    return true;
+  };
+
+  // Helper to get chest height position for raycasting
+  auto getChestPos = [](Character* c) {
+    Vector3 pos = c->getPosition();
+    pos.y += c->getColliderHeight() * 0.8f;
+    return pos;
+  };
+
+  // Lock-on target validation
+  if (locked_target) {
+    bool is_visible = checkLineOfSight(getChestPos(player.get()), getChestPos(locked_target));
+    if (locked_target->getStats().isDead() || 
+        Vector3Distance(player->getPosition(), locked_target->getPosition()) > 20.0f ||
+        !is_visible) {
+      locked_target = nullptr;
+    }
+  }
+
+  if (input_manager.isActionPressed(GameAction::LockOn)) {
+    if (locked_target) {
+      locked_target = nullptr;
+    } else {
+      float best_score = 10000.0f;
+      Character* best_target = nullptr;
+      Vector3 cam_pos = camera_controller->getCamera().position;
+      Vector3 cam_fwd = camera_controller->getCameraForward();
+
+      for (const auto& enemy : enemies) {
+        if (!enemy->getStats().isDead()) {
+          float dist_to_player = Vector3Distance(player->getPosition(), enemy->getPosition());
+          Vector3 to_enemy = Vector3Subtract(enemy->getPosition(), cam_pos);
+          float dist_to_cam = Vector3Length(to_enemy);
+          
+          if (dist_to_cam < 25.0f) { // Must be within a certain distance from camera
+            Vector3 dir = Vector3Scale(to_enemy, 1.0f / dist_to_cam);
+            float dot = Vector3DotProduct(cam_fwd, dir);
+            
+            if (dot > 0.0f) { 
+              float angle = acosf(dot) * RAD2DEG;
+              if (angle < 45.0f) { // Must be within a 45 degree arc from camera center
+                // Score heavily penalizes being off-center, then considers distance
+                float score = angle * 2.0f + dist_to_player;
+                
+                if (score < best_score) {
+                  bool is_visible = checkLineOfSight(getChestPos(player.get()), getChestPos(enemy.get()));
+                  if (is_visible) {
+                    best_score = score;
+                    best_target = enemy.get();
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      locked_target = best_target;
+    }
+  }
 
   // 4. Update the camera tracking matrix using that position. Built here the
   // same way the UpdateContext above is, so the camera never reaches back into
@@ -128,7 +214,11 @@ StateAction GameplayState::update(float dt) {
   if (deathblow_victim) {
     shot.shot = CameraShot::Deathblow;
     shot.focus = deathblow_victim->getPosition();
+  } else if (locked_target) {
+    shot.shot = CameraShot::LockOn;
+    shot.focus = locked_target->getPosition();
   }
+  shot.obstacles = &obstacles;
   camera_controller->update(shot);
 
   // Debug affordance, not a game action, so it stays off InputManager's
@@ -147,6 +237,43 @@ StateAction GameplayState::update(float dt) {
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
     return StateAction::ChangeToMenu;
   }
+
+  if (smoke_cooldown_timer > 0.0f) {
+      smoke_cooldown_timer -= dt;
+  }
+
+  // Debug smoke spawning
+  if (IsKeyPressed(KEY_O) && smoke_cooldown_timer <= 0.0f) {
+      SmokeCloud sc;
+      sc.position = player->getPosition();
+      sc.radius = 3.5f;
+      sc.life = 6.0f;
+      sc.owner = player.get();
+      smoke_clouds.push_back(sc);
+      particle_manager.emitVisualSmoke(sc.position, sc.radius, sc.life);
+      smoke_cooldown_timer = 8.0f; // 8 seconds cooldown
+  }
+  if (IsKeyPressed(KEY_P) && !enemies.empty() && smoke_cooldown_timer <= 0.0f) {
+      SmokeCloud sc;
+      sc.position = enemies[0]->getPosition();
+      sc.radius = 3.5f;
+      sc.life = 6.0f;
+      sc.owner = enemies[0].get();
+      smoke_clouds.push_back(sc);
+      particle_manager.emitVisualSmoke(sc.position, sc.radius, sc.life);
+      smoke_cooldown_timer = 8.0f; // 8 seconds cooldown
+  }
+
+  // Update smoke data lifetimes
+  for (int i = (int)smoke_clouds.size() - 1; i >= 0; --i) {
+      smoke_clouds[i].life -= dt;
+      if (smoke_clouds[i].life <= 0.0f) {
+          smoke_clouds[i] = smoke_clouds.back();
+          smoke_clouds.pop_back();
+      }
+  }
+
+  particle_manager.update(dt);
 
   if (takedown_text_timer > 0.0f) {
     takedown_text_timer -= dt;
@@ -333,6 +460,8 @@ void GameplayState::draw() {
   // Level mesh, obstacles and entities, drawn into the 3D scope opened above.
   renderer->renderGameplay(*camera_controller, level.obstacles, renderList);
 
+  particle_manager.draw();
+
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());
   active_characters.push_back(player.get());
@@ -344,6 +473,18 @@ void GameplayState::draw() {
   physics_manager.drawDebug(active_characters, level.obstacles);
   combat_manager.drawDebug(active_characters);
   stealth_manager.drawDebug(active_characters);
+
+  if (locked_target) {
+    Vector3 chest_pos = locked_target->getPosition();
+    chest_pos.y += 1.3f; // Approximate chest height
+    
+    // Pull the sphere towards the camera so it doesn't get submerged in the model
+    Vector3 cam_pos = camera_controller->getCamera().position;
+    Vector3 to_cam = Vector3Normalize(Vector3Subtract(cam_pos, chest_pos));
+    chest_pos = Vector3Add(chest_pos, Vector3Scale(to_cam, locked_target->getColliderRadius() + 0.1f));
+    
+    DrawSphere(chest_pos, 0.04f, WHITE);
+  }
 
   EndMode3D();
 
@@ -365,6 +506,12 @@ void GameplayState::draw() {
     int text_width = MeasureText(text, font_size);
     DrawText(text, GetScreenWidth() / 2 - text_width / 2,
              GetScreenHeight() / 2 - 100, font_size, RED);
+  }
+
+  // --- SMOKE SCREEN EFFECT ---
+  if (player->isInSmoke()) {
+      // Draw a full-screen semi-transparent gray overlay
+      DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), {100, 100, 100, 150});
   }
 }
 

@@ -22,9 +22,10 @@ public:
   float getColliderHeight() const override;
   std::vector<HurtBox> getHurtBoxes() const override;
   std::vector<HitBox> getActiveHitBoxes() const override;
-  void takeDamage(float health_damage, float posture_damage, Character* attacker) override;
+  DamageResult takeDamage(float health_damage, float posture_damage, Character* attacker) override;
 
   bool isCrouching() const override { return locomotion.getStance() == Stance::Crouching; }
+  bool isInSmoke() const { return in_smoke_flag; }
 
   CombatComponent& getCombatComponent() { return combat_component; }
 
@@ -81,6 +82,8 @@ private:
   /// jump. Full instant control in the air feels weightless; none at all makes
   /// a mistimed jump unrecoverable.
   static constexpr float AIR_ACCELERATION = 13.0f;
+
+  bool in_smoke_flag = false;
 
   CombatComponent combat_component;
   MovementComponent movement_component;
