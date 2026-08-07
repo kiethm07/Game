@@ -21,6 +21,7 @@ public:
   std::vector<HurtBox> getHurtBoxes() const override;
   DamageResult takeDamage(float health_damage, float posture_damage, Character* attacker) override;
 
+  CombatComponent &getCombatComponent() { return combat_component; }
   const CombatComponent &getCombatComponent() const { return combat_component; }
   StealthComponent &getStealthComponent() { return stealth_component; }
   const StealthComponent &getStealthComponent() const { return stealth_component; }

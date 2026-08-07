@@ -3,6 +3,7 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include <GameManager/SmokeCloud.h>
+#include <CombatData/AttackRegistry.h>
 
 Player::Player(const InputManager &input_manager)
     : Character(Faction::Player), input_manager(input_manager) {
@@ -225,9 +226,17 @@ std::vector<HitBox> Player::getActiveHitBoxes() const {
 
     Sphere attack_sphere(hitbox_center, ATTACK_RADIUS);
 
+    float health_dmg = 25.0f;
+    float posture_dmg = 15.0f;
+
+    const AttackData* active_attack = combat_component.getActiveAttack();
+    if (active_attack && active_attack == &AttackRegistry::instance().getAttackData(AttackID::PlayerExecution)) {
+        health_dmg = 9999.0f; // Instant kill
+    }
+
     active_hitboxes.emplace_back(attack_sphere,
-                                 25.0f, // Health damage
-                                 15.0f, // Posture damage
+                                 health_dmg,
+                                 posture_dmg,
                                  getFaction(), getId());
   }
 

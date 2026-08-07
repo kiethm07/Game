@@ -279,7 +279,10 @@ StateAction GameplayState::update(float dt) {
         player->setVerticalVelocity(0.0f);
         player->setRotation(pending_aerial_target->getRotation());
 
-        pending_aerial_target->takeDamage(9999.0f, 0.0f, player.get());
+        // Let the hitbox apply the damage and blood in sync with the animation
+        if (Enemy* e = dynamic_cast<Enemy*>(pending_aerial_target)) {
+            e->getCombatComponent().setBeingExecuted();
+        }
         player->performTakedown();
         deathblow_victim = pending_aerial_target;
         takedown_text_timer = 2.0f;
@@ -404,7 +407,8 @@ StateAction GameplayState::update(float dt) {
                                      e_pos.z + backward.z * 1.2f});
               }
 
-              enemy->takeDamage(9999.0f, 0.0f, player.get());
+              // Let the hitbox apply the damage and blood in sync with the animation
+              enemy->getCombatComponent().setBeingExecuted();
               player->performTakedown();
               deathblow_victim = enemy;
               takedown_text_timer = 2.0f;

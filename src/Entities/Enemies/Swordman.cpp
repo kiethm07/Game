@@ -60,6 +60,14 @@ void Swordman::update(const UpdateContext &ctx) {
         if (!animator.isFlinching()) {
             animator.queueReaction(false);
         }
+    }
+    
+    if (combat_component.getCurrentState() == CombatState::BeingExecuted) {
+        setHorizontalVelocity({0.0f, 0.0f, 0.0f});
+    } else if (combat_component.getCurrentState() == CombatState::PostureBroken) {
+        if (!animator.isFlinching()) {
+            animator.queueReaction(false);
+        }
     } else {
         combat_component.update(dt);
         ai_component.update();
