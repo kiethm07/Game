@@ -124,14 +124,36 @@ ShadowMap::ShadowMap() {
 }
 
 void ShadowMap::setBounds(BoundingBox bounds) {
-  // Framed on the level's XZ footprint. Height is deliberately not part of the
-  // extent: the cascade is a square box perpendicular to the light, and a tall
-  // level needs depth range (which kNearPlane..kFarPlane already provides),
-  // not a wider box.
-  const float width = bounds.max.x - bounds.min.x;
-  const float depth = bounds.max.z - bounds.min.z;
+  // Sized in LIGHT space, not world space.
+  //
+  // The cascade is a square box perpendicular to the light, and the light's
+  // basis is rotated relative to the world's, so a level's world XZ extent is
+  // not what the cascade has to cover. Sizing from world width/depth undershoots
+  // by up to the ratio of a square's diagonal to its side: on a 150m map the
+  // corners land ~212m apart across the light's plane and fall outside a 154m
+  // box entirely, which reads as distant shadows simply missing near the map
+  // edges. Projecting the bounds onto the light's own axes first is what makes
+  // the number mean what it claims.
+  //
+  // Height is folded in by the projection rather than ignored: a tall level
+  // leans further across the light's XY the more the light is off vertical.
+  const Vector3 up = {0.0f, 1.0f, 0.0f};
+  const Matrix lightBasis = MatrixLookAt(Vector3Zero(), lightDirection, up);
 
-  float extent = std::fmax(width, depth) + kFarMargin;
+  float min_x = 1e30f, max_x = -1e30f;
+  float min_y = 1e30f, max_y = -1e30f;
+  for (int i = 0; i < 8; i++) {
+    const Vector3 corner = {(i & 1) ? bounds.max.x : bounds.min.x,
+                            (i & 2) ? bounds.max.y : bounds.min.y,
+                            (i & 4) ? bounds.max.z : bounds.min.z};
+    const Vector3 ls = Vector3Transform(corner, lightBasis);
+    min_x = std::fmin(min_x, ls.x);
+    max_x = std::fmax(max_x, ls.x);
+    min_y = std::fmin(min_y, ls.y);
+    max_y = std::fmax(max_y, ls.y);
+  }
+
+  float extent = std::fmax(max_x - min_x, max_y - min_y) + kFarMargin;
   if (extent > kMaxFarExtent) {
     TraceLog(LOG_WARNING,
              "ShadowMap: level spans %.0fm, past the %.0fm the far cascade can "
@@ -169,6 +191,11 @@ ShadowMap::~ShadowMap() {
 Texture2D ShadowMap::getDepthTexture(int cascade) const {
   if (cascade < 0 || cascade >= kCascadeCount) return Texture2D{};
   return cascades[cascade].target.depth;
+}
+
+float ShadowMap::getExtent(int cascade) const {
+  if (cascade < 0 || cascade >= kCascadeCount) return 0.0f;
+  return cascades[cascade].extent;
 }
 
 void ShadowMap::computeCascade(int index, Vector3 focus) {
@@ -210,6 +237,33 @@ void ShadowMap::computeCascade(int index, Vector3 focus) {
 
   const float half = c.extent * 0.5f;
   c.projection = MatrixOrtho(-half, half, -half, half, kNearPlane, kFarPlane);
+
+  // Kept so casterVisible() can work in light space before the pass opens.
+  c.view = MatrixLookAt(c.camera.position, c.camera.target, c.camera.up);
+}
+
+bool ShadowMap::casterVisible(int cascade, BoundingBox worldBox) const {
+  if (cascade < 0 || cascade >= kCascadeCount) return true;
+  const Cascade &c = cascades[cascade];
+
+  // Light-space AABB of the world box. All eight corners, not just min/max
+  // transformed: the light's basis is rotated relative to the world, so the two
+  // corners of an axis-aligned box do not bound its image under that rotation.
+  float min_x = 1e30f, max_x = -1e30f;
+  float min_y = 1e30f, max_y = -1e30f;
+  for (int i = 0; i < 8; i++) {
+    const Vector3 corner = {(i & 1) ? worldBox.max.x : worldBox.min.x,
+                            (i & 2) ? worldBox.max.y : worldBox.min.y,
+                            (i & 4) ? worldBox.max.z : worldBox.min.z};
+    const Vector3 ls = Vector3Transform(corner, c.view);
+    min_x = std::fmin(min_x, ls.x);
+    max_x = std::fmax(max_x, ls.x);
+    min_y = std::fmin(min_y, ls.y);
+    max_y = std::fmax(max_y, ls.y);
+  }
+
+  const float half = c.extent * 0.5f;
+  return !(max_x < -half || min_x > half || max_y < -half || min_y > half);
 }
 
 void ShadowMap::update(Vector3 focus) { computeCascade(0, focus); }

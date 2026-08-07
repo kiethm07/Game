@@ -22,6 +22,33 @@
 /// an *orthographic* light projection a caster and its shadow share the same
 /// light-space XY, so anything whose shadow lands inside the box is inside the
 /// box. Casters outside cast outside, which is cascade 1's job.
+/// What the depth pass is allowed to render this frame. A debug affordance, not
+/// a quality setting: the point is to be able to A/B the depth pass's cost
+/// in-game without a rebuild, which is the only way to tell whether the shadow
+/// system is actually what a frame is spending its time on.
+enum class ShadowMode {
+  Full,     ///< both cascades — the shipping configuration
+  NearOnly, ///< cascade 0 only. Isolates the far cascade's share of the cost.
+  Off,      ///< no depth pass at all. The scene still *samples* the maps, so
+            ///< the difference against Full is the depth pass alone, not the
+            ///< fragment-side PCF.
+};
+
+/// Per-frame counters for the depth pass. Reset at the top of every
+/// renderShadowPass and read by the debug overlay.
+///
+/// `culled` is the number that matters as a level grows: it is what says
+/// whether caster culling is doing anything, and a submitted count that tracks
+/// total map size rather than the geometry near the player is the failure this
+/// exists to make visible.
+struct ShadowStats {
+  int castersSubmitted[2]{};
+  int castersCulled[2]{};
+  int trianglesSubmitted[2]{};
+
+  void reset() { *this = ShadowStats{}; }
+};
+
 class ShadowMap {
 public:
   static constexpr int kCascadeCount = 2;
@@ -72,6 +99,28 @@ public:
   /// Raw depth attachment for a cascade, for the debug overlay.
   Texture2D getDepthTexture(int cascade) const;
 
+  /// World-space extent of a cascade's ortho box, in metres.
+  float getExtent(int cascade) const;
+
+  /// Whether a caster with this world AABB can contribute to `cascade`.
+  ///
+  /// Tests the box against the cascade's ortho bounds in light space, on X and
+  /// Y **only** — never along the light. A caster behind the slab's near plane
+  /// still casts into the frustum, so a depth test here would delete shadows
+  /// that should exist. The slab is 120m deep against a 60m light offset, so it
+  /// swallows anything plausible anyway and a Z test would buy nothing for that
+  /// risk.
+  ///
+  /// Sound in the other direction too: under an *orthographic* light a caster
+  /// and its shadow share the same light-space XY, so a box outside the
+  /// cascade's XY bounds cannot land a shadow inside them.
+  bool casterVisible(int cascade, BoundingBox worldBox) const;
+
+  /// Per-frame depth-pass counters. Written by GameRenderer as it submits
+  /// casters; read by the debug overlay.
+  ShadowStats &stats() { return frameStats; }
+  const ShadowStats &stats() const { return frameStats; }
+
 private:
   /// Uniform locations resolved once per shader id. GetShaderLocation is a
   /// glGetUniformLocation round-trip, and applyTo runs every frame.
@@ -89,6 +138,10 @@ private:
     Camera3D camera{};
     Matrix projection{};
     Matrix viewProj{};
+    /// The light's view matrix on its own. viewProj is only assembled inside
+    /// beginDepthPass, from rlgl's live state — too late for culling, which has
+    /// to decide what to submit *before* the pass opens.
+    Matrix view{};
     float extent = 0.0f;
     int textureSlot = 0;
   };
@@ -106,6 +159,8 @@ private:
   Vector3 farCentre{};
 
   bool ready = false;
+
+  ShadowStats frameStats{};
 
   std::unordered_map<unsigned int, UniformLocs> uniformCache;
 };

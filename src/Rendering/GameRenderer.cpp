@@ -3,6 +3,8 @@
 #include <Rendering/ScopedMaterialShader.h>
 #include <Rendering/ShaderLibrary.h>
 #include <Rendering/SkinnedEntityRenderer.h>
+#include <Util/Frustum.h>
+#include <raymath.h>
 #include <rlgl.h>
 
 // ---------------------------------------------------------------------------
@@ -99,6 +101,22 @@ constexpr float kGroundSink = 0.01f;
 /// whatever texture the previous draw happened to leave bound. Substituting
 /// white makes the sample a no-op and lets the material's baseColorFactor carry
 /// the colour on its own, which is every material in the greybox.
+/// Conservative caster bounds for a character, from its transform alone.
+///
+/// Deliberately generous — 1.5m out and 3m up from the feet, against a ~1.8m
+/// humanoid. CharacterRenderData carries no collider dimensions, and the bind
+/// pose's own bounding box would be wrong anyway: a lunge or an overhead swing
+/// reaches well past a T-pose. Over-estimating a caster costs one draw call it
+/// did not need; under-estimating pops a character's shadow out of existence
+/// mid-animation, which is the far worse trade at this size.
+BoundingBox characterCasterBox(const TransformData &transform) {
+  constexpr float kReach = 1.5f;
+  constexpr float kHeight = 3.0f;
+  const Vector3 p = transform.position;
+  return BoundingBox{{p.x - kReach, p.y - 0.5f, p.z - kReach},
+                     {p.x + kReach, p.y + kHeight, p.z + kReach}};
+}
+
 Texture2D defaultWhiteTexture() {
   Texture2D texture{};
   texture.id = rlGetTextureIdDefault();
@@ -161,10 +179,21 @@ void GameRenderer::loadLevelModel(const Level &level) {
     }
   }
 
+  levelMeshTriangles.reserve(static_cast<size_t>(levelModel.meshCount));
+  levelMeshBounds.reserve(static_cast<size_t>(levelModel.meshCount));
+  int totalTriangles = 0;
+  for (int i = 0; i < levelModel.meshCount; i++) {
+    levelMeshTriangles.push_back(levelModel.meshes[i].triangleCount);
+    levelMeshBounds.push_back(GetMeshBoundingBox(levelModel.meshes[i]));
+    totalTriangles += levelModel.meshes[i].triangleCount;
+  }
+
   hasLevelModel = true;
-  TraceLog(LOG_INFO, "GameRenderer: level mesh '%s' — %d meshes, %d materials",
+  TraceLog(LOG_INFO,
+           "GameRenderer: level mesh '%s' — %d meshes, %d materials, %d "
+           "triangles",
            level.visualModelPath.c_str(), levelModel.meshCount,
-           levelModel.materialCount);
+           levelModel.materialCount, totalTriangles);
 }
 
 void GameRenderer::initializeAssets() {
@@ -209,18 +238,42 @@ void GameRenderer::initializeAssets() {
   }
 }
 
+ShadowMode GameRenderer::cycleShadowMode() {
+  switch (shadowMode) {
+  case ShadowMode::Full:     shadowMode = ShadowMode::NearOnly; break;
+  case ShadowMode::NearOnly: shadowMode = ShadowMode::Off;      break;
+  case ShadowMode::Off:
+  default:                   shadowMode = ShadowMode::Full;     break;
+  }
+  return shadowMode;
+}
+
 void GameRenderer::renderShadowPass(
     const std::vector<PhysicsObstacle> &obstacles,
     const std::vector<CharacterRenderData> &entitiesToDraw, Vector3 focus) {
+  ShadowStats &stats = shadowMap.stats();
+  stats.reset();
+
   if (!shadowMap.isReady()) return;
+
+  // Off skips the depth pass but leaves the maps bound and sampled, so the
+  // difference against Full is the depth pass on its own. Whatever is already
+  // in the depth textures stays there and goes stale, which is the intended
+  // (and obvious) look for a debug mode.
+  if (shadowMode == ShadowMode::Off) return;
 
   // Recentre the near cascade before anything is rendered from the light.
   shadowMap.update(focus);
 
-  // Every caster goes into every cascade. No culling by cascade: the depth
-  // pass is a handful of boxes and four characters, and an ortho projection
-  // already clips whatever falls outside each frustum.
-  for (int cascade = 0; cascade < ShadowMap::kCascadeCount; cascade++) {
+  const int cascadeCount =
+      (shadowMode == ShadowMode::NearOnly) ? 1 : ShadowMap::kCascadeCount;
+
+  // Casters are culled per cascade against that cascade's ortho bounds. The
+  // ortho projection would clip them anyway, but only after they have been
+  // transformed and rasterized — and the near cascade covers 16m of what may be
+  // a 150m level, so almost everything submitted to it used to be thrown away
+  // downstream. See ShadowMap::casterVisible for why the test is XY-only.
+  for (int cascade = 0; cascade < cascadeCount; cascade++) {
     shadowMap.beginDepthPass(cascade);
 
     // Static geometry. One BeginShaderMode around the whole set: rlSetShader
@@ -237,7 +290,15 @@ void GameRenderer::renderShadowPass(
     if (!hasLevelModel) {
       BeginShaderMode(shadowMap.getStaticDepthShader());
       for (const PhysicsObstacle &obs : obstacles) {
+        if (!shadowMap.casterVisible(cascade, obs.getApproxBox())) {
+          stats.castersCulled[cascade]++;
+          continue;
+        }
         obs.drawSolid();
+        stats.castersSubmitted[cascade]++;
+        // A box is 12 triangles, a ramp 12 as well (rampCorners builds a
+        // six-faced wedge). Close enough for a cost readout.
+        stats.trianglesSubmitted[cascade] += 12;
       }
       EndShaderMode();
     }
@@ -249,9 +310,20 @@ void GameRenderer::renderShadowPass(
     if (hasLevelModel) {
       ScopedMaterialShader depthPass(levelModel,
                                      shadowMap.getStaticDepthShader());
-      // Identity transform: raylib bakes glTF node transforms into the vertex
-      // data at load, so the mesh already sits where Blender had it.
-      DrawModel(levelModel, Vector3{0.0f, 0.0f, 0.0f}, 1.0f, WHITE);
+      // Per mesh rather than one DrawModel, so meshes outside this cascade can
+      // be skipped. Identity transform: raylib bakes glTF node transforms into
+      // the vertex data at load, so the mesh already sits where Blender had it.
+      const Matrix identity = MatrixIdentity();
+      for (int i = 0; i < levelModel.meshCount; i++) {
+        if (!shadowMap.casterVisible(cascade, levelMeshBounds[i])) {
+          stats.castersCulled[cascade]++;
+          continue;
+        }
+        DrawMesh(levelModel.meshes[i],
+                 levelModel.materials[levelModel.meshMaterial[i]], identity);
+        stats.castersSubmitted[cascade]++;
+        stats.trianglesSubmitted[cascade] += levelMeshTriangles[i];
+      }
     }
 
     // Characters. These do NOT go through BeginShaderMode —
@@ -260,8 +332,19 @@ void GameRenderer::renderShadowPass(
     // the shadow follow the pose. See the comment on ScopedMaterialShader.
     for (const auto &renderData : entitiesToDraw) {
       auto it = entityRenderers.find(renderData.assetId);
-      if (it != entityRenderers.end()) {
-        it->second->draw(assetManager, renderData, RenderPass::ShadowDepth);
+      if (it == entityRenderers.end()) continue;
+
+      if (!shadowMap.casterVisible(cascade,
+                                   characterCasterBox(renderData.transform))) {
+        stats.castersCulled[cascade]++;
+        continue;
+      }
+
+      it->second->draw(assetManager, renderData, RenderPass::ShadowDepth);
+      stats.castersSubmitted[cascade]++;
+      const Model &model = assetManager.getModel(renderData.assetId);
+      for (int m = 0; m < model.meshCount; m++) {
+        stats.trianglesSubmitted[cascade] += model.meshes[m].triangleCount;
       }
     }
 
@@ -299,9 +382,73 @@ void GameRenderer::drawWorld(
   }
 }
 
+namespace {
+const char *shadowModeName(ShadowMode mode) {
+  switch (mode) {
+  case ShadowMode::NearOnly: return "near cascade only";
+  case ShadowMode::Off:      return "OFF";
+  case ShadowMode::Full:
+  default:                   return "full";
+  }
+}
+
+/// Rolling mean of frame time.
+///
+/// A single frame's GetFrameTime() is far too noisy to compare two shadow modes
+/// against each other, and DrawFPS is quantised to whole frames per second --
+/// under vsync it reads a flat 60 whether a frame costs 3ms or 16ms, which is
+/// exactly the range this needs to resolve. Averaging over ~2 seconds is what
+/// makes an A/B between F3 modes readable.
+class FrameTimeAverage {
+public:
+  void sample(float dt) {
+    total += dt - samples[cursor];
+    samples[cursor] = dt;
+    cursor = (cursor + 1) % kWindow;
+    if (filled < kWindow) filled++;
+  }
+  float milliseconds() const {
+    return filled == 0 ? 0.0f : (total / filled) * 1000.0f;
+  }
+
+private:
+  static constexpr int kWindow = 120;
+  float samples[kWindow]{};
+  float total = 0.0f;
+  int cursor = 0;
+  int filled = 0;
+};
+} // namespace
+
 void GameRenderer::drawUI() {
+  static FrameTimeAverage frameTime;
+  frameTime.sample(GetFrameTime());
+
   DrawFPS(10, 10);
-  DrawText("Architecture Phase 2: Decoupled Renderer", 10, 40, 20, DARKGRAY);
+
+  if (!debugOverlay) {
+    DrawText("F2 collision overlay  F3 shadow mode", 10, 40, 16, GRAY);
+    return;
+  }
+
+  const ShadowStats &stats = shadowMap.stats();
+  int y = 40;
+  const int line = 18;
+
+  DrawText(TextFormat("frame %5.2f ms (avg)", frameTime.milliseconds()), 10, y,
+           16, DARKGRAY);
+  y += line;
+  DrawText(TextFormat("shadows: %s  [F3]", shadowModeName(shadowMode)), 10, y,
+           16, DARKGRAY);
+  y += line;
+
+  for (int i = 0; i < ShadowMap::kCascadeCount; i++) {
+    DrawText(TextFormat("  cascade %d  %4.0fm  casters %3d (culled %3d)  tris %6d",
+                        i, shadowMap.getExtent(i), stats.castersSubmitted[i],
+                        stats.castersCulled[i], stats.trianglesSubmitted[i]),
+             10, y, 16, DARKGRAY);
+    y += line;
+  }
 }
 
 void GameRenderer::drawShadowMapDebug() {
@@ -330,8 +477,24 @@ void GameRenderer::drawEnvironment(
     const std::vector<PhysicsObstacle> &obstacles) {
   // The level mesh. Its materials already carry levelShader, so no
   // BeginShaderMode — that would not reach DrawMesh anyway.
+  //
+  // Culled against the camera frustum, mesh by mesh. rlgl's matrices are read
+  // rather than rebuilt from the CameraController: the caller has already
+  // opened the 3D scope, so these are by construction the exact matrices the
+  // draws below will be transformed by, and a frustum derived from anything
+  // else could disagree with them and cull geometry that is genuinely on
+  // screen.
   if (hasLevelModel) {
-    DrawModel(levelModel, Vector3Zero(), 1.0f, WHITE);
+    const Matrix viewProj =
+        MatrixMultiply(rlGetMatrixModelview(), rlGetMatrixProjection());
+    const Frustum frustum = Frustum::fromViewProjection(viewProj);
+    const Matrix identity = MatrixIdentity();
+
+    for (int i = 0; i < levelModel.meshCount; i++) {
+      if (!frustum.intersects(levelMeshBounds[i])) continue;
+      DrawMesh(levelModel.meshes[i],
+               levelModel.materials[levelModel.meshMaterial[i]], identity);
+    }
   }
 
   // Obstacle solids. Only drawn when they are not already represented by the

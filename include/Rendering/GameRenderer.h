@@ -39,6 +39,18 @@ public:
   void setDebugOverlay(bool on) { debugOverlay = on; }
   bool debugOverlayEnabled() const { return debugOverlay; }
 
+  /// F3: what the depth pass is allowed to render.
+  ///
+  /// Cycling this in-game is how the depth pass gets measured. `Off` still
+  /// leaves the scene shaders sampling the maps, so Full-minus-Off isolates the
+  /// depth pass from the fragment-side PCF — the two scale with completely
+  /// different things (map size vs screen resolution) and conflating them is
+  /// how you end up optimising the wrong one.
+  void setShadowMode(ShadowMode mode) { shadowMode = mode; }
+  ShadowMode getShadowMode() const { return shadowMode; }
+  /// Advance to the next mode, wrapping. Returns the new mode.
+  ShadowMode cycleShadowMode();
+
   /// PASS 1 — depth from the light's point of view, once per shadow cascade.
   ///
   /// Renders into its own framebuffers, so it must run *before* the frame's
@@ -91,6 +103,21 @@ private:
   bool hasLevelModel = false;
 
   bool debugOverlay = false;
+  ShadowMode shadowMode = ShadowMode::Full;
+
+  /// Triangle count per mesh of the level model, so the depth-pass stats can
+  /// report geometry submitted rather than just draw calls. Filled in
+  /// loadLevelModel; parallel to levelModel.meshes.
+  std::vector<int> levelMeshTriangles;
+
+  /// World AABB per mesh of the level model, for both the per-cascade caster
+  /// cull and the camera frustum cull. Computed once at load: GetMeshBoundingBox
+  /// walks every vertex, which is fine on a 182k-triangle map once and not
+  /// sixty times a second.
+  ///
+  /// World-space with no transform applied, because raylib bakes glTF node
+  /// transforms into the vertex data and the model is drawn at identity.
+  std::vector<BoundingBox> levelMeshBounds;
 
   /// 3D world pass: environment + every entity's skinned/proxy geometry.
   void drawWorld(const CameraController &camera,
