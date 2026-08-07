@@ -18,6 +18,7 @@ const SwordmanAnimator::Machine::Desc *SwordmanAnimator::descTable() {
       /* Attack      */ {"Slash", false, 1.0f, false, 0.05f},
       /* PostureBreak*/ {"FallToKneel", false, 1.0f, false, 0.08f},
       /* Death       */ {"Death", false, 1.0f, false, 0.10f},
+      /* Parry       */ {"Block", false, 1.0f, false, 0.05f},
   };
   return table;
 }
@@ -115,6 +116,9 @@ SwordmanAnimator::resolve(const Frame &frame) const {
   // ordering the player's ladder uses.
   if (reaction_timer > 0.0f && anim.clipFor(reaction_state) >= 0)
     return anim.select(reaction_state, reaction_id);
+
+  if (combat.isGuarding() && anim.clipFor(SwordmanAnimState::Parry) >= 0)
+    return anim.select(SwordmanAnimState::Parry, combat.getActionId());
 
   if (frame.moving && anim.clipFor(SwordmanAnimState::Walk) >= 0)
     return anim.select(SwordmanAnimState::Walk);

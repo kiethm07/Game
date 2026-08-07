@@ -236,8 +236,19 @@ std::vector<HitBox> Player::getActiveHitBoxes() const {
 
 DamageResult Player::takeDamage(float health_damage, float posture_damage,
                                 Character *attacker) {
+  bool can_block = true;
+  if (attacker) {
+    float yaw_rad = rotation.y * DEG2RAD;
+    Vector3 forward = {std::sin(yaw_rad), 0.0f, std::cos(yaw_rad)};
+    Vector3 to_attacker = {attacker->getPosition().x - position.x, 0.0f, attacker->getPosition().z - position.z};
+    to_attacker = Vector3Normalize(to_attacker);
+    if (Vector3DotProduct(forward, to_attacker) < 0.707f) {
+      can_block = false;
+    }
+  }
+
   // 1. Guard check state machine windows
-  if (combat_component.getCurrentState() == CombatState::Parrying) {
+  if (can_block && combat_component.getCurrentState() == CombatState::Parrying) {
     // Perfect deflect window: Ignore health damage entirely.
     // Receive drastically more posture damage than blocking, but it never
     // breaks posture.
@@ -262,7 +273,7 @@ DamageResult Player::takeDamage(float health_damage, float posture_damage,
   }
 
   const bool blocked =
-      (combat_component.getCurrentState() == CombatState::Blocking);
+      (can_block && combat_component.getCurrentState() == CombatState::Blocking);
   if (blocked) {
     // Blocking absorbs the HP damage entirely, but takes full posture damage
     health_damage = 0.0f;

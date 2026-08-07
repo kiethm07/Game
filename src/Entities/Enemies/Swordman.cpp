@@ -68,6 +68,7 @@ void Swordman::update(const UpdateContext &ctx) {
   if (combat_component.getCurrentState() == CombatState::Idle) {
     if (attack_cooldown_timer > 0.0f) attack_cooldown_timer -= dt;
   }
+  if (move_cooldown_timer > 0.0f) move_cooldown_timer -= dt;
   if (investigation_timer > 0.0f) investigation_timer -= dt;
   if (circle_timer > 0.0f) circle_timer -= dt;
 
@@ -89,7 +90,14 @@ void Swordman::update(const UpdateContext &ctx) {
   animator.update(frame, dt);
 }
 
-void Swordman::onDamaged(bool blocked) { animator.queueReaction(blocked); }
+void Swordman::onDamaged(bool blocked, bool parried) {
+  if (parried) {
+    attack_cooldown_timer = std::max(attack_cooldown_timer, 0.8f);
+    move_cooldown_timer = std::max(move_cooldown_timer, 0.5f);
+  } else {
+    animator.queueReaction(blocked);
+  }
+}
 
 void Swordman::setupBehaviorTree() {
   using namespace BT;
@@ -189,12 +197,12 @@ void Swordman::setupBehaviorTree() {
     if (!current_ctx) return NodeState::FAILURE;
     if (combat_component.getCurrentState() == CombatState::PostureBroken) return NodeState::SUCCESS;
     
-    // 1. If currently attacking, parrying, or STAGGERED (flinching), don't interrupt with movement/new attacks!
-    if (combat_component.getCurrentState() != CombatState::Idle || animator.isFlinching()) {
+    // 1. If currently attacking, parrying, STAGGERED (flinching), or under move cooldown, don't interrupt with movement/new attacks!
+    if (combat_component.getCurrentState() != CombatState::Idle || animator.isFlinching() || move_cooldown_timer > 0.0f) {
       this->setHorizontalVelocity({0, 0, 0});
       
-      // Allow smooth tracking during the wind-up/startup phase of an attack
-      if (combat_component.getCurrentState() == CombatState::AttackStartup) {
+      // Allow smooth tracking during the wind-up/startup phase of an attack, or while in move cooldown
+      if (combat_component.getCurrentState() == CombatState::AttackStartup || move_cooldown_timer > 0.0f) {
           Vector3 target_pos = stealth_component.getLastKnownPlayerPos();
           Vector3 to_player = Vector3Subtract(target_pos, position);
           float target_yaw = std::atan2(to_player.x, to_player.z) * RAD2DEG;
