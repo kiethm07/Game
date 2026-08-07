@@ -79,6 +79,11 @@ public:
   void setStance(Stance s) { stance = s; }
   Stance getStance() const { return stance; }
 
+  /// Suppresses the landing stagger that would otherwise happen on touchdown.
+  /// Used when an aerial takedown snaps the player to the ground and plays
+  /// an execution animation that must not be interrupted.
+  void resetFallSpeed() { fall_speed = 0.0f; }
+
   /// True while a landing is holding the player. A committed state in the same
   /// sense an attack or a dodge is, just one the combat state machine has no
   /// opinion about — landing is not a combat action.

@@ -14,23 +14,26 @@ void AttackRegistry::InitializeCatalog() {
   // finisher's commitment.
 
   // Slash: 1.53s authored, in place.
-  attack_catalog.emplace(AttackID::PlayerLight1,
-                         AttackData(0.55f, 0.20f, 0.76f, "Slash", false));
+  AttackData light1(0.55f, 0.20f, 0.76f, "Slash", false);
+  // Sweep capsule from right to left (simulating a horizontal slash)
+  light1.addHitBoxDef(HitBoxDefinition::createCapsule({1.0f, 0.9f, 1.0f}, {-1.0f, 0.9f, 1.0f}, 0.5f, 25.0f, 15.0f));
+  attack_catalog.emplace(AttackID::PlayerLight1, light1);
 
   // Slash_3: 1.60s authored, small step in and out.
-  attack_catalog.emplace(AttackID::PlayerLight2,
-                         AttackData(0.55f, 0.20f, 0.83f, "Slash_3", true));
+  AttackData light2(0.55f, 0.20f, 0.83f, "Slash_3", true);
+  // Sweep capsule from left to right (simulating a horizontal slash)
+  light2.addHitBoxDef(HitBoxDefinition::createCapsule({-1.0f, 0.9f, 1.0f}, {1.0f, 0.9f, 1.0f}, 0.5f, 25.0f, 15.0f));
+  attack_catalog.emplace(AttackID::PlayerLight2, light2);
 
   // Attack_2: 1.33s authored, 2.7-unit forward lunge.
-  attack_catalog.emplace(AttackID::PlayerHeavyFinisher,
-                         AttackData(0.45f, 0.18f, 0.68f, "Attack_2", true));
+  AttackData heavy1(0.45f, 0.18f, 0.68f, "Attack_2", true);
+  // Thrust capsule straight forward
+  heavy1.addHitBoxDef(HitBoxDefinition::createCapsule({0.0f, 0.9f, 0.0f}, {0.0f, 0.9f, 2.0f}, 0.6f, 35.0f, 25.0f));
+  attack_catalog.emplace(AttackID::PlayerHeavyFinisher, heavy1);
 
-  // The deathblow, on the same Slash the light combo opens with — same clip,
-  // same phase split, same pinned-in-place travel. Kept as an entry of its own
-  // rather than folded back into PlayerLight1 because the camera identifies the
-  // shot by which attack is running (Player::isExecuting), and because a
-  // deathblow that happens to be timed like a light swing today is still not
-  // the same move: retune this row without touching the combo.
-  attack_catalog.emplace(AttackID::PlayerExecution,
-                         AttackData(0.55f, 0.20f, 0.76f, "Slash", false));
+  // The deathblow
+  AttackData exec(0.55f, 0.20f, 0.76f, "Slash", false);
+  // Guarantee hit during takedown regardless of physics separation by using a large capsule extending forward
+  exec.addHitBoxDef(HitBoxDefinition::createCapsule({0.0f, 0.9f, 0.0f}, {0.0f, 0.9f, 2.0f}, 1.5f, 9999.0f, 15.0f));
+  attack_catalog.emplace(AttackID::PlayerExecution, exec);
 }
