@@ -39,6 +39,39 @@ void ParticleManager::emitSparks(Vector3 position, int count) {
     }
 }
 
+void ParticleManager::emitBlood(Vector3 position, int count) {
+    for (int i = 0; i < count; ++i) {
+        Particle p;
+        p.type = ParticleType::BLOOD;
+        p.position = position;
+        
+        // Clustered directional splash (narrower cone)
+        float u = ((float)rand() / RAND_MAX);
+        float theta = u * 2.0f * PI;
+        float phi = ((float)rand() / RAND_MAX) * (PI / 3.0f); // 60 degree cone upwards
+        
+        float dirX = sinf(phi) * cosf(theta);
+        float dirY = cosf(phi); // Y is up
+        float dirZ = sinf(phi) * sinf(theta);
+        
+        Vector3 out_dir = Vector3Normalize({dirX, dirY, dirZ});
+        
+        float speed = ((float)rand() / RAND_MAX) * 12.0f + 3.0f; // clustered speeds
+        p.velocity = Vector3Scale(out_dir, speed);
+        
+        int colorType = rand() % 3;
+        if (colorType == 0) p.color = { 180, 0, 0, 255 }; 
+        else if (colorType == 1) p.color = { 130, 0, 0, 255 }; 
+        else p.color = { 220, 20, 20, 255 };
+        
+        p.life = ((float)rand() / RAND_MAX) * 0.5f + 0.3f; 
+        p.max_life = p.life;
+        p.size = ((float)rand() / RAND_MAX) * 0.06f + 0.03f; // slightly larger for clustered feel
+        
+        particles.push_back(p);
+    }
+}
+
 void ParticleManager::emitVisualSmoke(Vector3 position, float radius, float duration) {
     // OPTIMIZATION: Reduce particle count drastically. 
     int count = (int)(radius * 6.0f); 
@@ -88,8 +121,8 @@ void ParticleManager::update(float dt) {
         p.position = Vector3Add(p.position, Vector3Scale(p.velocity, dt));
         p.life -= dt;
         
-        if (p.type == ParticleType::SPARK) {
-            // Gravity for sparks
+        if (p.type == ParticleType::SPARK || p.type == ParticleType::BLOOD) {
+            // Gravity for sparks/blood
             p.velocity.y -= 25.0f * dt;
             // Air friction (horizontal)
             p.velocity.x *= (1.0f - 1.5f * dt);
@@ -98,7 +131,7 @@ void ParticleManager::update(float dt) {
             // Floor bounce
             if (p.position.y < 0.05f) {
                 p.position.y = 0.05f;
-                p.velocity.y *= -0.5f; // Bounce up
+                p.velocity.y *= (p.type == ParticleType::BLOOD ? -0.1f : -0.5f); // Blood barely bounces
                 p.velocity.x *= 0.6f; // Floor friction
                 p.velocity.z *= 0.6f;
             }
@@ -119,7 +152,7 @@ void ParticleManager::draw() const {
     for (const auto& p : particles) {
         float life_ratio = p.life / p.max_life;
         
-        if (p.type == ParticleType::SPARK) {
+        if (p.type == ParticleType::SPARK || p.type == ParticleType::BLOOD) {
             Color c = p.color;
             // Fade out alpha aggressively in the second half of life
             if (life_ratio < 0.5f) {
@@ -130,7 +163,7 @@ void ParticleManager::draw() const {
             float speed = Vector3Length(p.velocity);
             if (speed > 0.1f) {
                 Vector3 dir = Vector3Scale(p.velocity, 1.0f / speed);
-                float streak_len = speed * 0.03f; // Streak length scales with speed
+                float streak_len = speed * (p.type == ParticleType::BLOOD ? 0.02f : 0.03f); // Blood streak slightly shorter
                 if (streak_len < 0.05f) streak_len = 0.05f;
                 
                 Vector3 start_pos = p.position;

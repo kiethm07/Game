@@ -72,6 +72,9 @@ void CombatManager::update(const std::vector<Character*>& characters, ParticleMa
                                 particle_manager->emitSparks(hitbox.getShape().getCenter(), 10);
                             } else if (result == DamageResult::PARRIED) {
                                 particle_manager->emitSparks(hitbox.getShape().getCenter(), 50);
+                            } else if (result == DamageResult::HIT) {
+                                int blood_count = (hitbox.getHealthDamage() > 1000.0f) ? 100 : 30;
+                                particle_manager->emitBlood(hitbox.getShape().getCenter(), blood_count);
                             }
                         }
 
