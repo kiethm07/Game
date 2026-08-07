@@ -4,7 +4,7 @@ Application::Application() {
   // SetConfigFlags(FLAG_WINDOW_TOPMOST | FLAG_WINDOW_UNDECORATED);
   // InitWindow(GetScreenWidth(), GetScreenHeight(), "Borderless fullscreen");
   InitWindow(1366, 768, "Game");
-  SetTargetFPS(60);
+  SetTargetFPS(getenv("BENCH") ? 0 : 60); // TEMP-BENCH: uncap to see real cost
 
   game.pushState(std::make_unique<MainMenuState>());
 }

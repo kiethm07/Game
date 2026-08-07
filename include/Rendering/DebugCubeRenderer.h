@@ -10,8 +10,8 @@ class DebugCubeRenderer : public IEntityRenderer {
 public:
   explicit DebugCubeRenderer(Color fillColor = BLUE, Color wireColor = BLACK);
 
-  void draw(AssetManager &assets,
-            const CharacterRenderData &renderData) override;
+  void draw(AssetManager &assets, const CharacterRenderData &renderData,
+            RenderPass pass = RenderPass::Scene) override;
 
 private:
   Color fillColor;

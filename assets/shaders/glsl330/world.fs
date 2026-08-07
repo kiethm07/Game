@@ -1,38 +1,20 @@
 #version 330
 
-// Input vertex attributes (from vertex shader)
 in vec3 fragPosition;
-in vec2 fragTexCoord;
-in vec4 fragColor;
 in vec3 fragNormal;
+in vec4 fragColor;
 
-// Output fragment color
 out vec4 finalColor;
 
-uniform sampler2D texture0;
-uniform vec4 colDiffuse;
-
-// The albedo maps on this armour set are dark steel, and sampling them straight
-// reads flat and murky. AMBIENT is the floor every fragment gets, so nothing
-// lands darker than the unlit look this replaced; KEY is what the lit side adds
-// on top. Raise AMBIENT alone to brighten uniformly.
-//
-// The key direction used to be a constant here. It is a uniform (declared with
-// the shadow block below) because the shadow pass has to render from that exact
-// direction -- see ShadowMap, which owns the value and pushes it into this
-// shader and into world.fs.
-const float AMBIENT = 1.15;
-const float KEY = 0.60;
-
-// How far the ambient floor drops in shadow. AMBIENT above 1.0 means a fragment
-// in shadow would otherwise still be brighter than the original unlit look, so
-// without this a character standing in the pillar's shadow barely changes.
-const float SHADOW_AMBIENT_SCALE = 0.72;
-
-// Midtone lift, applied after the light term. A plain multiply bright enough to
-// rescue the armour also clips the gold trim to a flat yellow; an exponent
-// below 1 raises the middle of the range and leaves the highlights alone.
-const float LIFT = 0.78;
+// Level geometry is flat authored colours (PhysicsObstacle::color, and the
+// ground plane), not textures, so it does not need skinning.fs's rescue
+// constants -- AMBIENT there is above 1.0 to lift dark steel albedo, which here
+// would only wash the colours out. These are picked instead so the lit and
+// unlit faces of a box read apart, and so a shadow on the ground is
+// unmistakable: lit ground lands near 1.06, shadowed ground near 0.37.
+const float AMBIENT = 0.60;
+const float KEY = 0.55;
+const float SHADOW_AMBIENT_SCALE = 0.62;
 
 uniform vec3 lightDir;   ///< direction the light travels, normalized
 uniform mat4 lightVP[2];             ///< light view*projection, per cascade
@@ -188,17 +170,16 @@ float shadowFactor(vec3 worldPos, vec3 normal, vec3 lightVec)
 
 void main()
 {
-    vec4 texelColor = texture(texture0, fragTexCoord);
-
     vec3 normal = normalize(fragNormal);
     vec3 lightVec = normalize(-lightDir);
 
     float key = max(dot(normal, lightVec), 0.0);
     float shadow = shadowFactor(fragPosition, normal, lightVec);
 
+    // Shadow kills the key term outright and dims the ambient floor. Dimming
+    // ambient too is what keeps a shadow readable on a face that was already
+    // turned away from the light.
     float light = AMBIENT*mix(1.0, SHADOW_AMBIENT_SCALE, shadow) + KEY*key*(1.0 - shadow);
 
-    vec3 shaded = pow(texelColor.rgb*light, vec3(LIFT));
-
-    finalColor = vec4(shaded, texelColor.a)*colDiffuse*fragColor;
+    finalColor = vec4(fragColor.rgb*light, fragColor.a);
 }

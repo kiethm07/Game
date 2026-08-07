@@ -8,5 +8,6 @@
 class SkinnedEntityRenderer : public IEntityRenderer {
 public:
     void draw(AssetManager &assets,
-              const CharacterRenderData &renderData) override;
+              const CharacterRenderData &renderData,
+              RenderPass pass = RenderPass::Scene) override;
 };

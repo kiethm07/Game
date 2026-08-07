@@ -2,9 +2,47 @@
 #include <Rendering/RootMotion.h>
 #include <Rendering/SkinnedEntityRenderer.h>
 #include <raymath.h>
+#include <vector>
+
+namespace {
+
+/// Swaps a shader onto every material of a model for the duration of a scope,
+/// then puts the originals back.
+///
+/// The shadow pass cannot use BeginShaderMode: raylib uploads the bone matrices
+/// from `material.shader.locs[SHADER_LOC_MATRIX_BONETRANSFORMS]` inside
+/// DrawMesh, reading the *material's* shader rather than whatever rlgl has
+/// bound. Bind the depth shader the other way and boneMatrices is never set, so
+/// every shadow freezes in the bind pose while the models animate.
+class ScopedMaterialShader {
+public:
+    ScopedMaterialShader(Model &model, Shader shader) : model(model) {
+        saved.reserve(static_cast<size_t>(model.materialCount));
+        for (int i = 0; i < model.materialCount; i++) {
+            saved.push_back(model.materials[i].shader);
+            model.materials[i].shader = shader;
+        }
+    }
+
+    ~ScopedMaterialShader() {
+        for (int i = 0; i < model.materialCount; i++) {
+            model.materials[i].shader = saved[static_cast<size_t>(i)];
+        }
+    }
+
+    ScopedMaterialShader(const ScopedMaterialShader &) = delete;
+    ScopedMaterialShader &operator=(const ScopedMaterialShader &) = delete;
+
+private:
+    Model &model;
+    std::vector<Shader> saved;
+};
+
+} // namespace
 
 void SkinnedEntityRenderer::draw(AssetManager &assets,
-                                 const CharacterRenderData &renderData) {
+                                 const CharacterRenderData &renderData,
+                                 RenderPass pass) {
     // 1. Fetch model and animations from the asset manager.
     Model &model   = assets.getModel(renderData.assetId);
     int animCount  = 0;
@@ -88,7 +126,27 @@ void SkinnedEntityRenderer::draw(AssetManager &assets,
     // The GLB was exported from Blender (Z-up). The Blender->glTF exporter
     // already pre-corrects the coordinate system inside the mesh, so a single
     // Y-axis rotation via DrawModelEx is sufficient.
+    //
+    // Everything above this point is deliberately shared by both passes. The
+    // shadow is only pose-accurate because the depth draw samples the very same
+    // clip, blend weight and root-motion cancellation the scene draw does —
+    // re-deriving any of it here would show up as a shadow that lags or
+    // sidesteps the character. Posing twice per frame is cheap: with GPU
+    // skinning, UpdateModelAnimation only refreshes 66 bone matrices and does
+    // no vertex work.
     const Vector3 rotationAxis = {0.0f, 1.0f, 0.0f};
+
+    if (pass == RenderPass::ShadowDepth) {
+        Shader depthShader = assets.getSkinnedDepthShader();
+        if (depthShader.id == 0) return; // shader unavailable: cast nothing
+
+        ScopedMaterialShader swap(model, depthShader);
+        DrawModelEx(model, drawPosition, rotationAxis,
+                    renderData.transform.rotation.y,
+                    renderData.transform.scale, WHITE);
+        return;
+    }
+
     DrawModelEx(model, drawPosition, rotationAxis,
                 renderData.transform.rotation.y,
                 renderData.transform.scale, WHITE);
