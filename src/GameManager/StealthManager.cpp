@@ -1,6 +1,6 @@
 #include <GameManager/StealthManager.h>
 
-void StealthManager::update(const std::vector<Character*>& characters, Character* player, const std::vector<PhysicsObstacle>& obstacles, float dt) {
+void StealthManager::update(const std::vector<Character*>& characters, Character* player, const std::vector<PhysicsObstacle>& obstacles, const std::vector<SmokeCloud>& smoke_clouds, float dt) {
     if (!player) return;
 
     std::vector<Enemy*> aware_enemies;
@@ -14,7 +14,7 @@ void StealthManager::update(const std::vector<Character*>& characters, Character
             
             float max_detection = 0.0f;
             for (const auto& sensor : stealth.getSensors()) {
-                float str = sensor->getDetectionStrength(enemy, player, obstacles);
+                float str = sensor->getDetectionStrength(enemy, player, obstacles, smoke_clouds);
                 if (str > max_detection) {
                     max_detection = str;
                 }

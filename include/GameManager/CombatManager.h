@@ -3,9 +3,11 @@
 #include <vector>
 #include <utility>
 
+class ParticleManager;
+
 class CombatManager {
 public:
-    void update(const std::vector<Character*>& characters);
+    void update(const std::vector<Character*>& characters, ParticleManager* particle_manager = nullptr);
     void drawDebug(const std::vector<Character*>& characters) const;
 
 private:

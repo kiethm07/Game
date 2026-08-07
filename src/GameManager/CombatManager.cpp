@@ -34,7 +34,9 @@ void CombatManager::drawDebug(const std::vector<Character*>& characters) const {
     }
 }
 
-void CombatManager::update(const std::vector<Character*>& characters) {
+#include <Rendering/ParticleManager.h>
+
+void CombatManager::update(const std::vector<Character*>& characters, ParticleManager* particle_manager) {
     for (Character* attacker : characters) {
         assert(attacker);
 
@@ -62,8 +64,16 @@ void CombatManager::update(const std::vector<Character*>& characters) {
                 for (const auto& hurtbox : hurtboxes) {
                     if (CollisionMath::checkSphereCapsule(hitbox.getShape(), hurtbox.getShape())) {
 
-                        defender->takeDamage(hitbox.getHealthDamage(), hitbox.getPostureDamage(), attacker);
+                        DamageResult result = defender->takeDamage(hitbox.getHealthDamage(), hitbox.getPostureDamage(), attacker);
                         active_hits.push_back({ attacker->getId(), defender->getId() });
+                        
+                        if (particle_manager) {
+                            if (result == DamageResult::BLOCKED) {
+                                particle_manager->emitSparks(hitbox.getShape().getCenter(), 10);
+                            } else if (result == DamageResult::PARRIED) {
+                                particle_manager->emitSparks(hitbox.getShape().getCenter(), 50);
+                            }
+                        }
 
                         //Only process one hit at a time for this specific hitbox
                         break;

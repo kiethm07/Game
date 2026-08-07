@@ -114,7 +114,7 @@ std::vector<HurtBox> Enemy::getHurtBoxes() const {
   return {HurtBox(body_capsule, getFaction(), getId())};
 }
 
-void Enemy::takeDamage(float health_damage, float posture_damage, Character* attacker) {
+DamageResult Enemy::takeDamage(float health_damage, float posture_damage, Character* attacker) {
   if (combat_component.getCurrentState() == CombatState::Parrying) {
     health_damage = 0.0f;
     // Posture damage remains normal, same as block
@@ -145,5 +145,8 @@ void Enemy::takeDamage(float health_damage, float posture_damage, Character* att
           stealth_component.setLastKnownPlayerPos(attacker->getPosition());
       }
       onDamaged(blocked);
+      if (combat_component.getCurrentState() == CombatState::Parrying) return DamageResult::PARRIED;
+      return blocked ? DamageResult::BLOCKED : DamageResult::HIT;
   }
+  return DamageResult::IGNORED;
 }

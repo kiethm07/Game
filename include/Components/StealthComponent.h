@@ -78,6 +78,13 @@ public:
         }
     }
 
+    void blind() {
+        if (awareness_level >= 200.0f) {
+            awareness_level = 199.9f; // Instantly lose "Aware" status
+        }
+        forceAwareness(awareness_level);
+    }
+
 private:
     std::vector<std::shared_ptr<Sensor>> sensors;
     StealthState current_state = StealthState::Unaware;
