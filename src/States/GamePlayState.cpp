@@ -70,7 +70,7 @@ StateAction GameplayState::update(float dt) {
   Vector3 player_pos = player->getPosition();
   const UpdateContext ctx{dt, camera_controller->getCameraForward(),
                           camera_controller->getCameraRight(), player_pos,
-                          &asset_manager, &nav_query, &obstacles};
+                          &asset_manager, &nav_query, &obstacles, &smoke_clouds};
 
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());
@@ -81,7 +81,7 @@ StateAction GameplayState::update(float dt) {
   }
 
   // 1.5. Evaluate Stealth before AI update so AI can react in the same frame
-  stealth_manager.update(active_characters, player.get(), obstacles, dt);
+  stealth_manager.update(active_characters, player.get(), obstacles, smoke_clouds, dt);
 
   player->update(ctx);
   for (auto &enemy : enemies) {
@@ -97,7 +97,7 @@ StateAction GameplayState::update(float dt) {
   }
 
   // 3. Resolve Combat
-  combat_manager.update(active_characters);
+  combat_manager.update(active_characters, &particle_manager);
 
   auto checkLineOfSight = [&](Vector3 start, Vector3 end) {
     for (const auto &obs : obstacles) {
@@ -216,6 +216,43 @@ StateAction GameplayState::update(float dt) {
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
     return StateAction::ChangeToMenu;
   }
+
+  if (smoke_cooldown_timer > 0.0f) {
+      smoke_cooldown_timer -= dt;
+  }
+
+  // Debug smoke spawning
+  if (IsKeyPressed(KEY_O) && smoke_cooldown_timer <= 0.0f) {
+      SmokeCloud sc;
+      sc.position = player->getPosition();
+      sc.radius = 3.5f;
+      sc.life = 6.0f;
+      sc.owner = player.get();
+      smoke_clouds.push_back(sc);
+      particle_manager.emitVisualSmoke(sc.position, sc.radius, sc.life);
+      smoke_cooldown_timer = 8.0f; // 8 seconds cooldown
+  }
+  if (IsKeyPressed(KEY_P) && !enemies.empty() && smoke_cooldown_timer <= 0.0f) {
+      SmokeCloud sc;
+      sc.position = enemies[0]->getPosition();
+      sc.radius = 3.5f;
+      sc.life = 6.0f;
+      sc.owner = enemies[0].get();
+      smoke_clouds.push_back(sc);
+      particle_manager.emitVisualSmoke(sc.position, sc.radius, sc.life);
+      smoke_cooldown_timer = 8.0f; // 8 seconds cooldown
+  }
+
+  // Update smoke data lifetimes
+  for (int i = (int)smoke_clouds.size() - 1; i >= 0; --i) {
+      smoke_clouds[i].life -= dt;
+      if (smoke_clouds[i].life <= 0.0f) {
+          smoke_clouds[i] = smoke_clouds.back();
+          smoke_clouds.pop_back();
+      }
+  }
+
+  particle_manager.update(dt);
 
   if (takedown_text_timer > 0.0f) {
     takedown_text_timer -= dt;
@@ -399,6 +436,8 @@ void GameplayState::draw() {
 
   // World + entities, drawn into the 3D scope opened above.
   renderer->renderGameplay(*camera_controller, renderList);
+  
+  particle_manager.draw();
 
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());
@@ -441,6 +480,12 @@ void GameplayState::draw() {
     int text_width = MeasureText(text, font_size);
     DrawText(text, GetScreenWidth() / 2 - text_width / 2,
              GetScreenHeight() / 2 - 100, font_size, RED);
+  }
+
+  // --- SMOKE SCREEN EFFECT ---
+  if (player->isInSmoke()) {
+      // Draw a full-screen semi-transparent gray overlay
+      DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), {100, 100, 100, 150});
   }
 }
 

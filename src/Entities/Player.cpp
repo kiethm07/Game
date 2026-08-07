@@ -2,6 +2,7 @@
 #include <cmath>
 #include <raymath.h>
 #include <rlgl.h>
+#include <GameManager/SmokeCloud.h>
 
 Player::Player(const InputManager &input_manager)
     : Character(Faction::Player), input_manager(input_manager) {
@@ -38,8 +39,17 @@ void Player::update(const UpdateContext &ctx) {
   // handleCombatAndUtilityInputs takes below, and InputManager reports a key as
   // Pressed *or* Held but never both. So the earliest this can be true is the
   // frame after the dash began — which is exactly the reading that makes a hold
-  // outlasting the dodge, and nothing shorter, a sprint.
   const bool sprint_held = input_manager.isActionHeld(GameAction::Dodge);
+
+  in_smoke_flag = false;
+  if (ctx.smoke_clouds) {
+      for (const auto& smoke : *ctx.smoke_clouds) {
+          if (Vector3DistanceSqr(position, smoke.position) <= smoke.radius * smoke.radius) {
+              in_smoke_flag = true;
+              break;
+          }
+      }
+  }
 
   handleCombatAndUtilityInputs(
       ctx, locomotion.gate(combat_component, isGrounded(), sprint_held));
@@ -224,8 +234,8 @@ std::vector<HitBox> Player::getActiveHitBoxes() const {
   return active_hitboxes;
 }
 
-void Player::takeDamage(float health_damage, float posture_damage,
-                        Character *attacker) {
+DamageResult Player::takeDamage(float health_damage, float posture_damage,
+                                Character *attacker) {
   // 1. Guard check state machine windows
   if (combat_component.getCurrentState() == CombatState::Parrying) {
     // Perfect deflect window: Ignore health damage entirely.
@@ -248,7 +258,7 @@ void Player::takeDamage(float health_damage, float posture_damage,
     if (attacker) {
       attacker->takeDamage(0.0f, posture_damage * 1.5f, nullptr);
     }
-    return;
+    return DamageResult::PARRIED;
   }
 
   const bool blocked =
@@ -274,7 +284,9 @@ void Player::takeDamage(float health_damage, float posture_damage,
     } else if (stats.isDead()) {
       // Player death state!
     }
+    return blocked ? DamageResult::BLOCKED : DamageResult::HIT;
   }
+  return DamageResult::IGNORED;
 }
 
 Vector3 Player::calculateCameraRelativeDirection(Vector3 camForward,

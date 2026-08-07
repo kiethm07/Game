@@ -19,7 +19,7 @@ public:
   float getColliderRadius() const override;
   float getColliderHeight() const override;
   std::vector<HurtBox> getHurtBoxes() const override;
-  void takeDamage(float health_damage, float posture_damage, Character* attacker) override;
+  DamageResult takeDamage(float health_damage, float posture_damage, Character* attacker) override;
 
   const CombatComponent &getCombatComponent() const { return combat_component; }
   StealthComponent &getStealthComponent() { return stealth_component; }

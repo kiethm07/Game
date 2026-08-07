@@ -1,6 +1,8 @@
 #pragma once
 
 #include <GameManager/StealthManager.h>
+#include <GameManager/SmokeCloud.h>
+#include <Rendering/ParticleManager.h>
 
 #include <Components/PhysicsObstacle.h>
 #include <Core/CameraController.h>
@@ -44,12 +46,15 @@ private:
   PhysicsManager physics_manager;
   StealthManager stealth_manager;
   std::vector<PhysicsObstacle> obstacles;
+  std::vector<SmokeCloud> smoke_clouds;
+  ParticleManager particle_manager;
   std::vector<CharacterRenderData> renderList;
 
   const InputManager &input_manager;
   
   float takedown_text_timer = 0.0f;
   std::string takedown_type_str = "";
+  float smoke_cooldown_timer = 0.0f;
   
   NavMeshBuilder nav_builder;
   NavMeshQuery nav_query;
