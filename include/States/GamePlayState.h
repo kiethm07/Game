@@ -50,7 +50,6 @@ private:
   CombatManager combat_manager;
   PhysicsManager physics_manager;
   StealthManager stealth_manager;
-  std::vector<PhysicsObstacle> obstacles;
   std::vector<SmokeCloud> smoke_clouds;
   ParticleManager particle_manager;
   std::vector<CharacterRenderData> renderList;
