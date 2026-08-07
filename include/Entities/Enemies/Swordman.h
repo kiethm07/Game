@@ -16,7 +16,7 @@ public:
 protected:
   /// Flinches on a hit that connected. Enemy::takeDamage decides whether one
   /// did and whether the guard caught it; all that is left here is showing it.
-  void onDamaged(bool blocked) override;
+  void onDamaged(bool blocked, bool parried) override;
 
 private:
   Combo combo;
@@ -38,6 +38,7 @@ private:
   Vector3 spawn_position;
   float spawn_yaw = 0.0f;
   float attack_cooldown_timer = 0.0f;
+  float move_cooldown_timer = 0.0f;
   float investigation_timer = 0.0f;
   float circle_direction = 1.0f;
   float circle_timer = 0.0f;
