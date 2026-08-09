@@ -254,6 +254,10 @@ std::vector<HitBox> Player::getActiveHitBoxes() const {
 
 DamageResult Player::takeDamage(float health_damage, float posture_damage,
                                 Character *attacker) {
+  if (isExecuting()) {
+    return DamageResult::IGNORED;
+  }
+
   bool can_block = true;
   if (attacker) {
     float yaw_rad = rotation.y * DEG2RAD;

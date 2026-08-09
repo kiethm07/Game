@@ -16,6 +16,10 @@ public:
   virtual CharacterRenderData getRenderData() const override = 0;
   void drawHPBar(const Camera3D &camera) const;
 
+  bool isBeingExecuted() const override {
+    return combat_component.getCurrentState() == CombatState::BeingExecuted;
+  }
+
   float getColliderRadius() const override;
   float getColliderHeight() const override;
   std::vector<HurtBox> getHurtBoxes() const override;

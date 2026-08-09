@@ -21,6 +21,15 @@ GameplayState::GameplayState(const InputManager &input_manager)
   enemies.push_back(
       EnemyFactory::createEnemy(EnemyType::Swordman, {8.0f, 0.0f, -8.0f})); // North-East
 
+  // Test enemies standing next to each other
+  auto e1 = EnemyFactory::createEnemy(EnemyType::Swordman, {4.0f, 0.0f, -13.0f});
+  e1->setRotation({0.0f, 0.0f, 0.0f});
+  enemies.push_back(std::move(e1));
+
+  auto e2 = EnemyFactory::createEnemy(EnemyType::Swordman, {5.5f, 0.0f, -13.0f});
+  e2->setRotation({0.0f, 0.0f, 0.0f});
+  enemies.push_back(std::move(e2));
+
   // --- OPEN SCATTERED ARENA FOR PATHFINDING TEST ---
   
   // 1. Central Hub Platform

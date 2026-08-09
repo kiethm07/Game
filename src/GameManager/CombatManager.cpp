@@ -57,6 +57,11 @@ void CombatManager::update(const std::vector<Character*>& characters, ParticleMa
                 if (!defender || attacker->getId() == defender->getId()) continue;
                 if (attacker->getFaction() == defender->getFaction()) continue;
 
+                // If the attacker is executing a takedown, only hit the specific victim
+                if (attacker->isExecuting() && !defender->isBeingExecuted()) {
+                    continue;
+                }
+
                 // Skip if this swing already hit this target
                 bool already_hit = std::any_of(active_hits.begin(), active_hits.end(),
                     [&](const auto& pair) {
