@@ -77,6 +77,8 @@ public:
   void setGrounded(bool grounded) { is_grounded = grounded; }
 
   virtual bool isCrouching() const { return false; }
+  virtual bool isExecuting() const { return false; }
+  virtual bool isBeingExecuted() const { return false; }
 
   virtual float getColliderRadius() const = 0;
   virtual float getColliderHeight() const = 0;

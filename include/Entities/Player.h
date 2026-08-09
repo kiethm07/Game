@@ -56,7 +56,7 @@ public:
   /// alongside it: the two cannot drift, and an execution cut short — a landing
   /// stagger interrupts one — drops the shot on the same frame it drops the
   /// animation, instead of leaving the camera composed on a swing that stopped.
-  bool isExecuting() const;
+  bool isExecuting() const override;
 
 private:
   const InputManager &input_manager;
