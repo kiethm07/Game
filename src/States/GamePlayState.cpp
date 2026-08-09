@@ -9,7 +9,7 @@ namespace {
 /// The level this state loads. One map for now — StateAction carries no
 /// payload, so there is nowhere for a level choice to come from until there is
 /// a map-select screen to make it.
-constexpr const char *kLevelPath = ASSET_DIR "/levels/greybox/level.json";
+constexpr const char *kLevelPath = ASSET_DIR "/levels/castle_approach/level.json";
 } // namespace
 
 GameplayState::GameplayState(const InputManager &input_manager)
