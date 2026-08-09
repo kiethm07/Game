@@ -49,6 +49,15 @@ FetchContent_MakeAvailable(nlohmann_json)
 # flag with #ifndef, so this compile definition wins.
 target_compile_definitions(raylib PUBLIC SUPPORT_GPU_SKINNING=1)
 
+# Let raylib decode the JPEG textures embedded in a level .glb. config.h defaults
+# SUPPORT_FILEFORMAT_JPG to 0, so stb_image is compiled without its JPEG decoder
+# and every jpeg-mimed image in a glTF fails with "Data format not supported" —
+# the model still loads, just untextured, which reads as a broken material rather
+# than a missing codec. Blender's exporter picks JPEG on its own for any texture
+# that has no alpha to preserve (tools/export_level.py exports AUTO), so this is
+# reached by any kitbashed map with art on it.
+target_compile_definitions(raylib PUBLIC SUPPORT_FILEFORMAT_JPG=1)
+
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS src/*.cpp)
 file(GLOB_RECURSE HEADER_FILES CONFIGURE_DEPENDS include/*.h)
 

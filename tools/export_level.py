@@ -377,6 +377,12 @@ def export_glb(collection, path):
     Draco and KTX2/basisu are both left off deliberately: raylib's loader is
     cgltf, which supports neither, and a model using either arrives with no
     geometry rather than with an error.
+
+    AUTO leaves the PNG/JPEG choice to Blender, which picks JPEG whenever a
+    texture has no alpha worth keeping. raylib only decodes those because the
+    build defines SUPPORT_FILEFORMAT_JPG (CMakeLists.txt) -- its config.h
+    defaults that off, and without it a textured level loads untextured with
+    only an "IMAGE: Data format not supported" warning to say why.
     """
     bpy.ops.object.select_all(action="DESELECT")
     for obj in collection.all_objects:

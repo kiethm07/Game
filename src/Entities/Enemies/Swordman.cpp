@@ -137,7 +137,14 @@ void Swordman::setupBehaviorTree() {
   
   auto truncatePathBySmoke = [this](std::vector<Vector3>& path) {
       if (!current_ctx || !current_ctx->smoke_clouds) return;
-      for (size_t i = 0; i < path.size() - 1; ++i) {
+      // i + 1 < size(), not i < size() - 1. size() is unsigned, so on an empty
+      // path the subtraction wraps to SIZE_MAX, the loop runs, and path[0]
+      // dereferences the null data pointer of an empty vector.
+      // NavMeshQuery::findPath returns an empty path whenever findNearestPoly
+      // fails for either end (NavMeshQuery.cpp:18) — which is what happens the
+      // moment the player stands somewhere off the navmesh, such as on top of
+      // a castle wall.
+      for (size_t i = 0; i + 1 < path.size(); ++i) {
           Vector3 A = path[i];
           Vector3 B = path[i + 1];
           Vector3 dir = Vector3Subtract(B, A);
