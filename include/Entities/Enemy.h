@@ -33,6 +33,16 @@ public:
   bool hasDroppedLoot() const { return dropped_loot; }
   void setDroppedLoot(bool dropped) { dropped_loot = dropped; }
 
+  bool isKilledByStealth() const { return killed_by_stealth; }
+  void setKilledByStealth(bool killed) { killed_by_stealth = killed; }
+  
+  float getDissolveTimer() const { return dissolve_timer; }
+  void addDissolveTimer(float dt) { dissolve_timer += dt; }
+  bool isFullyDissolved() const { return dissolve_timer >= 2.0f; }
+
+  int getDecayType() const { return static_cast<int>(decay_type); }
+  void setDecayType(DecayType type) { decay_type = type; }
+
 protected:
   /// Called once per hit that actually landed, with whether the guard caught
   /// it. The hook exists so a subclass can react — a flinch is the whole of it
@@ -45,6 +55,10 @@ protected:
   StealthComponent stealth_component;
   int moveState = 0;
   bool dropped_loot = false;
+  
+  bool killed_by_stealth = false;
+  float dissolve_timer = 0.0f;
+  DecayType decay_type = DecayType::ASH_DECAY;
 
   float body_height = 2.0f;
   float body_radius = 0.5f;

@@ -479,5 +479,10 @@ CharacterRenderData Swordman::getRenderData() const {
   transform.rotation = rotation;
   transform.scale = visual_size;
 
-  return {AssetID::ENEMY_ASHIGARU, transform, animator.renderState()};
+  float dissolveProgress = 0.0f;
+  if (killed_by_stealth) {
+      dissolveProgress = std::fmin(dissolve_timer / 2.0f, 1.0f);
+  }
+
+  return {AssetID::ENEMY_ASHIGARU, transform, animator.renderState(), dissolveProgress, decay_type};
 }

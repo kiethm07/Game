@@ -84,7 +84,21 @@ void SkinnedEntityRenderer::draw(AssetManager &assets,
         drawPosition = Vector3Subtract(drawPosition, offset);
     }
 
-    // 4. Draw.
+    // 4. Set custom shader uniforms (e.g. dissolve)
+    for (int i = 0; i < model.materialCount; i++) {
+        Shader shader = model.materials[i].shader;
+        int dissolveLoc = GetShaderLocation(shader, "dissolveAmount");
+        if (dissolveLoc >= 0) {
+            SetShaderValue(shader, dissolveLoc, &renderData.dissolveProgress, SHADER_UNIFORM_FLOAT);
+        }
+        int typeLoc = GetShaderLocation(shader, "decayType");
+        if (typeLoc >= 0) {
+            int decayVal = static_cast<int>(renderData.decayType);
+            SetShaderValue(shader, typeLoc, &decayVal, SHADER_UNIFORM_INT);
+        }
+    }
+
+    // 5. Draw.
     // The GLB was exported from Blender (Z-up). The Blender->glTF exporter
     // already pre-corrects the coordinate system inside the mesh, so a single
     // Y-axis rotation via DrawModelEx is sufficient.

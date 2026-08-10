@@ -96,16 +96,23 @@ StateAction GameplayState::update(float dt) {
   for (auto &enemy : enemies) {
     enemy->update(ctx);
     
-    // Check for loot drops
-    if (enemy->getStats().isDead() && !enemy->hasDroppedLoot()) {
-        enemy->setDroppedLoot(true);
-        MoneyDrop md;
-        md.position = enemy->getPosition();
-        md.amount = 10 + rand() % 15;
-        md.bob_timer = 0.0f;
-        money_drops.push_back(md);
+    // Check for loot drops and handle decaying
+    if (enemy->getStats().isDead()) {
+        if (!enemy->hasDroppedLoot()) {
+            enemy->setDroppedLoot(true);
+            MoneyDrop md;
+            md.position = enemy->getPosition();
+            md.amount = 10 + rand() % 15;
+            md.bob_timer = 0.0f;
+            money_drops.push_back(md);
+        }
+        
+        if (enemy->isKilledByStealth()) {
+            enemy->addDissolveTimer(dt);
+        }
     }
   }
+
 
   // Check for money pickups
   for (int i = (int)money_drops.size() - 1; i >= 0; --i) {
@@ -311,6 +318,8 @@ StateAction GameplayState::update(float dt) {
         // Let the hitbox apply the damage and blood in sync with the animation
         if (Enemy* e = dynamic_cast<Enemy*>(pending_aerial_target)) {
             e->getCombatComponent().setBeingExecuted();
+            e->setKilledByStealth(true);
+            e->setDecayType(DecayType::PETAL_DECAY);
         }
         player->performTakedown();
         deathblow_victim = pending_aerial_target;
@@ -434,6 +443,8 @@ StateAction GameplayState::update(float dt) {
                                     -std::cos(enemy_yaw)};
                 player->setPosition({e_pos.x + backward.x * 1.2f, p_pos.y,
                                      e_pos.z + backward.z * 1.2f});
+                enemy->setKilledByStealth(true);
+                enemy->setDecayType(DecayType::ASH_DECAY);
               }
 
               // Let the hitbox apply the damage and blood in sync with the animation
@@ -447,6 +458,18 @@ StateAction GameplayState::update(float dt) {
         }
       }
     }
+  }
+
+  // Cleanup fully dissolved bodies at the very end of the frame
+  for (auto it = enemies.begin(); it != enemies.end(); ) {
+      if ((*it)->isFullyDissolved()) {
+          if (locked_target == (*it).get()) locked_target = nullptr;
+          if (deathblow_victim == (*it).get()) deathblow_victim = nullptr;
+          if (pending_aerial_target == (*it).get()) pending_aerial_target = nullptr;
+          it = enemies.erase(it);
+      } else {
+          ++it;
+      }
   }
 
   return StateAction::KeepCurrent;
