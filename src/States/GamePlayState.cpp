@@ -320,9 +320,23 @@ StateAction GameplayState::update(float dt) {
       // If we reach the threshold Y or hit the ground
       if (p_pos.y - e_pos.y < 0.2f || player->isGrounded()) {
         takedown_type_str = "AERIAL TAKEDOWN";
-        player->setPosition({e_pos.x, e_pos.y, e_pos.z});
+        
+        // Snap position 1.2 units away so they aren't inside each other (prevents physics ejection)
+        Vector3 dir = to_enemy;
+        dir.y = 0.0f;
+        if (Vector3LengthSqr(dir) > 0.001f) {
+            dir = Vector3Normalize(dir);
+            player->setPosition({e_pos.x - dir.x * 1.2f, e_pos.y, e_pos.z - dir.z * 1.2f});
+        } else {
+            player->setPosition({e_pos.x, e_pos.y, e_pos.z + 1.2f});
+        }
+        
         player->setVerticalVelocity(0.0f);
-        // Player keeps the rotation looking at the enemy instead of snapping to enemy's rotation
+        // Player keeps the rotation looking at the enemy
+        
+        // Force the enemy to face away from the player (turn their back to the player)
+        // so the execution animation doesn't look like they are face-to-face
+        pending_aerial_target->setRotation(player->getRotation());
 
         // Let the hitbox apply the damage and blood in sync with the animation
         if (Enemy* e = dynamic_cast<Enemy*>(pending_aerial_target)) {
