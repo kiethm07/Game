@@ -257,17 +257,14 @@ StateAction GameplayState::update(float dt) {
       smoke_cooldown_timer -= dt;
   }
 
-  // Debug smoke spawning
-  if (IsKeyPressed(KEY_O) && smoke_cooldown_timer <= 0.0f) {
-      SmokeCloud sc;
-      sc.position = player->getPosition();
-      sc.radius = 3.5f;
-      sc.life = 6.0f;
-      sc.owner = player.get();
+  // Process smoke clouds spawned by items (e.g. Smoke Bomb)
+  std::vector<SmokeCloud> new_clouds = player->takePendingSmokeClouds();
+  for (const auto& sc : new_clouds) {
       smoke_clouds.push_back(sc);
       particle_manager.emitVisualSmoke(sc.position, sc.radius, sc.life);
-      smoke_cooldown_timer = 8.0f; // 8 seconds cooldown
   }
+
+  // Debug smoke spawning on enemy
   if (IsKeyPressed(KEY_P) && !enemies.empty() && smoke_cooldown_timer <= 0.0f) {
       SmokeCloud sc;
       sc.position = enemies[0]->getPosition();
@@ -567,7 +564,7 @@ void GameplayState::draw() {
           const auto& active_item = inventory[active_idx];
           std::string item_text = "[Q] < " + active_item->getName() + " (" + std::to_string(active_item->getCount()) + ") > [E]   Use: [X]";
           int item_font_size = 20;
-          DrawText(item_text.c_str(), 20, GetScreenHeight() - 70, item_font_size, active_item->isEmpty() ? GRAY : WHITE);
+          DrawText(item_text.c_str(), 20, GetScreenHeight() - 70, item_font_size, active_item->isEmpty() ? GRAY : BLACK);
 
           // If using, draw a progress bar
           float use_timer = player->getItemUseTimer();
