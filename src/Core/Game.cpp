@@ -1,4 +1,5 @@
 #include <Core/Game.h>
+#include <States/LoadingState.h>
 
 Game::Game()
     : attack_registry(AttackRegistry::instance()) {}
@@ -25,10 +26,13 @@ void Game::update() {
             popState();
             pushState(std::make_unique<MainMenuState>());
         }
+        if (action == StateAction::ChangeToLoading) {
+            popState();
+            pushState(std::make_unique<LoadingState>(asset_manager));
+        }
         if (action == StateAction::ChangeToGameplay) {
             popState();
-            pushState(std::make_unique<GameplayState>(input_manager));
-            // ChangeState(std::make_unique<GamePlayState>());
+            pushState(std::make_unique<GameplayState>(input_manager, asset_manager));
         }
     }
 }

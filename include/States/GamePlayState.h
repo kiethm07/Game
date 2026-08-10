@@ -32,7 +32,7 @@ struct MoneyDrop {
 
 class GameplayState : public GameState {
 public:
-  GameplayState(const InputManager &input_manager);
+  GameplayState(const InputManager &input_manager, AssetManager &asset_manager);
   ~GameplayState() override = default;
 
   void enter() override;
@@ -43,7 +43,7 @@ public:
 private:
   /// Declared before `renderer`, which holds a reference to it: destruction is
   /// reverse-declaration order, so the renderer dies first.
-  AssetManager asset_manager;
+  AssetManager& asset_manager;
 
   std::unique_ptr<CameraController> camera_controller;
   std::unique_ptr<Player> player;
