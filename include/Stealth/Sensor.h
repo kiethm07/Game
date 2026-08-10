@@ -4,15 +4,48 @@
 #include <raymath.h>
 #include <Entities/Character.h>
 #include <Components/PhysicsObstacle.h>
+#include <Physics/CollisionMesh.h>
 #include <cmath>
 #include <GameManager/SmokeCloud.h>
+
+/// Is the straight line from `a` to `b` interrupted by the world?
+///
+/// Checks the BOX_/RAMP_ proxies and, where the level has one, its collision
+/// mesh. The mesh is not optional in practice any more: once the castle's
+/// walls and gatehouse stopped being box proxies, a proxy-only test could see
+/// straight through them, and enemies would spot the player through a wall.
+inline bool segmentBlocked(Vector3 a, Vector3 b,
+                           const std::vector<PhysicsObstacle>& obstacles,
+                           const CollisionMesh* mesh) {
+    const float span = Vector3Distance(a, b);
+    if (span < 1e-4f) return false;
+    const Vector3 direction = Vector3Scale(Vector3Subtract(b, a), 1.0f / span);
+
+    if (mesh != nullptr && !mesh->isEmpty()) {
+        MeshHit hit;
+        if (mesh->raycast(a, direction, span, hit)) return true;
+    }
+
+    for (const auto& obs : obstacles) {
+        Vector3 local_a = Vector3Transform(a, obs.getWorldToLocal());
+        Vector3 local_b = Vector3Transform(b, obs.getWorldToLocal());
+        Ray ray;
+        ray.position = local_a;
+        ray.direction = Vector3Normalize(Vector3Subtract(local_b, local_a));
+        RayCollision col = GetRayCollisionBox(ray, obs.getLocalBox());
+        if (col.hit && col.distance < Vector3Distance(local_a, local_b)) {
+            return true;
+        }
+    }
+    return false;
+}
 
 class Sensor {
 public:
     virtual ~Sensor() = default;
     
     // Returns 0.0f if not detected. Returns > 0.0f (usually 0.0f to 1.0f) representing the strength of detection.
-    virtual float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const std::vector<SmokeCloud>& smoke_clouds) const = 0;
+    virtual float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const CollisionMesh* mesh, const std::vector<SmokeCloud>& smoke_clouds) const = 0;
     
     // Renders the sensor boundaries in 3D for debugging
     virtual void drawDebug(const Character* observer) const {}
@@ -24,7 +57,7 @@ public:
     
     RadiusSensor(float detection_radius) : radius(detection_radius) {}
 
-    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const std::vector<SmokeCloud>& smoke_clouds) const override {
+    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const CollisionMesh* mesh, const std::vector<SmokeCloud>& smoke_clouds) const override {
         float dist_sq = Vector3DistanceSqr(observer->getPosition(), target->getPosition());
         if (dist_sq <= (radius * radius)) {
             return 1.0f; // Could scale by distance later
@@ -41,7 +74,7 @@ public:
     VisionSensor(float detection_radius, float angle_degrees = 90.0f) 
         : radius(detection_radius), cone_angle_degrees(angle_degrees) {}
 
-    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const std::vector<SmokeCloud>& smoke_clouds) const override {
+    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const CollisionMesh* mesh, const std::vector<SmokeCloud>& smoke_clouds) const override {
         Vector3 obs_pos = observer->getPosition();
         Vector3 tgt_pos = target->getPosition();
         
@@ -75,40 +108,14 @@ public:
 
         // --- Line of Sight Raycast ---
         // Cast from observer head to target head AND target feet
-        Vector3 tgt_foot = tgt_pos; 
-        bool head_blocked = false;
-        bool feet_blocked = false;
-        
-        for (const auto& obs : obstacles) {
-            Vector3 local_obs = Vector3Transform(obs_head, obs.getWorldToLocal());
-            
-            // Check Head Ray
-            if (!head_blocked) {
-                Vector3 local_tgt_head = Vector3Transform(tgt_head, obs.getWorldToLocal());
-                Ray ray_head;
-                ray_head.position = local_obs;
-                ray_head.direction = Vector3Normalize(Vector3Subtract(local_tgt_head, local_obs));
-                RayCollision col_head = GetRayCollisionBox(ray_head, obs.getLocalBox());
-                if (col_head.hit && col_head.distance < Vector3Distance(local_obs, local_tgt_head)) {
-                    head_blocked = true;
-                }
-            }
-
-            // Check Feet Ray
-            if (!feet_blocked) {
-                Vector3 local_tgt_foot = Vector3Transform(tgt_foot, obs.getWorldToLocal());
-                Ray ray_foot;
-                ray_foot.position = local_obs;
-                ray_foot.direction = Vector3Normalize(Vector3Subtract(local_tgt_foot, local_obs));
-                RayCollision col_foot = GetRayCollisionBox(ray_foot, obs.getLocalBox());
-                if (col_foot.hit && col_foot.distance < Vector3Distance(local_obs, local_tgt_foot)) {
-                    feet_blocked = true;
-                }
-            }
-            
-            if (head_blocked && feet_blocked) {
-                return 0.0f;
-            }
+        Vector3 tgt_foot = tgt_pos;
+        // Head and feet are tested separately so a low wall that hides the body
+        // but not the head still leaks sight, which is what makes crouching
+        // behind cover read correctly.
+        const bool head_blocked = segmentBlocked(obs_head, tgt_head, obstacles, mesh);
+        const bool feet_blocked = segmentBlocked(obs_head, tgt_foot, obstacles, mesh);
+        if (head_blocked && feet_blocked) {
+            return 0.0f;
         }
         
         // --- Smoke Cloud Intersection ---
@@ -186,7 +193,7 @@ public:
     
     SoundSensor(float detection_radius) : radius(detection_radius) {}
 
-    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const std::vector<SmokeCloud>& smoke_clouds) const override {
+    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const CollisionMesh* mesh, const std::vector<SmokeCloud>& smoke_clouds) const override {
         float dist_sq = Vector3DistanceSqr(observer->getPosition(), target->getPosition());
         if (dist_sq > (radius * radius)) {
             return 0.0f;
@@ -238,28 +245,15 @@ public:
     
     ProximitySensor(float detection_radius) : radius(detection_radius) {}
 
-    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const std::vector<SmokeCloud>& smoke_clouds) const override {
+    float getDetectionStrength(const Character* observer, const Character* target, const std::vector<PhysicsObstacle>& obstacles, const CollisionMesh* mesh, const std::vector<SmokeCloud>& smoke_clouds) const override {
         float dist_sq = Vector3DistanceSqr(observer->getPosition(), target->getPosition());
         if (dist_sq <= (radius * radius)) {
             // Check if blocked by walls (so you can't be instantly detected through a thin wall if you bump it)
             Vector3 obs_head = { observer->getPosition().x, observer->getPosition().y + observer->getColliderHeight() * 0.8f, observer->getPosition().z };
             Vector3 tgt_head = { target->getPosition().x, target->getPosition().y + target->getColliderHeight() * 0.8f, target->getPosition().z };
             
-            for (const auto& obs : obstacles) {
-                Vector3 local_obs = Vector3Transform(obs_head, obs.getWorldToLocal());
-                Vector3 local_tgt = Vector3Transform(tgt_head, obs.getWorldToLocal());
-                
-                Ray local_ray;
-                local_ray.position = local_obs;
-                local_ray.direction = Vector3Normalize(Vector3Subtract(local_tgt, local_obs));
-                
-                RayCollision collision = GetRayCollisionBox(local_ray, obs.getLocalBox());
-                if (collision.hit) {
-                    float dist_to_tgt_local = Vector3Distance(local_obs, local_tgt);
-                    if (collision.distance < dist_to_tgt_local) {
-                        return 0.0f; // Blocked by wall
-                    }
-                }
+            if (segmentBlocked(obs_head, tgt_head, obstacles, mesh)) {
+                return 0.0f; // Blocked by wall
             }
             return 9999.0f; // Instant detect
         }

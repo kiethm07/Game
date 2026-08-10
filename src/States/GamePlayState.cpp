@@ -2,6 +2,8 @@
 #include "raylib.h"
 #include "raymath.h"
 #include <Core/Game.h>
+#include <Physics/CollisionMeshLoader.h>
+#include <Stealth/Sensor.h>
 #include <cassert>
 #include <cmath>
 
@@ -30,6 +32,20 @@ GameplayState::GameplayState(const InputManager &input_manager)
              "empty world.",
              kLevelPath);
   }
+
+  // Loaded here rather than in LevelLoader so a Level stays parseable without a
+  // window, and owned here rather than by the renderer because this is physics
+  // data that nothing draws. A level without one collides against its proxies
+  // alone, which is the normal case for greybox and forest.
+  if (!level.collisionMeshPath.empty()) {
+    if (!CollisionMeshLoader::load(level.collisionMeshPath, collision_mesh)) {
+      TraceLog(LOG_ERROR,
+               "GameplayState: level '%s' declares a collision mesh that could "
+               "not be loaded. Its terrain and buildings will not be solid.",
+               level.name.c_str());
+    }
+  }
+
   player = std::make_unique<Player>(input_manager);
   player->setPosition(level.playerSpawn.position);
   player->setRotation({0.0f, level.playerSpawn.yaw, 0.0f});
@@ -46,6 +62,12 @@ GameplayState::GameplayState(const InputManager &input_manager)
   // used to be a 200x200 plate fabricated on the spot for Recast alone, which
   // meant the floor the AI walked on, the floor the renderer drew, and the
   // floor physics clamped to were three separate things that could disagree.
+  // The collision mesh first, where there is one: it carries the ground, and
+  // since the castle's terrain stopped being boxes it is the only floor Recast
+  // would ever see. A level with no mesh still bakes from its proxies alone.
+  if (!collision_mesh.isEmpty()) {
+    nav_builder.addCollisionMesh(collision_mesh);
+  }
   for (const auto &obs : level.obstacles) {
     nav_builder.addObstacle(obs);
   }
@@ -60,8 +82,10 @@ GameplayState::GameplayState(const InputManager &input_manager)
              "are wider than the 0.6m agent radius.",
              level.name.c_str());
   } else {
-    TraceLog(LOG_INFO, "GameplayState: navmesh baked from %d obstacles",
-             (int)level.obstacles.size());
+    TraceLog(LOG_INFO,
+             "GameplayState: navmesh baked from %d obstacles and %d collision "
+             "mesh triangles",
+             (int)level.obstacles.size(), collision_mesh.getTriangleCount());
   }
   nav_query.init(nav_builder.getNavMesh());
 
@@ -89,7 +113,9 @@ StateAction GameplayState::update(float dt) {
   }
 
   // 1.5. Evaluate Stealth before AI update so AI can react in the same frame
-  stealth_manager.update(active_characters, player.get(), level.obstacles, smoke_clouds, dt);
+  stealth_manager.update(active_characters, player.get(), level.obstacles,
+                         collision_mesh.isEmpty() ? nullptr : &collision_mesh,
+                         smoke_clouds, dt);
 
   player->update(ctx);
   for (auto &enemy : enemies) {
@@ -99,7 +125,8 @@ StateAction GameplayState::update(float dt) {
   // 2. Resolve Physics Pipeline (4-Step: Gravity -> Integration -> Ejection
   // Loop -> Ground Snap)
   std::vector<Vector3> new_positions =
-      physics_manager.updatePhysics(active_characters, level.obstacles, dt);
+      physics_manager.updatePhysics(active_characters, level.obstacles,
+                                    collision_mesh.isEmpty() ? nullptr : &collision_mesh, dt);
   for (size_t i = 0; i < active_characters.size(); ++i) {
     active_characters[i]->setPosition(new_positions[i]);
   }
@@ -107,32 +134,13 @@ StateAction GameplayState::update(float dt) {
   // 3. Resolve Combat
   combat_manager.update(active_characters, &particle_manager);
 
+  // Shares segmentBlocked with the stealth sensors rather than keeping its own
+  // copy of the test. The old copy walked the obstacle list only, so once the
+  // castle's walls became mesh triangles it would have held lock-on through
+  // solid stone.
   auto checkLineOfSight = [&](Vector3 start, Vector3 end) {
-    for (const auto &obs : level.obstacles) {
-      if (obs.getShape() == ObstacleShape::RAMP_SHAPE) {
-        int steps = 10;
-        for (int i = 1; i <= steps; ++i) {
-          float frac = (float)i / steps;
-          Vector3 p = Vector3Lerp(start, end, frac);
-          if (obs.containsXZ(p, 0.0f)) {
-            float h = obs.getHeightAt(p);
-            if (p.y < h) return false;
-          }
-        }
-        continue;
-      }
-      Vector3 local_start = Vector3Transform(start, obs.getWorldToLocal());
-      Vector3 local_end = Vector3Transform(end, obs.getWorldToLocal());
-      Ray local_ray;
-      local_ray.position = local_start;
-      local_ray.direction = Vector3Normalize(Vector3Subtract(local_end, local_start));
-      RayCollision collision = GetRayCollisionBox(local_ray, obs.getLocalBox());
-      if (collision.hit) {
-        float dist_to_tgt_local = Vector3Distance(local_start, local_end);
-        if (collision.distance < dist_to_tgt_local) return false;
-      }
-    }
-    return true;
+    return !segmentBlocked(start, end, level.obstacles,
+                           collision_mesh.isEmpty() ? nullptr : &collision_mesh);
   };
 
   // Helper to get chest height position for raycasting
@@ -219,6 +227,7 @@ StateAction GameplayState::update(float dt) {
     shot.focus = locked_target->getPosition();
   }
   shot.obstacles = &level.obstacles;
+  shot.collision_mesh = collision_mesh.isEmpty() ? nullptr : &collision_mesh;
   camera_controller->update(shot);
 
   // Debug affordance, not a game action, so it stays off InputManager's

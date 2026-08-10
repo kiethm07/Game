@@ -15,7 +15,7 @@ the game draws the level at identity).
 Usage:
     python3 tools/verify_level.py assets/levels/<name>
 
-Two checks, in increasing strength:
+Three checks, in increasing strength:
 
   1. Bounds. The GLB's overall AABB against the `bounds` field in the JSON.
      Applies to every level. A mirrored layout or a swapped axis shows up here
@@ -32,8 +32,21 @@ Two checks, in increasing strength:
      in the same orientation, and the diagonal directions are exactly the ones a
      sign flip moves.
 
-A kitbashed map will usually only satisfy check 1, since its art is not built
-one-mesh-per-proxy. That is expected; check 2 reports what it could pair up.
+  3. Collision mesh. Levels at format 2 also ship collision.bin, a triangle
+     soup. Its winding is checked globally (up-facing triangles must outnumber
+     down-facing ones) and every spawn marker is required to have mesh
+     underneath it, at roughly its own height, facing up.
+
+     The winding check exists because `to_game` is a rotation with determinant
+     +1 and therefore preserves handedness -- which is unobvious enough that
+     "compensating" by reversing triangle order is an easy mistake, and it
+     inverts every normal in the level. PhysicsManager tells a floor from a
+     ceiling by the sign of normal.y, so an inverted soup is a world with no
+     floors, and checks 1 and 2 cannot see it.
+
+A kitbashed map will usually only satisfy checks 1 and 3, since its art is not
+built one-mesh-per-proxy. That is expected; check 2 reports what it could pair
+up.
 """
 
 import json
@@ -285,6 +298,152 @@ def compare_support(label, expected, actual, failures):
               "wrong yaw sign)")
 
 
+# --- Collision mesh ---------------------------------------------------------
+
+# How far the mesh surface may sit from a spawn marker's own Y. The markers are
+# placed by raycasting the *source* terrain in Blender, while the mesh is that
+# terrain decimated, so a small disagreement is the decimation and not a bug.
+SPAWN_TOLERANCE = 0.35
+
+
+def load_collision_bin(path):
+    """Parse the flat soup written by export_level.py's export_collision_mesh."""
+    with open(path, "rb") as f:
+        data = f.read()
+    if len(data) < 16 or data[:4] != b"SKCM":
+        raise SystemExit("%s is not a collision mesh (bad magic)" % path)
+    version, vertex_count, triangle_count = struct.unpack("<III", data[4:16])
+    if version != 1:
+        raise SystemExit("%s is version %d, this script reads 1"
+                         % (path, version))
+    offset = 16
+    floats = vertex_count * 3
+    verts = struct.unpack("<%df" % floats, data[offset:offset + floats * 4])
+    offset += floats * 4
+    ints = triangle_count * 3
+    idx = struct.unpack("<%dI" % ints, data[offset:offset + ints * 4])
+    return [tuple(verts[i * 3:i * 3 + 3]) for i in range(vertex_count)], idx
+
+
+def triangle_normal(a, b, c):
+    e1 = [b[i] - a[i] for i in range(3)]
+    e2 = [c[i] - a[i] for i in range(3)]
+    n = [e1[1] * e2[2] - e1[2] * e2[1],
+         e1[2] * e2[0] - e1[0] * e2[2],
+         e1[0] * e2[1] - e1[1] * e2[0]]
+    length = math.sqrt(sum(v * v for v in n))
+    return None if length < 1e-9 else [v / length for v in n]
+
+
+def ground_under(verts, idx, x, z, from_y=1000.0):
+    """Nearest surface below (x, from_y, z): (y, normal). Brute force."""
+    best = None
+    for t in range(len(idx) // 3):
+        a, b, c = (verts[idx[t * 3]], verts[idx[t * 3 + 1]],
+                   verts[idx[t * 3 + 2]])
+        # Moller-Trumbore specialised to a straight-down ray.
+        e1 = [b[i] - a[i] for i in range(3)]
+        e2 = [c[i] - a[i] for i in range(3)]
+        h = [-e2[2], 0.0, e2[0]]
+        det = sum(e1[i] * h[i] for i in range(3))
+        if abs(det) < 1e-12:
+            continue
+        inv = 1.0 / det
+        s = [x - a[0], from_y - a[1], z - a[2]]
+        u = inv * sum(s[i] * h[i] for i in range(3))
+        if u < -1e-6 or u > 1.0 + 1e-6:
+            continue
+        q = [s[1] * e1[2] - s[2] * e1[1],
+             s[2] * e1[0] - s[0] * e1[2],
+             s[0] * e1[1] - s[1] * e1[0]]
+        v = inv * -q[1]
+        if v < -1e-6 or u + v > 1.0 + 1e-6:
+            continue
+        dist = inv * sum(e2[i] * q[i] for i in range(3))
+        if dist > 1e-6 and (best is None or dist < best[0]):
+            best = (dist, triangle_normal(a, b, c))
+    if best is None:
+        return None
+    return from_y - best[0], best[1]
+
+
+def check_collision_mesh(level, level_dir, failures):
+    """Verify the mesh is where the level says it is, and the right way up.
+
+    The winding check is the important one and it is cheap. `to_game` is a
+    rotation with determinant +1, so it preserves handedness -- but that is
+    unobvious enough that "compensating" for it by swapping two corners is an
+    easy mistake, and it inverts every normal in the level. PhysicsManager reads
+    the sign of normal.y to tell a floor from a ceiling
+    (classifySurfaceNormal), so an inverted soup is a world with no floors at
+    all, and nothing else in this script would notice.
+    """
+    name = level.get("collisionMesh")
+    if not name:
+        print("  (level ships no collision mesh — proxies only)")
+        return
+
+    path = os.path.join(level_dir, name)
+    if not os.path.exists(path):
+        failures.append("collision mesh")
+        print("  FAIL  %s is declared but missing" % name)
+        return
+
+    verts, idx = load_collision_bin(path)
+    triangles = len(idx) // 3
+    print("  %s: %d vertices, %d triangles" % (name, len(verts), triangles))
+
+    up = down = degenerate = 0
+    for t in range(triangles):
+        n = triangle_normal(verts[idx[t * 3]], verts[idx[t * 3 + 1]],
+                            verts[idx[t * 3 + 2]])
+        if n is None:
+            degenerate += 1
+        elif n[1] > 0.5:
+            up += 1
+        elif n[1] < -0.5:
+            down += 1
+
+    if up > down:
+        print("  OK    winding: %d up-facing vs %d down-facing" % (up, down))
+    else:
+        failures.append("winding")
+        print("  FAIL  winding: %d up-facing vs %d down-facing -- the soup "
+              "looks inside out.\n"
+              "          to_game has determinant +1 and preserves handedness; "
+              "reversing\n"
+              "          triangle order to 'compensate' turns every floor into "
+              "a ceiling." % (up, down))
+    if degenerate:
+        print("  note  %d degenerate triangles (%.1f%%); the engine drops these"
+              % (degenerate, 100.0 * degenerate / triangles))
+
+    spawns = [("PLAYER_SPAWN", level["playerSpawn"]["position"])]
+    for i, spawn in enumerate(level.get("enemySpawns", [])):
+        spawns.append(("%s_%02d" % (spawn["type"], i), spawn["position"]))
+
+    for label, position in spawns:
+        found = ground_under(verts, idx, position[0], position[2])
+        if found is None:
+            failures.append(label)
+            print("  FAIL  %-16s no mesh surface underneath it" % label)
+            continue
+        y, normal = found
+        delta = abs(y - position[1])
+        if delta > SPAWN_TOLERANCE:
+            failures.append(label)
+            print("  FAIL  %-16s stands at y=%.2f but the mesh is at %.2f"
+                  % (label, position[1], y))
+        elif normal is None or normal[1] < 0.4:
+            failures.append(label)
+            print("  FAIL  %-16s stands on a surface facing %+.2f, which "
+                  "PhysicsManager reads as a wall or ceiling"
+                  % (label, normal[1] if normal else 0.0))
+        else:
+            print("  OK    %-16s mesh %.2f m away, normal.y %+.2f"
+                  % (label, delta, normal[1]))
+
+
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("usage: python3 tools/verify_level.py <level-dir>")
@@ -331,6 +490,9 @@ def main():
     if paired == 0:
         print("  (no VIS_* meshes named after a proxy — nothing to pair up.\n"
               "   Normal for a kitbashed map; check 1 above still applies.)")
+
+    print("\n3. Collision mesh")
+    check_collision_mesh(level, level_dir, failures)
 
     print()
     if failures:

@@ -54,9 +54,7 @@ from mathutils import Vector
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from level_terrain import (          # noqa: E402
-    add_box, add_marker, game_yaw, get_collection, measure_error,
-    merge_rectangles, quantize_and_relax, report_steps, sample_ground_grid,
-    terrain_height,
+    add_box, add_marker, game_yaw, get_collection, terrain_height,
 )
 
 # --- Collections ------------------------------------------------------------
@@ -64,6 +62,7 @@ from level_terrain import (          # noqa: E402
 VISUAL = "VISUAL"
 COLLISION = "COLLISION"
 MARKERS = "MARKERS"
+COLLISION_MESH = "COLLISION_MESH"
 
 # Authored art. Read-only to this script, and deliberately not exported: they
 # are the source VISUAL is regenerated from.
@@ -198,50 +197,26 @@ CHUNK_SIZE = 24.0
 # radial sampling starts missing it.
 PLAY_RADIUS = 39.0
 
-GROUND_CELL = 3.0
-GROUND_SAMPLES = 3
-
-# Deep enough to span any cliff on the map (the terrain runs -8.7 to +4.6), so
-# that a box at the top of the ravine wall still overlaps the box on the floor
-# below it. A thin slab would leave a gap the player could walk into sideways
-# underneath the plateau.
-GROUND_THICKNESS = 10.0
-
 MAX_STEP = 0.3              # PhysicsManager.cpp:176
 
-# Coarser than the forest level's 0.05 m, and measured rather than guessed: the
-# quantum is what lets neighbouring cells compare equal and merge into big
-# rectangles, and this terrain is varied enough that a fine quantum merges
-# almost nothing. At 0.05 m the grid gives 518 boxes; at 0.25 m it gives 340
-# for 0.07 m more p95 error. Proxy count is not free -- PhysicsManager has no
-# broadphase and scans the whole obstacle vector several times per character
-# per frame (PhysicsManager.cpp:78, :120, :241, :360).
-HEIGHT_QUANTUM = 0.25
-STEP_QUANTA = 1             # 1 * 0.25 = 0.25 m, under MAX_STEP
-RELAX_ITERATIONS = 600
+# The ground, the buildings, the bridge and the placed rocks are all carried by
+# COLLISION_MESH now, and with them went every constant that existed to make a
+# box staircase behave: the cell size and sampling rate, the height quantum and
+# step relaxation, the cliff threshold that decided which slopes to give up on,
+# the gate doorway carving, and the bridge threshold steps. None of them
+# described the world -- they described how badly boxes could approximate it.
+#
+# What is left is what genuinely still wants to be a primitive.
 
-# Above this a neighbour difference is the ravine, the moat wall or the outer
-# slope, not a sampling artefact, and is left for the player to be stopped by.
-# See the note on quantize_and_relax in tools/level_terrain.py -- relaxing
-# these instead is what took the ground error from 0.35 m to 0.93 m.
-CLIFF_QUANTA = 2            # 2 * 0.25 = 0.5 m
-
-# Boundary ring at the outer edge of the ground proxies.
+# Boundary ring at the outer edge of the walkable island. Stays a proxy because
+# it is an invisible wall: there is no geometry for it to be part of.
 BOUNDARY_RADIUS = 37.0
 BOUNDARY_SEGMENTS = 32
 BOUNDARY_HEIGHT = 6.0
 BOUNDARY_THICKNESS = 2.0
 
-# The doorway carved through the gate so the bridge actually leads somewhere,
-# in original Blender world coordinates. Centred on the bridge's own axis and
-# and a little wider than its 1.96 m deck.
+# The bridge's centreline, still used to place spawns and walkability landmarks.
 GATE_AXIS_Y = -16.42
-GATE_WIDTH = 2.6
-GATE_HEADROOM = 2.6         # Player::BODY_HEIGHT is 1.8
-
-# Rocks below this footprint are scenery to step over rather than obstacles to
-# walk around, and each one costs a linear scan in PhysicsManager.
-ROCK_MIN_FOOTPRINT = 2.0
 
 # Trees are collided as their trunk, measured off the bottom of each instance.
 # The canopy is deliberately excluded: wrapping a conifer's skirt would turn a
@@ -783,6 +758,38 @@ def build_scatter(report, island_centre):
 BACKDROP_NAME = "BACKDROP"
 
 
+def build_collision_mesh(entries, collection, offset):
+    """Merge `entries` into the single mesh the engine collides against.
+
+    What goes in is a judgement about what should be solid, and it is not the
+    same set VISUAL draws:
+
+      * ground and the paths on it -- the whole point of the exercise. The
+        terrain is a curved surface and now collides as one, instead of as a
+        341-box staircase quantised to 0.25 m that wrote off 386 neighbour
+        pairs as unclimbable cliffs.
+      * buildings, the bridge and the placed rocks -- the walls, the arches and
+        the round tower bases, at the resolution they are drawn at.
+
+    and what stays out:
+
+      * water and the mountain ring, which are backdrop the player is kept away
+        from by the boundary proxies; meshing them would add 7k triangles of
+        surface nobody can stand on.
+      * the scattered trees. Their trunks are cheap BOX_ proxies, and they
+        should be: a tree is ~104 triangles of which nearly all are canopy, and
+        colliding against a conifer's skirt turns a walkable forest into a maze.
+
+    Merged into one object rather than left as many, because it is loaded as a
+    single triangle soup and indexed by one BVH -- object boundaries carry no
+    meaning past this point.
+    """
+    merged = merge_entries(COLLISION_MESH, entries)
+    obj = make_object(COLLISION_MESH, merged, collection)
+    obj.location = Vector(offset)
+    return obj
+
+
 def assemble(entries, backdrop, visual, offset):
     """Merge entries into per-chunk objects inside VISUAL.
 
@@ -847,346 +854,6 @@ def set_sources_hidden(hidden):
             collection.hide_viewport = hidden
     # Nothing below reads the depsgraph until this has taken effect.
     bpy.context.view_layer.update()
-
-
-# ---------------------------------------------------------------------------
-# Collision
-# ---------------------------------------------------------------------------
-
-def yaw_box_of(obj, depsgraph):
-    """(centre, size, yaw) for a yaw-only box wrapping the evaluated object.
-
-    Any pitch or roll on the object is deliberately dropped rather than
-    reproduced. export_box rejects a proxy rotated about X or Y at all
-    (export_level.py:131) because PhysicsObstacle has no such axis, and eleven
-    of the compound's wall pieces are tilted between 1.5 and 4.3 degrees to sit
-    on the slope. Over a 2.3 m wall that tilt moves the top corner by at most
-    0.17 m, so a level box is a good stand-in -- whereas taking the object's
-    world AABB instead would throw the yaw away too and turn a 1.6 x 3.1 m wall
-    into a 3.4 x 2.3 m blob pointing the wrong way.
-    """
-    evaluated = obj.evaluated_get(depsgraph)
-    corners = [Vector(c) for c in evaluated.bound_box]
-    scale = obj.matrix_world.to_scale()
-    size = Vector((
-        (max(c.x for c in corners) - min(c.x for c in corners)) * abs(scale.x),
-        (max(c.y for c in corners) - min(c.y for c in corners)) * abs(scale.y),
-        (max(c.z for c in corners) - min(c.z for c in corners)) * abs(scale.z),
-    ))
-    local_centre = Vector((
-        (max(c.x for c in corners) + min(c.x for c in corners)) * 0.5,
-        (max(c.y for c in corners) + min(c.y for c in corners)) * 0.5,
-        (max(c.z for c in corners) + min(c.z for c in corners)) * 0.5,
-    ))
-    centre = obj.matrix_world @ local_centre
-    yaw = math.degrees(obj.matrix_world.to_euler("XYZ").z)
-    return centre, size, yaw
-
-
-def carve_gateway(centre, size, yaw, axis_y):
-    """Split a box around a doorway. Returns a list of (centre, size).
-
-    Without this the compound is sealed: the bridge runs up to a gatehouse that
-    is one solid proxy, and the level's whole approach ends at a wall you can
-    see through. The cut is only attempted on unyawed boxes that actually
-    straddle the doorway, and it leaves the lintel above it in place so the
-    gate still reads as an arch rather than a gap.
-
-    `axis_y` is per-object rather than one constant for the map. There are two
-    gates -- the outer one the bridge arrives at, and an inner one into the
-    keep's enclosure 4 m further along Y -- and carving only the outer one
-    leaves the keep in its own sealed region with the player locked out of it.
-    """
-    if abs(yaw) > 1e-3:
-        return [(centre, size)]
-
-    lo_y, hi_y = centre.y - size.y * 0.5, centre.y + size.y * 0.5
-    door_lo, door_hi = axis_y - GATE_WIDTH * 0.5, axis_y + GATE_WIDTH * 0.5
-    if lo_y > door_lo or hi_y < door_hi:
-        return [(centre, size)]
-
-    lo_z, hi_z = centre.z - size.z * 0.5, centre.z + size.z * 0.5
-    door_top = lo_z + GATE_HEADROOM
-    parts = []
-
-    for a, b in ((lo_y, door_lo), (door_hi, hi_y)):
-        if b - a > MIN_PART:
-            parts.append((Vector((centre.x, (a + b) * 0.5, centre.z)),
-                          Vector((size.x, b - a, size.z))))
-    if hi_z - door_top > MIN_PART:
-        parts.append((Vector((centre.x, axis_y, (door_top + hi_z) * 0.5)),
-                      Vector((size.x, GATE_WIDTH, hi_z - door_top))))
-    return parts or [(centre, size)]
-
-
-MIN_PART = 0.15
-
-
-def walkable_regions(heights, n):
-    """Label cells by which region a character can actually walk around.
-
-    Two neighbouring cells are connected when their proxy tops are within
-    MAX_STEP, which is exactly the rule PhysicsManager applies when it decides
-    whether a surface is a stair to step onto or a wall to be stopped by
-    (PhysicsManager.cpp:176). Anything else in this file could be right and the
-    level still be unplayable if the answer here is that the gate is in a
-    different region from the spawn.
-    """
-    label = [[None] * n for _ in range(n)]
-    sizes = []
-    for j0 in range(n):
-        for i0 in range(n):
-            if heights[j0][i0] is None or label[j0][i0] is not None:
-                continue
-            region = len(sizes)
-            stack = [(j0, i0)]
-            label[j0][i0] = region
-            count = 0
-            while stack:
-                j, i = stack.pop()
-                count += 1
-                for dj, di in ((0, 1), (1, 0), (0, -1), (-1, 0)):
-                    nj, ni = j + dj, i + di
-                    if not (0 <= nj < n and 0 <= ni < n):
-                        continue
-                    if heights[nj][ni] is None or label[nj][ni] is not None:
-                        continue
-                    if abs(heights[nj][ni] - heights[j][i]) > MAX_STEP + 1e-6:
-                        continue
-                    label[nj][ni] = region
-                    stack.append((nj, ni))
-            sizes.append(count)
-    return label, sizes
-
-
-def cell_of(point, origin, n, cell):
-    i = int((point[0] - origin[0]) / cell)
-    j = int((point[1] - origin[1]) / cell)
-    if 0 <= i < n and 0 <= j < n:
-        return j, i
-    return None
-
-
-def split_error(terrain, heights, n, origin, cell):
-    """Ground error, separated into walkable ground and cliff faces.
-
-    The overall figure is dominated by cells sitting on the ravine wall, where
-    a single height cannot represent a 3 m cell spanning several metres of drop
-    and no choice of parameters would make it. What matters is the error
-    underfoot on ground the player can stand on, so that is reported apart from
-    the rest instead of being averaged together with it.
-    """
-    flat, steep = [], []
-    for j in range(n):
-        for i in range(n):
-            if heights[j][i] is None:
-                continue
-            gaps = [abs(heights[j + dj][i + di] - heights[j][i])
-                    for dj, di in ((0, 1), (1, 0), (0, -1), (-1, 0))
-                    if 0 <= j + dj < n and 0 <= i + di < n
-                    and heights[j + dj][i + di] is not None]
-            bucket = steep if (gaps and max(gaps) > MAX_STEP) else flat
-            for fy in (0.25, 0.75):
-                for fx in (0.25, 0.75):
-                    z = terrain_height(terrain, origin[0] + (i + fx) * cell,
-                                       origin[1] + (j + fy) * cell)
-                    if z is not None:
-                        bucket.append(abs(heights[j][i] - z))
-
-    def stats(values):
-        if not values:
-            return None
-        values = sorted(values)
-        return {"n": len(values), "mean": sum(values) / len(values),
-                "p95": values[int(0.95 * (len(values) - 1))],
-                "max": values[-1]}
-
-    return stats(flat), stats(steep)
-
-
-def build_ground_proxies(collision, terrain, centre):
-    heights, n, origin = sample_ground_grid(
-        terrain, PLAY_RADIUS, GROUND_CELL, GROUND_SAMPLES, centre)
-    converged = quantize_and_relax(heights, n, HEIGHT_QUANTUM, STEP_QUANTA,
-                                   RELAX_ITERATIONS, CLIFF_QUANTA)
-    error = measure_error(terrain, heights, n, origin, GROUND_CELL)
-    rects = merge_rectangles(heights, n)
-
-    for index, (i, j, w, h, z) in enumerate(rects):
-        x0 = origin[0] + i * GROUND_CELL
-        y0 = origin[1] + j * GROUND_CELL
-        size_x, size_y = w * GROUND_CELL, h * GROUND_CELL
-        add_box(collision, "BOX_Ground_%03d" % index,
-                centre=(x0 + size_x * 0.5, y0 + size_y * 0.5,
-                        z - GROUND_THICKNESS * 0.5),
-                size=(size_x, size_y, GROUND_THICKNESS),
-                yaw_deg=0.0, colour=COLOR_GROUND)
-
-    worst, over, cliffs = report_steps(heights, n, MAX_STEP,
-                                       CLIFF_QUANTA * HEIGHT_QUANTUM)
-    cells = sum(1 for row in heights for v in row if v is not None)
-    flat_err, steep_err = split_error(terrain, heights, n, origin, GROUND_CELL)
-
-    label, sizes = walkable_regions(heights, n)
-    landmarks = {
-        "player spawn": PLAYER_SPAWN_XY,
-        "bridge east": (-129.5, GATE_AXIS_Y),
-        "gate": (-141.2, GATE_AXIS_Y),
-        "compound": (-147.0, -16.0),
-        "keep": (-157.5, -11.6),
-    }
-    where = {}
-    for name, point in landmarks.items():
-        rc = cell_of(point, origin, n, GROUND_CELL)
-        region = None if rc is None else label[rc[0]][rc[1]]
-        where[name] = (region, sizes[region] if region is not None else 0)
-
-    return {"cells": cells, "boxes": len(rects), "converged": converged,
-            "worst_step": worst, "steps_over_max": over, "cliffs": cliffs,
-            "error": error, "flat_error": flat_err, "steep_error": steep_err,
-            "regions": len(sizes), "landmarks": where}
-
-
-def build_building_proxies(collision, depsgraph):
-    made = carved = 0
-    for obj in sorted(source_collection(BUILDINGS).objects,
-                      key=lambda o: o.name):
-        if obj.type != "MESH":
-            continue
-        centre, size, yaw = yaw_box_of(obj, depsgraph)
-        bridge = obj.name.startswith("bridge")
-        # Every piece named "entrance" is a way in, and each is carved on its
-        # own centreline -- see carve_gateway.
-        axis_y = centre.y if "entrance" in obj.name else None
-        parts = ([(centre, size)] if axis_y is None
-                 else carve_gateway(centre, size, yaw, axis_y))
-        if len(parts) > 1:
-            carved += 1
-        safe = obj.name.replace(".", "_").replace(" ", "_")
-        for k, (part_centre, part_size) in enumerate(parts):
-            add_box(collision, "BOX_Bld_%s_%d" % (safe, k),
-                    centre=tuple(part_centre), size=tuple(part_size),
-                    yaw_deg=yaw,
-                    colour=COLOR_BRIDGE if bridge else COLOR_BUILDING)
-            made += 1
-    return {"boxes": made, "carved": carved}
-
-
-def ground_proxy_top(collision, x, y):
-    """Top of the highest ground proxy covering (x, y), or None."""
-    best = None
-    for obj in collision.all_objects:
-        if not obj.name.startswith("BOX_Ground_"):
-            continue
-        dx, dy = x - obj.location.x, y - obj.location.y
-        yaw = -obj.rotation_euler.z
-        lx = dx * math.cos(yaw) - dy * math.sin(yaw)
-        ly = dx * math.sin(yaw) + dy * math.cos(yaw)
-        if abs(lx) <= obj.scale.x * 0.5 and abs(ly) <= obj.scale.y * 0.5:
-            top = obj.location.z + obj.scale.z * 0.5
-            if best is None or top > best:
-                best = top
-    return best
-
-
-def build_bridge_thresholds(collision, depsgraph):
-    """Steps closing the gap between the ground proxies and the bridge deck.
-
-    The deck and the ground meet at a bevel the eye reads straight over, but
-    the collision surfaces they turn into do not meet at all: the ground grid
-    quantises to 0.25 m and relaxes, and at the east end it settles 0.47 m
-    above the deck. That is past MAX_STEP, so the bridge becomes a kerb the
-    player cannot climb -- and since the bridge is the only way over the
-    ravine, it alone makes the castle unreachable.
-
-    Two details here are the whole fix, and both were wrong first time round:
-
-    * The gap is measured against the ground *proxy*, not the terrain mesh.
-      The player stands on the proxy, and here the two differ by more than the
-      step budget being spent.
-    * The steps go on the last stretch of the deck, not on the ground beyond
-      it. The floor at any point is the highest box covering it, so a step
-      tucked under the too-high ground proxy is simply never stood on; it has
-      to sit where the deck is currently winning in order to raise it.
-    """
-    bridges = [o for o in source_collection(BUILDINGS).objects
-               if o.name.startswith("bridge") and o.type == "MESH"]
-    if not bridges:
-        return {"boxes": 0, "gaps": []}
-
-    corners = []
-    for obj in bridges:
-        evaluated = obj.evaluated_get(depsgraph)
-        corners += [obj.matrix_world @ Vector(c) for c in evaluated.bound_box]
-    lo = [min(c[k] for c in corners) for k in range(3)]
-    hi = [max(c[k] for c in corners) for k in range(3)]
-    deck, width = hi[2], hi[1] - lo[1]
-
-    rise = STEP_QUANTA * HEIGHT_QUANTUM
-    tread = 1.2                 # wider than the probe spacing and BODY_RADIUS
-    mid_x, half_span = (lo[0] + hi[0]) * 0.5, (hi[0] - lo[0]) * 0.5
-    made, gaps = 0, []
-    for direction in (1.0, -1.0):
-        # Where the landing first rises more than a step above the deck. Found
-        # by walking out along the axis rather than assumed to be the bridge's
-        # own end: the ground grid's plateau cell overlaps the last metre and a
-        # half of the deck, so the point the player actually has to climb is
-        # inboard of where the bridge stops.
-        edge = None
-        for s in range(int((half_span + 3.0) / 0.2)):
-            x = mid_x + direction * 0.2 * s
-            top = ground_proxy_top(collision, x, GATE_AXIS_Y)
-            if top is not None and top > deck + MAX_STEP:
-                edge = x
-                break
-        if edge is None:
-            gaps.append(None)
-            continue
-
-        landing = ground_proxy_top(collision, edge + direction * 0.5,
-                                   GATE_AXIS_Y)
-        if landing is None:
-            gaps.append(None)
-            continue
-        gap = landing - deck
-        gaps.append(round(gap, 2))
-        if abs(gap) <= MAX_STEP:
-            continue
-        count = int(math.ceil(abs(gap) / rise)) - 1
-        for k in range(1, count + 1):
-            z = deck + gap * k / float(count + 1)
-            # Named as a bridge piece deliberately: check_walkability decides
-            # what is a floor and what is a wall by this prefix, and a step
-            # onto the deck classified as a wall seals the crossing instead of
-            # opening it.
-            add_box(collision,
-                    "BOX_Bld_bridge_step_%s_%d"
-                    % ("e" if direction > 0 else "w", k),
-                    centre=(edge - direction * (tread * (count - k)
-                                                + tread * 0.5),
-                            (lo[1] + hi[1]) * 0.5, z - 1.0),
-                    size=(tread, width, 2.0), yaw_deg=0.0,
-                    colour=COLOR_BRIDGE)
-            made += 1
-    return {"boxes": made, "gaps": gaps}
-
-
-def build_rock_proxies(collision, depsgraph):
-    made = skipped = 0
-    for obj in sorted(source_collection(ROCKS).objects, key=lambda o: o.name):
-        if obj.type != "MESH":
-            continue
-        centre, size, yaw = yaw_box_of(obj, depsgraph)
-        if max(size.x, size.y) < ROCK_MIN_FOOTPRINT:
-            skipped += 1
-            continue
-        add_box(collision, "BOX_Rock_%s" % obj.name.replace(".", "_"),
-                centre=tuple(centre), size=tuple(size), yaw_deg=yaw,
-                colour=COLOR_ROCK)
-        made += 1
-    return {"boxes": made, "skipped": skipped}
-
-
 def build_tree_proxies(collision, trees):
     """Trunk boxes for the realised scatter, measured in a slice above the base."""
     made = 0
@@ -1258,95 +925,134 @@ def build_markers(markers, terrain):
     return {"player": (x, y, round(z, 2)), "enemies": placed}
 
 
-WALK_PROBE = 1.0            # metres between walkability samples
+WALK_PROBE = 0.5            # metres between walkability samples
 BODY_HEIGHT = 1.8           # Player::BODY_HEIGHT
 
+# cos(60 deg) -- PhysicsManager's COS_MAX_SLOPE. A surface tilted further than
+# this is not standable, whatever its height.
+COS_MAX_SLOPE = 0.5
 
-def check_walkability(collision, centre, landmarks):
-    """Flood-fill the level to find out where the player can actually get to.
+# The most two neighbouring probes may differ in height and still be considered
+# connected.
+#
+# NOT MAX_STEP, and that distinction is the whole difference between grading a
+# staircase and grading a surface. MAX_STEP is the engine's rule for a
+# *discontinuity* -- how high a ledge the character can step up. It is applied
+# per frame, over the centimetre or two of movement in one tick, where even a
+# 45-degree slope rises far less than it. Applying it between probes half a
+# metre apart instead asks "is this slope flat", and answers no for every real
+# hillside, which is how a continuous island came out as 729 disconnected
+# islands.
+#
+# So neighbours are joined when the grade between them is walkable, and blocked
+# when it is not. tan(45 deg) * WALK_PROBE keeps genuine cliffs -- the ravine
+# drops several metres in half a metre -- firmly apart.
+WALK_MAX_RISE = 0.5
 
-    The per-cell region check inside build_ground_proxies only sees the ground
-    grid, and the ground grid does not span the ravine -- the bridge does, and
-    the bridge is a building proxy. So the question that actually matters,
-    "can the player get from the spawn to the keep", cannot be answered there.
 
-    Proxies are split into two roles, which is the part that has to be right.
-    Ground and bridge boxes are *floors*: the support height at a probe is the
-    highest of them covering it, matching the surface PhysicsManager's scan
-    settles on (PhysicsManager.cpp:347-376). Walls, buildings, rocks, trees and
-    the boundary ring are *blockers*: they make a probe unwalkable if they
-    occupy the body above the floor there. Treating those as floors instead --
-    standing on top of a tree trunk, on top of a wall -- is technically what
-    the engine would do to a character teleported onto one, but as a
-    reachability model it is useless: every trunk becomes its own one-probe
-    region 10 m up and the map shatters into hundreds of islands.
+def check_walkability(mesh_obj, collision, start_xy, start_z, landmarks):
+    """Flood-fill outward from the spawn the way the character actually moves.
+
+    Reachability is grown from the spawn rather than sampled globally, and the
+    probe for each new cell starts just above the height of the cell it is
+    entered from -- which is what PhysicsManager does every frame
+    (probeMeshGround casts down from pos.y + MAX_STEP).
+
+    Sampling from high above instead looks equivalent and is not. A ray dropped
+    from the sky onto a gatehouse hits its *roof*, so the floor under the arch
+    reads as 3.5 m up, the ground either side reads as 0, and the archway you
+    can plainly walk through comes out as a sealed 22 m2 pocket. That is exactly
+    what this reported before the probe was moved down to the feet.
+
+    A neighbour joins when it can be stepped up to (MAX_STEP) or walked down to
+    (WALK_MAX_RISE), on a surface flat enough to stand on, with no proxy -- a
+    tree trunk or the boundary ring -- occupying the body there.
     """
-    floors, blockers = [], []
+    blockers = []
     for obj in collision.all_objects:
         half = (obj.scale.x * 0.5, obj.scale.y * 0.5)
-        top = obj.location.z + obj.scale.z * 0.5
-        bottom = obj.location.z - obj.scale.z * 0.5
         yaw = obj.rotation_euler.z
-        entry = (obj.location.x, obj.location.y, half[0], half[1],
-                 math.cos(-yaw), math.sin(-yaw), top, bottom,
-                 math.hypot(*half))
-        is_floor = (obj.name.startswith("BOX_Ground_")
-                    or obj.name.startswith("BOX_Bld_bridge"))
-        (floors if is_floor else blockers).append(entry)
+        blockers.append((obj.location.x, obj.location.y, half[0], half[1],
+                         math.cos(-yaw), math.sin(-yaw),
+                         obj.location.z + obj.scale.z * 0.5,
+                         obj.location.z - obj.scale.z * 0.5,
+                         math.hypot(*half)))
 
     bucket_size = 8.0
+    buckets = defaultdict(list)
+    for entry in blockers:
+        cx, cy, reach = entry[0], entry[1], entry[8]
+        for bi in range(int((cx - reach) // bucket_size),
+                        int((cx + reach) // bucket_size) + 1):
+            for bj in range(int((cy - reach) // bucket_size),
+                            int((cy + reach) // bucket_size) + 1):
+                buckets[(bi, bj)].append(entry)
 
-    def index(entries):
-        buckets = defaultdict(list)
-        for entry in entries:
-            cx, cy, reach = entry[0], entry[1], entry[8]
-            for bi in range(int((cx - reach) // bucket_size),
-                            int((cx + reach) // bucket_size) + 1):
-                for bj in range(int((cy - reach) // bucket_size),
-                                int((cy + reach) // bucket_size) + 1):
-                    buckets[(bi, bj)].append(entry)
-        return buckets
+    def blocked(x, y, floor_z):
+        low, high = floor_z + 0.05, floor_z + BODY_HEIGHT
+        for entry in buckets.get((int(x // bucket_size), int(y // bucket_size)),
+                                 ()):
+            cx, cy, hx, hy, cos_y, sin_y = entry[:6]
+            dx, dy = x - cx, y - cy
+            if (entry[7] < high and entry[6] > low
+                    and abs(dx * cos_y - dy * sin_y) <= hx
+                    and abs(dx * sin_y + dy * cos_y) <= hy):
+                return True
+        return False
 
-    floor_index, blocker_index = index(floors), index(blockers)
+    inverse = mesh_obj.matrix_world.inverted()
+    down = (inverse.to_3x3() @ Vector((0.0, 0.0, -1.0))).normalized()
+    rotation = mesh_obj.matrix_world.to_3x3()
 
-    def covers(entry, x, y):
-        cx, cy, hx, hy, cos_y, sin_y = entry[:6]
-        dx, dy = x - cx, y - cy
-        return (abs(dx * cos_y - dy * sin_y) <= hx
-                and abs(dx * sin_y + dy * cos_y) <= hy)
-
-    def probe(x, y):
-        key = (int(x // bucket_size), int(y // bucket_size))
-        support = None
-        for entry in floor_index.get(key, ()):
-            if covers(entry, x, y) and (support is None or entry[6] > support):
-                support = entry[6]
-        if support is None:
+    def floor_from(x, y, from_z):
+        """Surface under (x, y) entered from `from_z`, or None."""
+        hit, location, normal, _ = mesh_obj.ray_cast(
+            inverse @ Vector((x, y, from_z + MAX_STEP)), down,
+            distance=MAX_STEP + WALK_MAX_RISE)
+        if not hit:
             return None
-        # Anything intruding into the body standing on that floor blocks it.
-        # The 0.05 m lift keeps a wall whose base is flush with the ground from
-        # blocking the ground it is standing on.
-        low, high = support + 0.05, support + BODY_HEIGHT
-        for entry in blocker_index.get(key, ()):
-            if entry[7] < high and entry[6] > low and covers(entry, x, y):
-                return None
-        return support
+        if (rotation @ normal).normalized().z < COS_MAX_SLOPE:
+            return None
+        z = (mesh_obj.matrix_world @ location).z
+        return None if blocked(x, y, z) else z
 
     n = int(2.0 * PLAY_RADIUS / WALK_PROBE)
-    origin = (centre[0] - PLAY_RADIUS, centre[1] - PLAY_RADIUS)
-    heights = [[probe(origin[0] + (i + 0.5) * WALK_PROBE,
-                      origin[1] + (j + 0.5) * WALK_PROBE)
-                for i in range(n)] for j in range(n)]
+    origin = (-PLAY_RADIUS, -PLAY_RADIUS)
 
-    label, sizes = walkable_regions(heights, n)
+    def cell_of(x, y):
+        return (int((y - origin[1]) / WALK_PROBE),
+                int((x - origin[0]) / WALK_PROBE))
+
+    def centre_of(j, i):
+        return (origin[0] + (i + 0.5) * WALK_PROBE,
+                origin[1] + (j + 0.5) * WALK_PROBE)
+
+    reached = {}
+    sj, si = cell_of(*start_xy)
+    reached[(sj, si)] = start_z
+    stack = [(sj, si)]
+    while stack:
+        j, i = stack.pop()
+        here = reached[(j, i)]
+        for dj, di in ((0, 1), (1, 0), (0, -1), (-1, 0)):
+            nj, ni = j + dj, i + di
+            if not (0 <= nj < n and 0 <= ni < n) or (nj, ni) in reached:
+                continue
+            x, y = centre_of(nj, ni)
+            z = floor_from(x, y, here)
+            if z is None:
+                continue
+            reached[(nj, ni)] = z
+            stack.append((nj, ni))
+
     out = {}
     for name, point in landmarks.items():
-        rc = cell_of(point, origin, n, WALK_PROBE)
-        region = None if rc is None else label[rc[0]][rc[1]]
-        out[name] = (region, sizes[region] if region is not None else 0)
-    walkable = sum(1 for row in heights for v in row if v is not None)
-    biggest = sorted(sizes, reverse=True)[:5]
-    return out, walkable * WALK_PROBE * WALK_PROBE, len(sizes), biggest
+        out[name] = cell_of(*point) in reached
+    return out, len(reached) * WALK_PROBE * WALK_PROBE
+
+def shifted(xy):
+    """An authored Blender XY moved into the recentred frame."""
+    return (xy[0] + RECENTRE.x, xy[1] + RECENTRE.y)
 
 
 def shift_collection(collection, offset):
@@ -1394,47 +1100,68 @@ def main():
 
     visual = get_collection(VISUAL)
     collision = get_collection(COLLISION)
+    collision_mesh = get_collection(COLLISION_MESH)
     markers = get_collection(MARKERS)
-    for generated in (visual, collision, markers):
+    for generated in (visual, collision, collision_mesh, markers):
         clear_collection(generated)
 
     report = {"props_before": 0, "props_after": 0, "scatter_after": 0}
 
     entries, backdrop = build_terrain(report, centre)
-    entries.extend(build_props(report))
+    props = build_props(report)
+
+    # The solid set is named here rather than filtered back out of `entries`
+    # later: terrain and props are what the player stands on and walks into,
+    # and the scatter that follows is explicitly not.
+    solid = list(entries) + list(props)
+
+    entries.extend(props)
     scatter, island_trees = build_scatter(report, centre)
     entries.extend(scatter)
+
+    # Built before assemble(), which frees every entry mesh whose user count has
+    # dropped to zero. merge_entries copies, so the collision object does not
+    # keep those datablocks alive -- taking this after the merge would hand it
+    # freed meshes.
+    mesh_obj = build_collision_mesh(solid, collision_mesh, RECENTRE)
+    report["collision_mesh_tris"] = tri_count(mesh_obj.data)
 
     raw_tris = sum(tri_count(mesh) for mesh, _ in entries + backdrop)
     raw_pieces = len(entries) + len(backdrop)
     meshes = assemble(entries, backdrop, visual, RECENTRE)
 
-    # Collision is authored against the terrain where it actually sits and
-    # shifted afterwards, so it has to be built before the sources are hidden
-    # -- a hidden collection is out of the depsgraph, and terrain_height would
-    # raycast an object with no evaluated mesh.
-    depsgraph = bpy.context.evaluated_depsgraph_get()
+    # What is left in COLLISION after the mesh took over. Ground, buildings,
+    # the bridge and the placed rocks are all real geometry now; the terrain
+    # staircase, the gate carving and the bridge threshold steps that existed
+    # only to work around boxes are gone with them.
+    #
+    # Trees stay proxies because a trunk is a box and a canopy should not
+    # collide at all, and the boundary ring stays because it is an invisible
+    # wall with no geometry to be.
+    #
+    # Built before the sources are hidden: a hidden collection is out of the
+    # depsgraph, and terrain_height would be raycasting an object with no
+    # evaluated mesh.
     proxies = {
-        "ground": build_ground_proxies(collision, ground, centre),
-        "buildings": build_building_proxies(collision, depsgraph),
-        "thresholds": build_bridge_thresholds(collision, depsgraph),
-        "rocks": build_rock_proxies(collision, depsgraph),
         "trees": build_tree_proxies(collision, island_trees),
         "boundary": build_boundary(collision, ground, centre),
     }
     spawns = build_markers(markers, ground)
 
-    reach, walk_area, walk_regions, big_regions = check_walkability(
-        collision, centre, {
-        "player spawn": PLAYER_SPAWN_XY,
-        "bridge middle": (-134.0, GATE_AXIS_Y),
-        "gate": (-141.2, GATE_AXIS_Y),
-        "courtyard": (-147.0, -16.0),
-        "keep approach": (-152.0, -16.0),
-    })
-
     shift_collection(collision, RECENTRE)
     shift_collection(markers, RECENTRE)
+
+    # After the shift, so probes, proxies and the mesh are all in the frame the
+    # level actually ships in. The island then centres on the origin.
+    reach, walk_area = check_walkability(
+        mesh_obj, collision, shifted(PLAYER_SPAWN_XY),
+        spawns["player"][2], {
+        "player spawn": shifted(PLAYER_SPAWN_XY),
+        "bridge middle": shifted((-134.0, GATE_AXIS_Y)),
+        "gate": shifted((-141.2, GATE_AXIS_Y)),
+        "courtyard": shifted((-147.0, -16.0)),
+        "keep approach": shifted((-152.0, -16.0)),
+    })
 
     set_sources_hidden(True)
 
@@ -1446,7 +1173,7 @@ def main():
     # the origin. It does that silently: verify_level.py's bounds check is
     # dominated by the visual mesh, and its per-proxy check needs VIS_* meshes
     # this kitbashed map does not have, so nothing downstream notices.
-    for generated in (collision, markers):
+    for generated in (collision, collision_mesh, markers):
         generated.hide_viewport = False
 
     total_tris = 0
@@ -1493,44 +1220,25 @@ def main():
           "%d tris" % (len(visual.objects), total_prims, total_tris))
     backdrop_obj = visual.objects.get(BACKDROP_NAME)
     backdrop_tris = tri_count(backdrop_obj.data) if backdrop_obj else 0
+    print("[make_castle_level] collmesh  %d tris (ground + paths + buildings "
+          "+ placed rocks; water, mountains and the tree scatter excluded)"
+          % report["collision_mesh_tris"])
     print("[make_castle_level] cull      widest cullable chunk %.1f m (%s); "
           "backdrop %d tris always drawn"
           % (widest, widest_name, backdrop_tris))
     if total_tris != raw_tris:
         print("[make_castle_level] WARNING merge changed the triangle count "
               "(%d -> %d)" % (raw_tris, total_tris))
-    g = proxies["ground"]
     total_proxies = sum(p["boxes"] for p in proxies.values())
-    print("[make_castle_level] collision %d proxies -- ground %d (from %d "
-          "cells), buildings %d (%d carved for the gate), rocks %d (%d too "
-          "small), trees %d, boundary %d, bridge thresholds %d for gaps %s"
-          % (total_proxies, g["boxes"], g["cells"],
-             proxies["buildings"]["boxes"], proxies["buildings"]["carved"],
-             proxies["rocks"]["boxes"], proxies["rocks"]["skipped"],
-             proxies["trees"]["boxes"], proxies["boundary"]["boxes"],
-             proxies["thresholds"]["boxes"], proxies["thresholds"]["gaps"]))
-    print("[make_castle_level]   worst walkable step %.2f m (%d over MAX_STEP "
-          "%.2f), %d deliberate cliffs left as walls%s"
-          % (g["worst_step"], g["steps_over_max"], MAX_STEP, g["cliffs"],
-             "" if g["converged"] else "  [relaxation did NOT converge]"))
-    for label, stats in (("walkable ground", g["flat_error"]),
-                         ("cliff faces   ", g["steep_error"])):
-        if stats:
-            print("[make_castle_level]   error on %s: mean %.2f m, p95 %.2f m,"
-                  " max %.2f m (%d samples)"
-                  % (label, stats["mean"], stats["p95"], stats["max"],
-                     stats["n"]))
-    spawn_region = reach["player spawn"][0]
-    print("[make_castle_level] walkable  %.0f m2 over all proxies, %d regions "
-          "(largest %s m2)" % (walk_area, walk_regions,
-                               [int(b * WALK_PROBE ** 2) for b in big_regions]))
-    for name, (region, size) in reach.items():
-        mark = "  <-- NOT REACHABLE FROM SPAWN" if (
-            region is None or region != spawn_region) else ""
-        print("      %-14s %s%s"
-              % (name, "no floor" if region is None
-                 else "region %d, %.0f m2" % (region, size * WALK_PROBE ** 2),
-                 mark))
+    print("[make_castle_level] collision %d proxies -- trees %d, boundary %d "
+          "(ground, buildings, bridge and rocks are the mesh now)"
+          % (total_proxies, proxies["trees"]["boxes"],
+             proxies["boundary"]["boxes"]))
+    print("[make_castle_level] walkable  %.0f m2 reachable from the spawn"
+          % walk_area)
+    for name, ok in reach.items():
+        print("      %-14s %s" % (name, "reachable"
+                                  if ok else "NOT REACHABLE FROM SPAWN"))
     print("[make_castle_level] spawns    %s" % (spawns,))
 
     if uncullable:

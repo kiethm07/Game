@@ -45,6 +45,7 @@ import argparse
 import json
 import math
 import os
+import struct
 import sys
 
 import bpy
@@ -55,6 +56,21 @@ from mathutils import Vector
 VISUAL_COLLECTION = "VISUAL"
 COLLISION_COLLECTION = "COLLISION"
 MARKERS_COLLECTION = "MARKERS"
+
+# Optional, and the only one of the four that is: a level without it collides
+# purely against BOX_/RAMP_ proxies, which is what greybox and forest do. When
+# present it carries the geometry those primitives cannot express -- curved
+# ground, round towers, arches -- as a triangle soup the engine loads into a
+# BVH (include/Physics/CollisionMesh.h).
+COLLISION_MESH_COLLECTION = "COLLISION_MESH"
+
+# Bumped only for levels that actually ship a collision mesh. A build that
+# predates the mesh would read one of those as a level whose ground is simply
+# missing -- collision that loads *wrongly* rather than incompletely, which is
+# the case LevelLoader's version check exists to refuse. Levels without a mesh
+# keep writing format 1 and stay byte-for-byte what they were.
+FORMAT_WITHOUT_MESH = 1
+FORMAT_WITH_MESH = 2
 
 BOX_PREFIX = "BOX_"
 RAMP_PREFIX = "RAMP_"
@@ -403,6 +419,87 @@ def export_glb(collection, path):
     )
 
 
+def export_collision_mesh(collection, path):
+    """Write the COLLISION_MESH collection as a flat triangle soup.
+
+    Deliberately NOT a .glb, unlike the visual mesh, for two reasons.
+
+    The disqualifying one: raylib's Mesh stores indices as `unsigned short`
+    (raylib.h:355), so a mesh cannot address more than 65,535 vertices. The
+    castle's collision geometry is a single 89,725-triangle primitive with
+    67,406 vertices and 32-bit indices, and loading that through raylib would
+    truncate every index to 16 bits -- not fail, truncate. The result is a mesh
+    whose triangles connect the wrong vertices, which as collision means falling
+    through the world at random. That is precisely the class of silent glTF
+    breakage raylib's loader is already known for.
+
+    The better one: this applies `to_game` itself, the same function the BOX_
+    and RAMP_ proxies go through. The visual mesh relies on Blender's exporter
+    performing the identical axis swap, which is a correspondence that has to be
+    maintained by hand; here the collision surface and the collision proxies
+    cannot drift apart, because they are converted by the same code.
+
+    Layout, little-endian throughout:
+        magic  "SKCM"            4 bytes
+        u32    version           1
+        u32    vertex_count
+        u32    triangle_count
+        f32    positions[vertex_count * 3]    game space
+        u32    indices[triangle_count * 3]
+    """
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    positions = []
+    indices = []
+
+    for obj in sorted(collection.all_objects, key=lambda o: o.name):
+        if obj.type != "MESH":
+            continue
+        evaluated = obj.evaluated_get(depsgraph)
+        mesh = evaluated.to_mesh()
+        if mesh is None:
+            continue
+        try:
+            mesh.calc_loop_triangles()
+            base = len(positions) // 3
+            matrix = obj.matrix_world
+            for vertex in mesh.vertices:
+                x, y, z = to_game(matrix @ vertex.co)
+                positions.extend((x, y, z))
+            for tri in mesh.loop_triangles:
+                # Winding is copied through unchanged, and that is worth being
+                # precise about because it looks like it should not be.
+                # `to_game` negates a component, which suggests a mirror -- but
+                # (x, y, z) -> (x, z, -y) as a matrix is
+                #     [[1, 0, 0], [0, 0, 1], [0, -1, 0]]
+                # whose determinant is +1. It is a -90 degree rotation about X,
+                # not a reflection, so handedness is preserved and the source
+                # winding is already correct in game space.
+                #
+                # Swapping two corners "to compensate" inverts every normal
+                # instead. PhysicsManager tells a floor from a ceiling by the
+                # sign of normal.y (classifySurfaceNormal), so that mistake
+                # makes the entire world read as ceiling: flat ground comes back
+                # with normal.y = -1.
+                indices.extend(base + v for v in tri.vertices)
+        finally:
+            evaluated.to_mesh_clear()
+
+    vertex_count = len(positions) // 3
+    triangle_count = len(indices) // 3
+    if triangle_count == 0:
+        raise ExportError(
+            "%s produced no triangles. A collision mesh that exports empty "
+            "would ship a level with no ground." % collection.name)
+
+    with open(path, "wb") as f:
+        f.write(b"SKCM")
+        f.write(struct.pack("<III", 1, vertex_count, triangle_count))
+        f.write(struct.pack("<%df" % len(positions), *positions))
+        f.write(struct.pack("<%dI" % len(indices), *indices))
+
+    return vertex_count, triangle_count
+
+
 def parse_args(argv):
     if "--" in argv:
         argv = argv[argv.index("--") + 1:]
@@ -445,8 +542,25 @@ def main():
     if not args.no_glb:
         export_glb(visual, os.path.join(out_dir, glb_name))
 
+    collision_mesh = bpy.data.collections.get(COLLISION_MESH_COLLECTION)
+    if collision_mesh is not None and not any(
+            o.type == "MESH" for o in collision_mesh.all_objects):
+        # An empty collection is an authoring slip, not a level that opted out:
+        # the level would ship claiming a collision mesh and load with none.
+        raise ExportError(
+            "%s exists but holds no mesh. Delete the collection to export a "
+            "proxy-only level, or put the collision geometry in it."
+            % COLLISION_MESH_COLLECTION)
+
+    mesh_name = None
+    mesh_stats = None
+    if collision_mesh is not None:
+        mesh_name = "collision.bin"
+        mesh_stats = export_collision_mesh(collision_mesh,
+                                           os.path.join(out_dir, mesh_name))
+
     level = {
-        "format": 1,
+        "format": FORMAT_WITH_MESH if mesh_name else FORMAT_WITHOUT_MESH,
         "name": name,
         "visualModel": glb_name,
         "bounds": {"min": [round(c, 5) for c in bounds_min],
@@ -455,6 +569,11 @@ def main():
         "enemySpawns": enemies,
         "obstacles": obstacles,
     }
+    # Placed after `obstacles` on purpose: a level without a mesh then produces
+    # exactly the JSON it produced before this key existed, which is what makes
+    # the forest byte-comparison a usable regression test.
+    if mesh_name:
+        level["collisionMesh"] = mesh_name
 
     json_path = os.path.join(out_dir, "level.json")
     with open(json_path, "w") as f:
@@ -466,6 +585,10 @@ def main():
     print("[export_level] %s -> %s" % (name, out_dir))
     print("[export_level]   %d boxes, %d ramps, %d enemy spawns"
           % (boxes, ramps, len(enemies)))
+    if mesh_name:
+        print("[export_level]   collision mesh -> %s (%d verts, %d tris), "
+              "format %d" % (mesh_name, mesh_stats[0], mesh_stats[1],
+                             FORMAT_WITH_MESH))
     print("[export_level]   bounds min=%s max=%s"
           % (["%.1f" % c for c in bounds_min], ["%.1f" % c for c in bounds_max]))
 

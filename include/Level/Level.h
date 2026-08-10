@@ -34,6 +34,15 @@ struct Level {
     /// which is a valid state: a greybox is playable before any art exists.
     std::string visualModelPath;
 
+    /// Absolute path to the level's collision mesh, or empty when the level
+    /// collides purely against `obstacles`.
+    ///
+    /// Named here but loaded elsewhere, exactly as `visualModelPath` is: the
+    /// only loader available reads a .glb through raylib, which needs a GL
+    /// context, and keeping that out of LevelLoader is what lets a Level still
+    /// be parsed and inspected without a window.
+    std::string collisionMeshPath;
+
     /// Everything the player can stand on or walk into. These feed physics,
     /// the navmesh bake, and stealth line-of-sight alike — the engine has one
     /// world-geometry primitive and this is it.
