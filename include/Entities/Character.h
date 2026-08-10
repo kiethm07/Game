@@ -60,6 +60,7 @@ public:
   void setRotation(const Vector3 &new_rotation) { rotation = new_rotation; }
 
   const Stats &getStats() const { return stats; }
+  Stats &getMutableStats() { return stats; }
   Faction getFaction() const { return faction; }
   unsigned int getId() const { return id; }
 

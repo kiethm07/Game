@@ -56,6 +56,8 @@ bool Stats::applyDamage(float health_damage, float posture_damage) {
     current_health -= health_damage;
     if (current_health < 0.0f) {
         current_health = 0.0f;
+    } else if (current_health > max_health) {
+        current_health = max_health;
     }
 
     current_posture += posture_damage;
