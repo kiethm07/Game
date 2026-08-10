@@ -6,7 +6,10 @@
 #include <Entities/Character.h>
 #include <Entities/PlayerAnimator.h>
 #include <Entities/PlayerLocomotion.h>
+#include <Entities/Items/Item.h>
 #include <Rendering/RootMotion.h>
+#include <memory>
+#include <vector>
 
 class Player : public Character {
 public:
@@ -61,6 +64,12 @@ public:
   /// animation, instead of leaving the camera composed on a swing that stopped.
   bool isExecuting() const override;
 
+  const std::vector<std::unique_ptr<Item>>& getInventory() const { return inventory; }
+  int getActiveItemIndex() const { return active_item_index; }
+  float getItemUseTimer() const { return item_use_timer; }
+  
+  void cancelItemUse() { item_use_timer = 0.0f; }
+
 private:
   const InputManager &input_manager;
 
@@ -110,6 +119,10 @@ private:
 
   /// Which clip plays, and the clock that drives it.
   PlayerAnimator animator;
+
+  std::vector<std::unique_ptr<Item>> inventory;
+  int active_item_index = 0;
+  float item_use_timer = 0.0f;
 
   void updateLocomotionVelocity(const UpdateContext &ctx, Vector3 moveDirection,
                                 float speedScale);

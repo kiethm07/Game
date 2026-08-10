@@ -558,6 +558,27 @@ void GameplayState::draw() {
       int text_width = MeasureText(money_str.c_str(), font_size);
       DrawText(money_str.c_str(), GetScreenWidth() - text_width - 30, 30, font_size, GOLD);
   }
+
+  // --- ITEM UI ---
+  const auto& inventory = player->getInventory();
+  if (!inventory.empty()) {
+      int active_idx = player->getActiveItemIndex();
+      if (active_idx >= 0 && active_idx < inventory.size()) {
+          const auto& active_item = inventory[active_idx];
+          std::string item_text = "[Q] < " + active_item->getName() + " (" + std::to_string(active_item->getCount()) + ") > [E]   Use: [X]";
+          int item_font_size = 20;
+          DrawText(item_text.c_str(), 20, GetScreenHeight() - 70, item_font_size, active_item->isEmpty() ? GRAY : WHITE);
+
+          // If using, draw a progress bar
+          float use_timer = player->getItemUseTimer();
+          if (use_timer > 0.0f) {
+              float duration = active_item->getUseDuration();
+              float progress = 1.0f - (use_timer / duration);
+              DrawRectangle(20, GetScreenHeight() - 85, 200, 10, DARKGRAY);
+              DrawRectangle(20, GetScreenHeight() - 85, (int)(200 * progress), 10, SKYBLUE);
+          }
+      }
+  }
 }
 
 void GameplayState::exit() {
