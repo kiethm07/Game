@@ -27,6 +27,9 @@ public:
   bool isCrouching() const override { return locomotion.getStance() == Stance::Crouching; }
   bool isInSmoke() const { return in_smoke_flag; }
 
+  void addMoney(int amount) { money += amount; }
+  int getMoney() const { return money; }
+
   CombatComponent& getCombatComponent() { return combat_component; }
 
   /// Plays the deathblow swing. Interrupts first because the damage has already
@@ -85,6 +88,7 @@ private:
   static constexpr float AIR_ACCELERATION = 13.0f;
 
   bool in_smoke_flag = false;
+  int money = 0;
 
   CombatComponent combat_component;
   MovementComponent movement_component;

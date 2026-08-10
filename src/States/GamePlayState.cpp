@@ -95,6 +95,26 @@ StateAction GameplayState::update(float dt) {
   player->update(ctx);
   for (auto &enemy : enemies) {
     enemy->update(ctx);
+    
+    // Check for loot drops
+    if (enemy->getStats().isDead() && !enemy->hasDroppedLoot()) {
+        enemy->setDroppedLoot(true);
+        MoneyDrop md;
+        md.position = enemy->getPosition();
+        md.amount = 10 + rand() % 15;
+        md.bob_timer = 0.0f;
+        money_drops.push_back(md);
+    }
+  }
+
+  // Check for money pickups
+  for (int i = (int)money_drops.size() - 1; i >= 0; --i) {
+      money_drops[i].bob_timer += dt;
+      if (Vector3DistanceSqr(player_pos, money_drops[i].position) < 2.0f * 2.0f) {
+          player->addMoney(money_drops[i].amount);
+          money_drops[i] = money_drops.back();
+          money_drops.pop_back();
+      }
   }
 
   // 2. Resolve Physics Pipeline (4-Step: Gravity -> Integration -> Ejection
@@ -452,6 +472,13 @@ void GameplayState::draw() {
   
   particle_manager.draw();
 
+  // Draw Money Drops
+  for (const auto& md : money_drops) {
+      float y_offset = sinf(md.bob_timer * 3.0f) * 0.2f + 0.5f;
+      Vector3 draw_pos = {md.position.x, md.position.y + y_offset, md.position.z};
+      DrawSphere(draw_pos, 0.15f, GOLD);
+  }
+
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());
   active_characters.push_back(player.get());
@@ -499,6 +526,14 @@ void GameplayState::draw() {
   if (player->isInSmoke()) {
       // Draw a full-screen semi-transparent gray overlay
       DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), {100, 100, 100, 150});
+  }
+
+  // --- MONEY UI ---
+  if (IsKeyDown(KEY_I)) {
+      std::string money_str = "Money: " + std::to_string(player->getMoney());
+      int font_size = 30;
+      int text_width = MeasureText(money_str.c_str(), font_size);
+      DrawText(money_str.c_str(), GetScreenWidth() - text_width - 30, 30, font_size, GOLD);
   }
 }
 

@@ -30,6 +30,9 @@ public:
   StealthComponent &getStealthComponent() { return stealth_component; }
   const StealthComponent &getStealthComponent() const { return stealth_component; }
 
+  bool hasDroppedLoot() const { return dropped_loot; }
+  void setDroppedLoot(bool dropped) { dropped_loot = dropped; }
+
 protected:
   /// Called once per hit that actually landed, with whether the guard caught
   /// it. The hook exists so a subclass can react — a flinch is the whole of it
@@ -41,6 +44,7 @@ protected:
   AIComponent ai_component;
   StealthComponent stealth_component;
   int moveState = 0;
+  bool dropped_loot = false;
 
   float body_height = 2.0f;
   float body_radius = 0.5f;
