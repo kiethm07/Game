@@ -92,6 +92,34 @@ SOURCE_COLLECTIONS = (LANDSCAPE, BUILDINGS, ROCKS) + LIBRARY
 RECENTRE = Vector((146.9, 16.1, 0.0))
 RECENTRE_TOLERANCE = 1.0
 
+# --- Scale ------------------------------------------------------------------
+
+# How much larger the level ships than it was kitbashed.
+#
+# The art was modelled at roughly half human scale relative to Player's 1.8 m:
+# the compound wall stood 2.26 m, barely taller than the character, and the keep
+# 9.13 m. At 3x they become 6.8 m and 27.4 m, which is what a castle is, and the
+# island grows from 80 m across to 240 m.
+#
+# Applied here, at generation time, to everything this script emits -- never to
+# the authored art. That is what keeps a re-run idempotent: the source stays at
+# its original size and is scaled once on the way out, rather than being scaled
+# again on top of an already-scaled result.
+#
+# Everything below is authored in the original units, so the constants can still
+# be read against what the .blend shows. Only the final placement scales.
+#
+# What does NOT scale, because it describes the player rather than the world:
+# MAX_STEP, BODY_HEIGHT, WALK_PROBE and WALK_MAX_RISE. The character is the same
+# size in a bigger world -- which is the entire point -- so the walkability check
+# has to run in final units with player-sized constants.
+#
+# Affordable now, and it would not have been before: terrain collision is a mesh,
+# and a mesh scales for free. The box staircase it replaced needed cells fixed at
+# ~3 m to keep neighbour steps under MAX_STEP, so tripling the world would have
+# meant nine times the cells -- roughly 3,000 ground proxies in a linear scan.
+WORLD_SCALE = 3.0
+
 # --- Terrain ----------------------------------------------------------------
 
 # `ground` is a closed solid: 73,106 quads, of which 25,939 face straight down.
@@ -187,9 +215,13 @@ MOUNTAIN_TREE_TARGET = 180
 # Side of the spatial cell that VISUAL is merged within, in metres. This is the
 # whole draw-call/culling trade-off in one number: it is the granularity at
 # which anything can be culled, and roughly the size of the AABB every merged
-# mesh ends up with. 24 m against an 80 m island gives a 4x4 grid over the
-# playable area, so the 16 m near shadow cascade still rejects most of it.
-CHUNK_SIZE = 24.0
+# mesh ends up with.
+#
+# Expressed in pre-scale units like everything else here, so the shipped cell is
+# CHUNK_SIZE * WORLD_SCALE = 36 m. Left at the 24 that suited the unscaled map
+# it would have become 72 m cells on a 240 m island -- three cells across the
+# whole playable area, which is no culling at all.
+CHUNK_SIZE = 12.0
 
 # --- Collision --------------------------------------------------------------
 
@@ -786,7 +818,10 @@ def build_collision_mesh(entries, collection, offset):
     """
     merged = merge_entries(COLLISION_MESH, entries)
     obj = make_object(COLLISION_MESH, merged, collection)
-    obj.location = Vector(offset)
+    # The merged vertices are in the original frame, so the object carries both
+    # the recentre and the scale: world = (v + offset) * WORLD_SCALE.
+    obj.scale = (WORLD_SCALE, WORLD_SCALE, WORLD_SCALE)
+    obj.location = Vector(offset) * WORLD_SCALE
     return obj
 
 
@@ -814,13 +849,15 @@ def assemble(entries, backdrop, visual, offset):
         name = "CHUNK_%+04d_%+04d" % key
         merged = merge_entries(name, group)
         obj = make_object(name, merged, visual)
-        obj.location = shift
+        obj.scale = (WORLD_SCALE, WORLD_SCALE, WORLD_SCALE)
+        obj.location = shift * WORLD_SCALE
         made += 1
 
     if backdrop:
         obj = make_object(BACKDROP_NAME,
                           merge_entries(BACKDROP_NAME, backdrop), visual)
-        obj.location = shift
+        obj.scale = (WORLD_SCALE, WORLD_SCALE, WORLD_SCALE)
+        obj.location = shift * WORLD_SCALE
         made += 1
 
     for mesh in intermediate:
@@ -1004,11 +1041,17 @@ def check_walkability(mesh_obj, collision, start_xy, start_z, landmarks):
     down = (inverse.to_3x3() @ Vector((0.0, 0.0, -1.0))).normalized()
     rotation = mesh_obj.matrix_world.to_3x3()
 
+    # Object-space ray length. mesh_obj carries the WORLD_SCALE, and ray_cast
+    # measures `distance` in the object's own space, so a world-metre budget
+    # handed straight to it would reach WORLD_SCALE times too far and report
+    # floors the player could never step down to.
+    reach_local = (MAX_STEP + WALK_MAX_RISE) / WORLD_SCALE
+
     def floor_from(x, y, from_z):
-        """Surface under (x, y) entered from `from_z`, or None."""
+        """Surface under (x, y) entered from `from_z`, or None. World units."""
         hit, location, normal, _ = mesh_obj.ray_cast(
             inverse @ Vector((x, y, from_z + MAX_STEP)), down,
-            distance=MAX_STEP + WALK_MAX_RISE)
+            distance=reach_local)
         if not hit:
             return None
         if (rotation @ normal).normalized().z < COS_MAX_SLOPE:
@@ -1016,8 +1059,11 @@ def check_walkability(mesh_obj, collision, start_xy, start_z, landmarks):
         z = (mesh_obj.matrix_world @ location).z
         return None if blocked(x, y, z) else z
 
-    n = int(2.0 * PLAY_RADIUS / WALK_PROBE)
-    origin = (-PLAY_RADIUS, -PLAY_RADIUS)
+    # Final units: the world is WORLD_SCALE times bigger but the probe spacing
+    # is not, because the character is not.
+    extent = PLAY_RADIUS * WORLD_SCALE
+    n = int(2.0 * extent / WALK_PROBE)
+    origin = (-extent, -extent)
 
     def cell_of(x, y):
         return (int((y - origin[1]) / WALK_PROBE),
@@ -1050,22 +1096,29 @@ def check_walkability(mesh_obj, collision, start_xy, start_z, landmarks):
         out[name] = cell_of(*point) in reached
     return out, len(reached) * WALK_PROBE * WALK_PROBE
 
-def shifted(xy):
-    """An authored Blender XY moved into the recentred frame."""
-    return (xy[0] + RECENTRE.x, xy[1] + RECENTRE.y)
+def placed(xy):
+    """An authored Blender XY moved into the frame the level ships in."""
+    return ((xy[0] + RECENTRE.x) * WORLD_SCALE,
+            (xy[1] + RECENTRE.y) * WORLD_SCALE)
 
 
-def shift_collection(collection, offset):
-    """Move generated proxies into the same recentred frame as VISUAL.
+def place_collection(collection, offset, scale):
+    """Move generated proxies into the frame VISUAL and the mesh ship in.
 
     Everything above is authored against the terrain where it actually sits,
-    which is 158 m from the origin, so the numbers in this file can be read
-    against what the .blend shows. VISUAL is built in that frame too and then
-    shifted; the proxies have to ride the identical shift or they end up
-    wrapping geometry that is no longer there.
+    which is 158 m from the origin and half the size it ships at, so the numbers
+    in this file can be read against what the .blend shows. The proxies have to
+    ride the identical recentre *and* scale or they end up wrapping geometry
+    that is no longer there.
+
+    A box's size is its object scale -- export_box reads bound_box and
+    multiplies by it -- so scaling a proxy means scaling that too, not just its
+    position. Markers are Empties with no extent and only move.
     """
     for obj in collection.all_objects:
-        obj.location = obj.location + Vector(offset)
+        obj.location = (obj.location + Vector(offset)) * scale
+        if obj.type == "MESH":
+            obj.scale = obj.scale * scale
 
 
 # ---------------------------------------------------------------------------
@@ -1148,19 +1201,22 @@ def main():
     }
     spawns = build_markers(markers, ground)
 
-    shift_collection(collision, RECENTRE)
-    shift_collection(markers, RECENTRE)
+    place_collection(collision, RECENTRE, WORLD_SCALE)
+    place_collection(markers, RECENTRE, WORLD_SCALE)
 
     # After the shift, so probes, proxies and the mesh are all in the frame the
     # level actually ships in. The island then centres on the origin.
     reach, walk_area = check_walkability(
-        mesh_obj, collision, shifted(PLAYER_SPAWN_XY),
-        spawns["player"][2], {
-        "player spawn": shifted(PLAYER_SPAWN_XY),
-        "bridge middle": shifted((-134.0, GATE_AXIS_Y)),
-        "gate": shifted((-141.2, GATE_AXIS_Y)),
-        "courtyard": shifted((-147.0, -16.0)),
-        "keep approach": shifted((-152.0, -16.0)),
+        mesh_obj, collision, placed(PLAYER_SPAWN_XY),
+        # The marker's own z, scaled the same way place_collection scaled it.
+        # Seeding from the authored height instead puts the first probe a third
+        # of the way up the terrain and the flood fill finds nothing at all.
+        spawns["player"][2] * WORLD_SCALE, {
+        "player spawn": placed(PLAYER_SPAWN_XY),
+        "bridge middle": placed((-134.0, GATE_AXIS_Y)),
+        "gate": placed((-141.2, GATE_AXIS_Y)),
+        "courtyard": placed((-147.0, -16.0)),
+        "keep approach": placed((-152.0, -16.0)),
     })
 
     set_sources_hidden(True)
@@ -1194,11 +1250,12 @@ def main():
         # A chunk more than twice its cell across has swallowed something that
         # spans the map. It will pass every frustum test put to it. BACKDROP is
         # exempt because being always-drawn is what it is for.
-        if span > CHUNK_SIZE * 2.0:
+        if span > CHUNK_SIZE * WORLD_SCALE * 2.0:
             uncullable += tri_count(obj.data)
 
-    print("\n[make_castle_level] island centre %.1f, %.1f -> recentred by %s"
-          % (centre[0], centre[1], tuple(round(c, 1) for c in RECENTRE)))
+    print("\n[make_castle_level] island centre %.1f, %.1f -> recentred by %s, "
+          "scaled %.1fx" % (centre[0], centre[1],
+                            tuple(round(c, 1) for c in RECENTRE), WORLD_SCALE))
     print("[make_castle_level] terrain")
     for key in ("ground", "water", "mountains"):
         before, dropped, culled, after = report[key]
@@ -1247,7 +1304,8 @@ def main():
         # matter where the player is standing, which is the one outcome this
         # whole script exists to avoid.
         print("[make_castle_level] WARNING %d tris sit in chunks wider than "
-              "%.0f m and will never be culled" % (uncullable, CHUNK_SIZE * 2))
+              "%.0f m and will never be culled"
+              % (uncullable, CHUNK_SIZE * WORLD_SCALE * 2))
 
     if not args.no_save:
         out = args.out or bpy.data.filepath
