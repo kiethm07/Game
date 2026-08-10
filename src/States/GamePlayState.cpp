@@ -5,8 +5,8 @@
 #include <cassert>
 #include <cmath>
 
-GameplayState::GameplayState(const InputManager &input_manager)
-    : input_manager(input_manager) {
+GameplayState::GameplayState(const InputManager &input_manager, AssetManager &asset_manager)
+    : input_manager(input_manager), asset_manager(asset_manager) {
   camera_controller = std::make_unique<CameraController>();
   player = std::make_unique<Player>(input_manager);
   player->setPosition({0.0f, 0.0f, -13.0f}); // Spawn north of the central hub

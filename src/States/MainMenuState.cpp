@@ -12,7 +12,7 @@ void MainMenuState::enter() {
 
 StateAction MainMenuState::update(float dt) {
     if (IsKeyPressed(KEY_ENTER)) {
-        return StateAction::ChangeToGameplay;
+        return StateAction::ChangeToLoading;
     }
 
     if (IsKeyPressed(KEY_ESCAPE)) {
