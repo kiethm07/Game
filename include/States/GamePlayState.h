@@ -22,6 +22,13 @@
 
 #include <memory>
 #include <vector>
+#include <string>
+
+struct MoneyDrop {
+    Vector3 position;
+    int amount;
+    float bob_timer;
+};
 
 class GameplayState : public GameState {
 public:
@@ -47,6 +54,7 @@ private:
   StealthManager stealth_manager;
   std::vector<PhysicsObstacle> obstacles;
   std::vector<SmokeCloud> smoke_clouds;
+  std::vector<MoneyDrop> money_drops;
   ParticleManager particle_manager;
   std::vector<CharacterRenderData> renderList;
 
