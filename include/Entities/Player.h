@@ -7,6 +7,8 @@
 #include <Entities/PlayerAnimator.h>
 #include <Entities/PlayerLocomotion.h>
 #include <Entities/Items/Item.h>
+#include <Entities/Items/Item.h>
+#include <GameManager/SmokeCloud.h>
 #include <Rendering/RootMotion.h>
 #include <memory>
 #include <vector>
@@ -70,6 +72,20 @@ public:
   
   void cancelItemUse() { item_use_timer = 0.0f; }
 
+  void spawnSmokeCloud(Vector3 position, float radius, float life) {
+      SmokeCloud sc;
+      sc.position = position;
+      sc.radius = radius;
+      sc.life = life;
+      sc.owner = this;
+      pending_smoke_clouds.push_back(sc);
+  }
+  std::vector<SmokeCloud> takePendingSmokeClouds() {
+      std::vector<SmokeCloud> clouds = pending_smoke_clouds;
+      pending_smoke_clouds.clear();
+      return clouds;
+  }
+
 private:
   const InputManager &input_manager;
 
@@ -123,6 +139,7 @@ private:
   std::vector<std::unique_ptr<Item>> inventory;
   int active_item_index = 0;
   float item_use_timer = 0.0f;
+  std::vector<SmokeCloud> pending_smoke_clouds;
 
   void updateLocomotionVelocity(const UpdateContext &ctx, Vector3 moveDirection,
                                 float speedScale);

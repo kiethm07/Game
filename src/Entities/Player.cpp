@@ -5,6 +5,7 @@
 #include <GameManager/SmokeCloud.h>
 #include <CombatData/AttackRegistry.h>
 #include <Entities/Items/HealingGourd.h>
+#include <Entities/Items/SmokeBomb.h>
 
 Player::Player(const InputManager &input_manager)
     : Character(Faction::Player), input_manager(input_manager) {
@@ -15,6 +16,7 @@ Player::Player(const InputManager &input_manager)
   rotation = {0, 180.0f, 0};
 
   inventory.push_back(std::make_unique<HealingGourd>());
+  inventory.push_back(std::make_unique<SmokeBomb>());
 }
 
 void Player::update(const UpdateContext &ctx) {
