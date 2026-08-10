@@ -3,6 +3,11 @@
 #include <raylib.h>
 #include <Rendering/AssetID.h>
 
+enum class DecayType {
+    ASH_DECAY = 0,
+    PETAL_DECAY = 1
+};
+
 /// World-space transform for an entity.
 struct TransformData {
     Vector3 position = {0.0f, 0.0f, 0.0f};
@@ -31,4 +36,6 @@ struct CharacterRenderData {
     AssetID       assetId;
     TransformData transform;
     AnimationState animation;
+    float dissolveProgress = 0.0f;
+    DecayType decayType = DecayType::ASH_DECAY;
 };
