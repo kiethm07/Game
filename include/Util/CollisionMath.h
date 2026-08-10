@@ -116,4 +116,123 @@ public:
 
         return true;
     }
+
+    // -----------------------------------------------------------------------
+    // Triangle collision
+    //
+    // Used against a level's CollisionMesh for the geometry BOX_/RAMP_ proxies
+    // cannot express. The character is treated as a capsule here rather than
+    // the cylinder resolveCylinderAABB assumes: a flat-bottomed cylinder
+    // catches on every triangle edge it crosses, which on curved ground is
+    // every step, whereas a capsule rolls over them.
+    // -----------------------------------------------------------------------
+
+    /// Closest point on triangle ABC to P. Ericson, Real-Time Collision
+    /// Detection 5.1.5 -- checks the three vertex regions and three edge
+    /// regions before falling through to the face.
+    static Vector3 closestPointOnTriangle(Vector3 p, Vector3 a, Vector3 b,
+                                          Vector3 c) {
+        const Vector3 ab = Vector3Subtract(b, a);
+        const Vector3 ac = Vector3Subtract(c, a);
+        const Vector3 ap = Vector3Subtract(p, a);
+        const float d1 = Vector3DotProduct(ab, ap);
+        const float d2 = Vector3DotProduct(ac, ap);
+        if (d1 <= 0.0f && d2 <= 0.0f) return a;
+
+        const Vector3 bp = Vector3Subtract(p, b);
+        const float d3 = Vector3DotProduct(ab, bp);
+        const float d4 = Vector3DotProduct(ac, bp);
+        if (d3 >= 0.0f && d4 <= d3) return b;
+
+        const float vc = d1 * d4 - d3 * d2;
+        if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+            const float v = d1 / (d1 - d3);
+            return Vector3Add(a, Vector3Scale(ab, v));
+        }
+
+        const Vector3 cp = Vector3Subtract(p, c);
+        const float d5 = Vector3DotProduct(ab, cp);
+        const float d6 = Vector3DotProduct(ac, cp);
+        if (d6 >= 0.0f && d5 <= d6) return c;
+
+        const float vb = d5 * d2 - d1 * d6;
+        if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+            const float w = d2 / (d2 - d6);
+            return Vector3Add(a, Vector3Scale(ac, w));
+        }
+
+        const float va = d3 * d6 - d5 * d4;
+        if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
+            const float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+            return Vector3Add(b, Vector3Scale(Vector3Subtract(c, b), w));
+        }
+
+        const float denom = 1.0f / (va + vb + vc);
+        const float v = vb * denom;
+        const float w = vc * denom;
+        return Vector3Add(a, Vector3Add(Vector3Scale(ab, v),
+                                        Vector3Scale(ac, w)));
+    }
+
+    /// Closest point to P on the segment AB.
+    static Vector3 closestPointOnSegment(Vector3 a, Vector3 b, Vector3 p) {
+        const Vector3 ab = Vector3Subtract(b, a);
+        const float len_sq = Vector3LengthSqr(ab);
+        if (len_sq < 1e-12f) return a;
+        float t = Vector3DotProduct(Vector3Subtract(p, a), ab) / len_sq;
+        t = std::clamp(t, 0.0f, 1.0f);
+        return Vector3Add(a, Vector3Scale(ab, t));
+    }
+
+    /// Depenetrate an upright capsule from one triangle.
+    ///
+    /// `feet` is the character's position (the base of the capsule, on the
+    /// ground). Returns true and moves `feet` when they overlapped.
+    ///
+    /// The capsule is treated as a swept sphere: find where its axis crosses
+    /// the triangle's plane, clamp that into the triangle to get a reference
+    /// point, slide down the axis to the sphere centre nearest that reference,
+    /// and resolve that one sphere. Exact for the common cases and stable in
+    /// the awkward ones, which matters more here than being analytically
+    /// perfect -- this runs several times per sub-step per character.
+    static bool resolveCapsuleTriangle(Vector3 &feet, float radius,
+                                       float height, Vector3 a, Vector3 b,
+                                       Vector3 c, Vector3 normal,
+                                       Vector3 &out_normal) {
+        const Capsule capsule = Capsule::createUpright(feet, height, radius);
+        const Vector3 base = capsule.getBase();
+        const Vector3 tip = capsule.getTip();
+
+        // Where the capsule's axis meets the triangle's plane. Parallel axes
+        // (denominator ~0) fall back to the base, which is the end that matters
+        // for standing on things.
+        Vector3 reference = base;
+        const Vector3 axis = Vector3Subtract(tip, base);
+        const float denom = Vector3DotProduct(normal, axis);
+        if (std::fabs(denom) > 1e-6f) {
+            const float t = Vector3DotProduct(
+                                normal, Vector3Subtract(a, base)) / denom;
+            reference = Vector3Add(base, Vector3Scale(axis,
+                                                      std::clamp(t, 0.0f, 1.0f)));
+        }
+
+        const Vector3 on_tri_ref = closestPointOnTriangle(reference, a, b, c);
+        const Vector3 centre = closestPointOnSegment(base, tip, on_tri_ref);
+        const Vector3 on_tri = closestPointOnTriangle(centre, a, b, c);
+
+        Vector3 delta = Vector3Subtract(centre, on_tri);
+        const float dist_sq = Vector3LengthSqr(delta);
+        if (dist_sq >= radius * radius) return false;
+
+        const float dist = std::sqrt(dist_sq);
+        // Dead centre on the triangle gives no direction to push along; the
+        // face normal is the only sane answer, and it is the one that keeps a
+        // character who has sunk into geometry coming back out the near side.
+        Vector3 push = normal;
+        if (dist > 1e-6f) push = Vector3Scale(delta, 1.0f / dist);
+
+        feet = Vector3Add(feet, Vector3Scale(push, radius - dist));
+        if (push.y > out_normal.y) out_normal = push;
+        return true;
+    }
 };

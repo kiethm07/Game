@@ -2,6 +2,7 @@
 #include <Components/PhysicsObstacle.h>
 #include <math.h>
 #include <raymath.h>
+#include <Physics/CollisionMesh.h>
 
 CameraController::CameraController() {
   // Initialize Raylib Camera struct
@@ -155,6 +156,16 @@ void CameraController::update(const CameraFrame &frame) {
   Vector3 ray_origin = camera.target;
 
   float target_dist = ideal_los_dist;
+
+  // The mesh first, and with the same 0.2 m standoff the proxy paths use so the
+  // near plane does not sit flush against whatever was hit.
+  if (frame.collision_mesh && !frame.collision_mesh->isEmpty()) {
+    MeshHit hit;
+    if (frame.collision_mesh->raycast(ray_origin, ray_dir, target_dist, hit)) {
+      const float pulled = hit.distance - 0.2f;
+      if (pulled < target_dist) target_dist = pulled < 0.3f ? 0.3f : pulled;
+    }
+  }
 
   if (frame.obstacles) {
       for (const auto& obs : *frame.obstacles) {

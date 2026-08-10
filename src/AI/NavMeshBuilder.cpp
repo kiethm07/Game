@@ -48,6 +48,31 @@ void NavMeshBuilder::addMesh(const Mesh& mesh, Matrix transform) {
     }
 }
 
+void NavMeshBuilder::addCollisionMesh(const CollisionMesh& mesh) {
+    const int triangles = mesh.getTriangleCount();
+    int startVertex = m_geom.vertices.size() / 3;
+
+    m_geom.vertices.reserve(m_geom.vertices.size() + triangles * 9);
+    m_geom.triangles.reserve(m_geom.triangles.size() + triangles * 3);
+
+    // Vertices are emitted per corner rather than shared. Recast voxelises the
+    // soup into a heightfield, so duplicates cost only the transient input
+    // buffer and save maintaining an index map here.
+    for (int i = 0; i < triangles; ++i) {
+        Vector3 a, b, c;
+        mesh.getTriangle(i, a, b, c);
+        const Vector3 corners[3] = { a, b, c };
+        for (const Vector3& corner : corners) {
+            m_geom.vertices.push_back(corner.x);
+            m_geom.vertices.push_back(corner.y);
+            m_geom.vertices.push_back(corner.z);
+        }
+        m_geom.triangles.push_back(startVertex + i * 3 + 0);
+        m_geom.triangles.push_back(startVertex + i * 3 + 1);
+        m_geom.triangles.push_back(startVertex + i * 3 + 2);
+    }
+}
+
 void NavMeshBuilder::addObstacle(const PhysicsObstacle& obs) {
     Matrix localToWorld = obs.getLocalToWorld();
     int startVertex = m_geom.vertices.size() / 3;

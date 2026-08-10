@@ -14,7 +14,7 @@ public:
     ~StealthManager() = default;
 
     // Evaluates detection for all enemies based on the player
-    void update(const std::vector<Character*>& characters, Character* player, const std::vector<PhysicsObstacle>& obstacles, const std::vector<SmokeCloud>& smoke_clouds, float dt);
+    void update(const std::vector<Character*>& characters, Character* player, const std::vector<PhysicsObstacle>& obstacles, const CollisionMesh* mesh, const std::vector<SmokeCloud>& smoke_clouds, float dt);
 
     void drawDebug(const std::vector<Character*>& characters) const;
 };

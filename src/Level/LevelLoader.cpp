@@ -16,7 +16,17 @@ namespace {
 /// adding a new optional key does not need it, changing what an existing key
 /// means does. Refusing an unknown version is the point: a level that silently
 /// half-loads puts collision somewhere the player cannot see.
-constexpr int kSupportedFormat = 1;
+/// Format 1: collision is BOX_/RAMP_ proxies only.
+/// Format 2: adds `collisionMesh`, a triangle soup carrying the geometry those
+///           primitives cannot express (curved ground, round towers, arches).
+///
+/// Both are still read, and that is not just courtesy to old files: a level
+/// whose world is simple enough for proxies has no reason to ship a mesh, so
+/// greybox and forest legitimately stay at format 1 forever. The exporter
+/// writes 2 only when a mesh is actually present, which is what keeps their
+/// level.json byte-for-byte unchanged.
+constexpr int kMinSupportedFormat = 1;
+constexpr int kMaxSupportedFormat = 2;
 
 /// Must stay in step with EnemyType (include/Entities/EnemyFactory.h) and with
 /// ENEMY_TYPES in tools/export_level.py. The exporter already rejects unknown
@@ -111,11 +121,12 @@ Level LevelLoader::load(const std::string &jsonPath) {
 
     try {
         const int format = root.value("format", 0);
-        if (format != kSupportedFormat) {
+        if (format < kMinSupportedFormat || format > kMaxSupportedFormat) {
             TraceLog(LOG_ERROR,
-                     "LevelLoader: '%s' is format %d, this build reads format "
-                     "%d. Re-export it with tools/export_level.py.",
-                     jsonPath.c_str(), format, kSupportedFormat);
+                     "LevelLoader: '%s' is format %d, this build reads formats "
+                     "%d-%d. Re-export it with tools/export_level.py.",
+                     jsonPath.c_str(), format, kMinSupportedFormat,
+                     kMaxSupportedFormat);
             return level;
         }
 
@@ -125,6 +136,11 @@ Level LevelLoader::load(const std::string &jsonPath) {
         const std::string model = root.value("visualModel", std::string());
         if (!model.empty()) {
             parsed.visualModelPath = directoryOf(jsonPath) + "/" + model;
+        }
+
+        const std::string mesh = root.value("collisionMesh", std::string());
+        if (!mesh.empty()) {
+            parsed.collisionMeshPath = directoryOf(jsonPath) + "/" + mesh;
         }
 
         const json &bounds = root.at("bounds");

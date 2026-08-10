@@ -4,6 +4,7 @@
 #include <vector>
 
 class PhysicsObstacle;
+class CollisionMesh;
 
 /// How the camera frames the action.
 enum class CameraShot { Follow, Deathblow, LockOn };
@@ -26,6 +27,11 @@ struct CameraFrame {
   float targetYaw = 0.0f;
   
   const std::vector<PhysicsObstacle>* obstacles = nullptr;
+
+  /// The level's triangle collision, or null where it has none. Without it the
+  /// camera only pulls in for BOX_/RAMP_ proxies, and since the castle's walls
+  /// stopped being proxies it would push straight through solid stone.
+  const CollisionMesh* collision_mesh = nullptr;
 };
 
 class CameraController {

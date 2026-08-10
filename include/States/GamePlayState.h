@@ -16,6 +16,7 @@
 #include <AI/NavMeshBuilder.h>
 #include <AI/NavMeshQuery.h>
 #include <Level/Level.h>
+#include <Physics/CollisionMesh.h>
 #include <States/GameState.h>
 
 #include <Rendering/GameRenderer.h>
@@ -42,6 +43,11 @@ private:
   /// The loaded map. Also declared before `renderer`, which reads its visual
   /// mesh path and bounds during construction.
   Level level;
+
+  /// Triangle collision for the parts of the world BOX_/RAMP_ proxies cannot
+  /// express. Empty for levels that ship none (greybox, forest), and every
+  /// consumer has to tolerate that rather than assume a mesh is present.
+  CollisionMesh collision_mesh;
 
   std::unique_ptr<CameraController> camera_controller;
   std::unique_ptr<Player> player;

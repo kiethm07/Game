@@ -69,7 +69,8 @@ bool PhysicsManager::checkHeadroomClearance(
     float   radius,
     float   height,
     float   target_y,
-    const std::vector<PhysicsObstacle>& obstacles) const
+    const std::vector<PhysicsObstacle>& obstacles,
+    const CollisionMesh* mesh) const
 {
     BoundingBox target_box;
     target_box.min = { current_pos.x - radius, target_y + 0.1f,  current_pos.z - radius };
@@ -87,7 +88,68 @@ bool PhysicsManager::checkHeadroomClearance(
         }
     }
 
+    if (mesh != nullptr && !mesh->isEmpty()) {
+        // Only downward-facing triangles can be a ceiling. Without that test
+        // the floor the character is about to step onto sits inside the query
+        // box and blocks the step it is meant to enable.
+        triangle_scratch.clear();
+        mesh->overlapAABB(target_box, triangle_scratch);
+        for (int triangle : triangle_scratch) {
+            const Vector3 normal = mesh->getNormal(triangle);
+            if (normal.y > -0.2f) continue;
+            Vector3 a, b, c;
+            mesh->getTriangle(triangle, a, b, c);
+            const float lowest = std::min({ a.y, b.y, c.y });
+            if (lowest >= current_pos.y + 0.1f) return false;
+        }
+    }
+
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// Mesh ground probe
+// ---------------------------------------------------------------------------
+
+bool PhysicsManager::probeMeshGround(const CollisionMesh* mesh, Vector3 pos,
+                                     float radius, float max_step,
+                                     float& out_y, Vector3& out_normal) const
+{
+    if (mesh == nullptr || mesh->isEmpty()) return false;
+
+    // Starting the ray at the step ceiling rather than at the feet is what
+    // makes this equivalent to the obstacle path's "reject candidates above
+    // pos.y + MAX_STEP": the highest surface the ray can find is, by
+    // construction, the highest one that could be stepped onto.
+    const float start_y = pos.y + max_step;
+
+    // Far enough to always locate the floor when there is one. The caller
+    // decides what to do with a surface well below the feet -- fall towards it,
+    // or clamp onto it -- so the probe's job is to report it, not to filter it.
+    const float reach = 60.0f;
+
+    const float side = radius * 0.5f;
+    const Vector3 offsets[5] = {
+        { 0.0f, 0.0f, 0.0f },
+        { side, 0.0f, 0.0f }, { -side, 0.0f, 0.0f },
+        { 0.0f, 0.0f, side }, { 0.0f, 0.0f, -side },
+    };
+
+    bool found = false;
+    for (const Vector3& offset : offsets) {
+        MeshHit hit;
+        const Vector3 origin = { pos.x + offset.x, start_y, pos.z + offset.z };
+        if (!mesh->groundBelow(origin, reach, hit)) continue;
+        // A downward ray can land on the underside of an arch or a bridge soffit
+        // and report it as floor. Anything not facing upward is not standable.
+        if (hit.normal.y <= 0.0f) continue;
+        if (!found || hit.point.y > out_y) {
+            out_y = hit.point.y;
+            out_normal = hit.normal;
+            found = true;
+        }
+    }
+    return found;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +232,7 @@ void PhysicsManager::resolveEnvironmentCollisions(
 std::vector<Vector3> PhysicsManager::updatePhysics(
     const std::vector<Character*>& characters,
     const std::vector<PhysicsObstacle>& obstacles,
+    const CollisionMesh* mesh,
     float dt)
 {
     const float GRAVITY       = 9.81f;
@@ -338,6 +401,57 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
                     }
                 }
             }
+
+            // ---- Collision mesh ----------------------------------------
+            // Inside the same solver iteration as the proxies above, so a
+            // character wedged between a box and a triangle is pushed out of
+            // both before the next sub-step integrates again.
+            if (mesh != nullptr && !mesh->isEmpty()) {
+                BoundingBox capsule_box;
+                capsule_box.min = { pos.x - radius, pos.y - 0.05f,
+                                    pos.z - radius };
+                capsule_box.max = { pos.x + radius, pos.y + height,
+                                    pos.z + radius };
+
+                triangle_scratch.clear();
+                mesh->overlapAABB(capsule_box, triangle_scratch);
+
+                bool touched = false;
+                Vector3 contact_normal = { 0.0f, -1.0f, 0.0f };
+
+                for (int triangle : triangle_scratch) {
+                    const Vector3 normal = mesh->getNormal(triangle);
+                    Vector3 a, b, c;
+                    mesh->getTriangle(triangle, a, b, c);
+
+                    // Walkable ground within a step of the feet is deliberately
+                    // left alone, for the same reason a box top within MAX_STEP
+                    // is skipped above: pushing out of it would shove the
+                    // character back off a stair or a slope, when what should
+                    // happen is STEP 4 lifting them onto it. Skipping it here is
+                    // what keeps step-up working on a triangle mesh at all.
+                    if (normal.y >= COS_MAX_SLOPE && v_y <= 0.0f) {
+                        const float highest = std::max({ a.y, b.y, c.y });
+                        if (highest <= pos.y + MAX_STEP) continue;
+                    }
+
+                    if (CollisionMath::resolveCapsuleTriangle(
+                            pos, radius, height, a, b, c, normal,
+                            contact_normal)) {
+                        touched = true;
+                    }
+                }
+
+                // Pushed down by something overhead while moving up: kill the
+                // climb, exactly as the box ceiling case does. Gated on
+                // `touched` because contact_normal's initial value is a
+                // downward vector and would otherwise read as a ceiling hit on
+                // every frame that touched nothing at all.
+                if (touched && contact_normal.y < -0.5f && v_y > 0.0f) {
+                    v_y = 0.0f;
+                    character->setVerticalVelocity(0.0f);
+                }
+            }
         } // end solver iterations
         } // end sub-steps
 
@@ -380,6 +494,24 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
             if (candidate_y > ground_y) {
                 ground_y       = candidate_y;
                 surface_normal = candidate_normal;
+                found_surface  = true;
+            }
+        }
+
+        // The collision mesh contributes a candidate on exactly the same terms
+        // as an obstacle does. Its normal is a real triangle normal rather than
+        // a box's top face, which is the whole reason curved ground works here
+        // without new logic: classifySurfaceNormal and COS_MAX_SLOPE below
+        // already decide walkability from the normal, and now they get told the
+        // truth about the surface instead of a staircase's approximation of it.
+        {
+            float mesh_y = 0.0f;
+            Vector3 mesh_normal = { 0.0f, 1.0f, 0.0f };
+            if (probeMeshGround(mesh, pos, radius, MAX_STEP, mesh_y,
+                                mesh_normal) &&
+                mesh_y > ground_y) {
+                ground_y       = mesh_y;
+                surface_normal = mesh_normal;
                 found_surface  = true;
             }
         }
@@ -452,7 +584,8 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
 
         // Headroom check uses the live integrated pos, not character->getPosition().
         if (can_snap && step_diff > 0.001f) {
-            if (!checkHeadroomClearance(pos, radius, height, ground_y, obstacles)) {
+            if (!checkHeadroomClearance(pos, radius, height, ground_y, obstacles,
+                                        mesh)) {
                 can_snap = false;
             }
         }
@@ -528,5 +661,8 @@ void PhysicsManager::resolveGroundCollisions(
     const std::vector<PhysicsObstacle>& obstacles,
     float dt)
 {
-    updatePhysics(characters, obstacles, dt);
+    // No mesh: this helper only has the proxy list to work from, and nothing
+    // currently calls it. Left as-is rather than widened on spec -- a caller
+    // that needs mesh collision should be calling updatePhysics directly.
+    updatePhysics(characters, obstacles, nullptr, dt);
 }
