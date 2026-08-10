@@ -86,6 +86,7 @@ StateAction GameplayState::update(float dt) {
 
   active_characters.push_back(player.get());
   for (auto &enemy : enemies) {
+    if (enemy->isModelUnloaded()) continue;
     active_characters.push_back(enemy.get());
   }
 
@@ -94,6 +95,8 @@ StateAction GameplayState::update(float dt) {
 
   player->update(ctx);
   for (auto &enemy : enemies) {
+    if (enemy->isModelUnloaded()) continue;
+
     enemy->update(ctx);
     
     // Check for loot drops and handle decaying
@@ -190,6 +193,8 @@ StateAction GameplayState::update(float dt) {
       Vector3 cam_fwd = camera_controller->getCameraForward();
 
       for (const auto& enemy : enemies) {
+        if (enemy->isModelUnloaded()) continue;
+
         if (!enemy->getStats().isDead()) {
           float dist_to_player = Vector3Distance(player->getPosition(), enemy->getPosition());
           Vector3 to_enemy = Vector3Subtract(enemy->getPosition(), cam_pos);
@@ -305,12 +310,19 @@ StateAction GameplayState::update(float dt) {
       float new_z = p_pos.z + (e_pos.z - p_pos.z) * lerp_factor;
       player->setPosition({new_x, p_pos.y, new_z});
 
+      // Face the enemy while falling
+      Vector3 to_enemy = Vector3Subtract(e_pos, p_pos);
+      if (to_enemy.x * to_enemy.x + to_enemy.z * to_enemy.z > 0.001f) {
+          float target_yaw = std::atan2(to_enemy.x, to_enemy.z) * RAD2DEG;
+          player->setRotation({0.0f, target_yaw, 0.0f});
+      }
+
       // If we reach the threshold Y or hit the ground
       if (p_pos.y - e_pos.y < 0.2f || player->isGrounded()) {
         takedown_type_str = "AERIAL TAKEDOWN";
         player->setPosition({e_pos.x, e_pos.y, e_pos.z});
         player->setVerticalVelocity(0.0f);
-        player->setRotation(pending_aerial_target->getRotation());
+        // Player keeps the rotation looking at the enemy instead of snapping to enemy's rotation
 
         // Let the hitbox apply the damage and blood in sync with the animation
         if (Enemy* e = dynamic_cast<Enemy*>(pending_aerial_target)) {
@@ -458,14 +470,12 @@ StateAction GameplayState::update(float dt) {
   }
 
   // Cleanup fully dissolved bodies at the very end of the frame
-  for (auto it = enemies.begin(); it != enemies.end(); ) {
-      if ((*it)->isFullyDissolved()) {
-          if (locked_target == (*it).get()) locked_target = nullptr;
-          if (deathblow_victim == (*it).get()) deathblow_victim = nullptr;
-          if (pending_aerial_target == (*it).get()) pending_aerial_target = nullptr;
-          it = enemies.erase(it);
-      } else {
-          ++it;
+  for (auto& enemy : enemies) {
+      if (enemy->isFullyDissolved() && !enemy->isModelUnloaded()) {
+          if (locked_target == enemy.get()) locked_target = nullptr;
+          if (deathblow_victim == enemy.get()) deathblow_victim = nullptr;
+          if (pending_aerial_target == enemy.get()) pending_aerial_target = nullptr;
+          enemy->setModelUnloaded(true);
       }
   }
 
@@ -484,6 +494,7 @@ void GameplayState::draw() {
   renderList.clear();
   renderList.push_back(player->getRenderData());
   for (const auto &enemy : enemies) {
+    if (enemy->isModelUnloaded()) continue;
     renderList.push_back(enemy->getRenderData());
   }
 
@@ -503,6 +514,7 @@ void GameplayState::draw() {
   active_characters.reserve(1 + enemies.size());
   active_characters.push_back(player.get());
   for (const auto &enemy : enemies) {
+    if (enemy->isModelUnloaded()) continue;
     active_characters.push_back(enemy.get());
   }
 
@@ -531,6 +543,7 @@ void GameplayState::draw() {
   // --- HEALTH BARS ---
   player->drawHPBar2D();
   for (const auto &enemy : enemies) {
+    if (enemy->isModelUnloaded()) continue;
     enemy->drawHPBar(camera_controller->getCamera());
   }
 
