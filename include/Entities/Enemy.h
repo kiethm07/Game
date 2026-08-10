@@ -40,6 +40,9 @@ public:
   void addDissolveTimer(float dt) { dissolve_timer += dt; }
   bool isFullyDissolved() const { return dissolve_timer >= 2.0f; }
 
+  bool isModelUnloaded() const { return model_unloaded; }
+  void setModelUnloaded(bool unloaded) { model_unloaded = unloaded; }
+
   int getDecayType() const { return static_cast<int>(decay_type); }
   void setDecayType(DecayType type) { decay_type = type; }
 
@@ -58,6 +61,7 @@ protected:
   
   bool killed_by_stealth = false;
   float dissolve_timer = 0.0f;
+  bool model_unloaded = false;
   DecayType decay_type = DecayType::ASH_DECAY;
 
   float body_height = 2.0f;
