@@ -2,6 +2,7 @@
 #include <CombatData/AttackRegistry.h>
 #include <Core/InputManager.h>
 #include <Core/TimeManager.h>
+#include <GameManager/SoundController.h>
 #include <Rendering/AssetManager.h>
 #include <States/GamePlayState.h>
 #include <States/GameState.h>
@@ -32,6 +33,7 @@ private:
   InputManager input_manager;
   TimeManager time_manager;
   AssetManager asset_manager;
+  SoundController sound_controller;
   AttackRegistry &attack_registry;
   std::vector<std::unique_ptr<GameState>> states;
 };

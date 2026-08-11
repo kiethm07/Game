@@ -19,6 +19,8 @@ public:
     // --- Loading ---
     void loadModel(AssetID id, const std::string& filePath);
     void loadAnimations(AssetID id, const std::string& filePath);
+    void loadSound(AssetID id, const std::string& filePath);
+    void loadMusic(AssetID id, const std::string& filePath);
 
     // --- Sharing ---
     // Register 'alias' as a reference to the model already loaded for 'source'.
@@ -34,6 +36,8 @@ public:
     // --- Retrieval ---
     Model& getModel(AssetID id);
     ModelAnimation* getAnimations(AssetID id, int& outAnimCount);
+    Sound getSound(AssetID id) const;
+    Music getMusic(AssetID id) const;
 
     /// Root motion track for one clip, extracted once at load time.
     /// Out-of-range indices and unloaded assets return an empty track
@@ -77,5 +81,8 @@ private:
         std::vector<RootMotion::Track> rootTracks;
     };
     std::unordered_map<AssetID, AnimationData> animations;
+
+    std::unordered_map<AssetID, Sound> sounds;
+    std::unordered_map<AssetID, Music> musics;
 };
 

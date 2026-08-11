@@ -14,6 +14,7 @@ void Game::update() {
     if (!states.empty()) {
         time_manager.update();
         input_manager.update();
+        sound_controller.updateMusic();
 
         float dt = time_manager.getDeltaTime();
         StateAction action = states.back()->update(dt);
@@ -32,7 +33,7 @@ void Game::update() {
         }
         if (action == StateAction::ChangeToGameplay) {
             popState();
-            pushState(std::make_unique<GameplayState>(input_manager, asset_manager));
+            pushState(std::make_unique<GameplayState>(input_manager, asset_manager, sound_controller));
         }
     }
 }
