@@ -28,6 +28,10 @@ void CombatComponent::resetToIdle() {
 }
 
 void CombatComponent::update(float dt) {
+    if (spam_timer > 0.0f) {
+        spam_timer -= dt;
+    }
+
     if (current_state == CombatState::Idle) {
         return;
     }
@@ -121,7 +125,8 @@ void CombatComponent::startGuard() {
     }
 
     current_state = CombatState::Parrying;
-    state_timer = DEFAULT_PARRY_WINDOW;
+    state_timer = (spam_timer > 0.0f) ? PARRY_PENALTY_WINDOW : DEFAULT_PARRY_WINDOW;
+    spam_timer = PARRY_SPAM_COOLDOWN;
     action_id++;
 }
 
