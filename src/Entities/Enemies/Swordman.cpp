@@ -64,13 +64,21 @@ void Swordman::update(const UpdateContext &ctx) {
     
     if (combat_component.getCurrentState() == CombatState::BeingExecuted) {
         setHorizontalVelocity({0.0f, 0.0f, 0.0f});
-    } else if (combat_component.getCurrentState() == CombatState::PostureBroken) {
-        if (!animator.isFlinching()) {
-            animator.queueReaction(false);
-        }
     } else {
+        bool was_posture_broken = (combat_component.getCurrentState() == CombatState::PostureBroken);
+        
         combat_component.update(dt);
-        ai_component.update();
+        
+        if (combat_component.getCurrentState() == CombatState::PostureBroken) {
+            if (!animator.isFlinching()) {
+                animator.queueReaction(false);
+            }
+        } else {
+            if (was_posture_broken) {
+                stats.resetPosture();
+            }
+            ai_component.update();
+        }
     }
   }
   if (combat_component.getCurrentState() == CombatState::Idle) {
