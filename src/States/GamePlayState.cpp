@@ -14,6 +14,10 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
   // Load test SFX
   asset_manager.loadSound(AssetID::SFX_COIN, ASSET_DIR "/audio/coin.wav");
   asset_manager.loadSound(AssetID::SFX_HIT, ASSET_DIR "/audio/hit.wav");
+  asset_manager.loadSound(AssetID::SFX_DEFLECT_1, ASSET_DIR "/audio/deflect_1.MP3");
+  asset_manager.loadSound(AssetID::SFX_DEFLECT_2, ASSET_DIR "/audio/Deflect_2.MP3");
+  asset_manager.loadSound(AssetID::SFX_DEFLECT_NPC, ASSET_DIR "/audio/deflect_NPC.MP3");
+  asset_manager.loadSound(AssetID::SFX_DEATHBLOW, ASSET_DIR "/audio/deflect_end.mp3");
 
   // Enemies
   enemies.push_back(
@@ -141,7 +145,7 @@ StateAction GameplayState::update(float dt) {
   }
 
   // 3. Resolve Combat
-  combat_manager.update(active_characters, &particle_manager);
+  combat_manager.update(active_characters, &particle_manager, &sound_controller);
 
   auto checkLineOfSight = [&](Vector3 start, Vector3 end) {
     for (const auto &obs : obstacles) {
@@ -349,7 +353,7 @@ StateAction GameplayState::update(float dt) {
             e->setKilledByStealth(true);
             e->setDecayType(DecayType::PETAL_DECAY);
         }
-        sound_controller.playSFX(AssetID::SFX_HIT);
+        sound_controller.playSFX(AssetID::SFX_DEATHBLOW);
         player->performTakedown();
         deathblow_victim = pending_aerial_target;
         takedown_text_timer = 2.0f;
@@ -360,7 +364,7 @@ StateAction GameplayState::update(float dt) {
   }
 
   // Takedown logic
-  if (!pending_aerial_target &&
+  if (!pending_aerial_target && !player->isExecuting() &&
       input_manager.isActionPressed(GameAction::Takedown)) {
     for (auto &enemy_ptr : enemies) {
       Enemy *enemy = enemy_ptr.get();
@@ -478,7 +482,7 @@ StateAction GameplayState::update(float dt) {
 
               // Let the hitbox apply the damage and blood in sync with the animation
               enemy->getCombatComponent().setBeingExecuted();
-              sound_controller.playSFX(AssetID::SFX_HIT);
+              sound_controller.playSFX(AssetID::SFX_DEATHBLOW);
               player->performTakedown();
               deathblow_victim = enemy;
               takedown_text_timer = 2.0f;

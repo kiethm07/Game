@@ -3,6 +3,8 @@
 #include "raylib.h"
 #include <Util/CollisionMath.h>
 #include <cassert>
+#include <GameManager/SoundController.h>
+#include <Entities/Player.h>
 
 void CombatManager::clearHitsForAttacker(unsigned int attacker_id) {
     for (size_t i = 0; i < active_hits.size(); ) {
@@ -41,7 +43,7 @@ void CombatManager::drawDebug(const std::vector<Character*>& characters) const {
 
 #include <Rendering/ParticleManager.h>
 
-void CombatManager::update(const std::vector<Character*>& characters, ParticleManager* particle_manager) {
+void CombatManager::update(const std::vector<Character*>& characters, ParticleManager* particle_manager, SoundController* sound_controller) {
     for (Character* attacker : characters) {
         assert(attacker);
 
@@ -92,6 +94,21 @@ void CombatManager::update(const std::vector<Character*>& characters, ParticleMa
                             } else if (result == DamageResult::HIT) {
                                 int blood_count = (hitbox.getHealthDamage() > 1000.0f) ? 100 : 30;
                                 particle_manager->emitBlood(hitbox.getCenter(), blood_count);
+                            }
+                        }
+
+                        if (sound_controller) {
+                            if (result == DamageResult::PARRIED) {
+                                if (dynamic_cast<const Player*>(defender)) {
+                                    sound_controller->playSFX(use_deflect_1 ? AssetID::SFX_DEFLECT_1 : AssetID::SFX_DEFLECT_2);
+                                    use_deflect_1 = !use_deflect_1;
+                                } else {
+                                    sound_controller->playSFX(AssetID::SFX_DEFLECT_NPC);
+                                }
+                            } else if (result == DamageResult::HIT) {
+                                if (!defender->isBeingExecuted()) {
+                                    sound_controller->playSFX(AssetID::SFX_HIT);
+                                }
                             }
                         }
 
