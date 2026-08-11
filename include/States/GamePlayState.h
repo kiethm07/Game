@@ -24,6 +24,8 @@
 #include <vector>
 #include <string>
 
+#include <GameManager/SoundController.h>
+
 struct MoneyDrop {
     Vector3 position;
     int amount;
@@ -32,7 +34,7 @@ struct MoneyDrop {
 
 class GameplayState : public GameState {
 public:
-  GameplayState(const InputManager &input_manager, AssetManager &asset_manager);
+  GameplayState(const InputManager &input_manager, AssetManager &asset_manager, SoundController &sound_controller);
   ~GameplayState() override = default;
 
   void enter() override;
@@ -59,6 +61,7 @@ private:
   std::vector<CharacterRenderData> renderList;
 
   const InputManager &input_manager;
+  SoundController &sound_controller;
   
   float takedown_text_timer = 0.0f;
   std::string takedown_type_str = "";

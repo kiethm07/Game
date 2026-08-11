@@ -98,6 +98,24 @@ void AssetManager::loadAnimations(AssetID id, const std::string &filePath) {
   animations[id] = std::move(data);
 }
 
+void AssetManager::loadSound(AssetID id, const std::string &filePath) {
+  if (sounds.find(id) != sounds.end()) {
+    std::cerr << "AssetManager Warning: Sound already loaded for this AssetID.\n";
+    return;
+  }
+  Sound sound = LoadSound(filePath.c_str());
+  sounds[id] = sound;
+}
+
+void AssetManager::loadMusic(AssetID id, const std::string &filePath) {
+  if (musics.find(id) != musics.end()) {
+    std::cerr << "AssetManager Warning: Music already loaded for this AssetID.\n";
+    return;
+  }
+  Music music = LoadMusicStream(filePath.c_str());
+  musics[id] = music;
+}
+
 void AssetManager::shareModel(AssetID alias, AssetID source) {
   if (models.find(source) == models.end()) {
     std::cerr << "AssetManager Error: shareModel() called before the source "
@@ -124,6 +142,26 @@ Model &AssetManager::getModel(AssetID id) {
   TraceLog(LOG_ERROR, "AssetManager: no model loaded for AssetID %d",
            static_cast<int>(id));
   return kNullModel;
+}
+
+Sound AssetManager::getSound(AssetID id) const {
+  auto it = sounds.find(id);
+  if (it != sounds.end()) {
+    return it->second;
+  }
+  static Sound kNullSound{};
+  TraceLog(LOG_ERROR, "AssetManager: no sound loaded for AssetID %d", static_cast<int>(id));
+  return kNullSound;
+}
+
+Music AssetManager::getMusic(AssetID id) const {
+  auto it = musics.find(id);
+  if (it != musics.end()) {
+    return it->second;
+  }
+  static Music kNullMusic{};
+  TraceLog(LOG_ERROR, "AssetManager: no music loaded for AssetID %d", static_cast<int>(id));
+  return kNullMusic;
 }
 
 void AssetManager::shareAnimations(AssetID alias, AssetID source) {
@@ -200,6 +238,16 @@ void AssetManager::unloadAll() {
     }
   }
   animations.clear();
+
+  for (auto &pair : sounds) {
+    UnloadSound(pair.second);
+  }
+  sounds.clear();
+
+  for (auto &pair : musics) {
+    UnloadMusicStream(pair.second);
+  }
+  musics.clear();
 
   // We own the skinning shader (UnloadModel never unloads material shaders),
   // so unload it exactly once here.

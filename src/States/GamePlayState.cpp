@@ -5,11 +5,15 @@
 #include <cassert>
 #include <cmath>
 
-GameplayState::GameplayState(const InputManager &input_manager, AssetManager &asset_manager)
-    : input_manager(input_manager), asset_manager(asset_manager) {
+GameplayState::GameplayState(const InputManager &input_manager, AssetManager &asset_manager, SoundController &sound_controller)
+    : input_manager(input_manager), asset_manager(asset_manager), sound_controller(sound_controller) {
   camera_controller = std::make_unique<CameraController>();
   player = std::make_unique<Player>(input_manager);
   player->setPosition({0.0f, 0.0f, -13.0f}); // Spawn north of the central hub
+
+  // Load test SFX
+  asset_manager.loadSound(AssetID::SFX_COIN, ASSET_DIR "/audio/coin.wav");
+  asset_manager.loadSound(AssetID::SFX_HIT, ASSET_DIR "/audio/hit.wav");
 
   // Enemies
   enemies.push_back(
@@ -122,6 +126,7 @@ StateAction GameplayState::update(float dt) {
       money_drops[i].bob_timer += dt;
       if (Vector3DistanceSqr(player_pos, money_drops[i].position) < 2.0f * 2.0f) {
           player->addMoney(money_drops[i].amount);
+          sound_controller.playSFX(asset_manager.getSound(AssetID::SFX_COIN));
           money_drops[i] = money_drops.back();
           money_drops.pop_back();
       }
@@ -344,6 +349,7 @@ StateAction GameplayState::update(float dt) {
             e->setKilledByStealth(true);
             e->setDecayType(DecayType::PETAL_DECAY);
         }
+        sound_controller.playSFX(asset_manager.getSound(AssetID::SFX_HIT));
         player->performTakedown();
         deathblow_victim = pending_aerial_target;
         takedown_text_timer = 2.0f;
@@ -472,6 +478,7 @@ StateAction GameplayState::update(float dt) {
 
               // Let the hitbox apply the damage and blood in sync with the animation
               enemy->getCombatComponent().setBeingExecuted();
+              sound_controller.playSFX(asset_manager.getSound(AssetID::SFX_HIT));
               player->performTakedown();
               deathblow_victim = enemy;
               takedown_text_timer = 2.0f;
