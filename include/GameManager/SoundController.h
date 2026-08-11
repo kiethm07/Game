@@ -1,17 +1,20 @@
 #pragma once
 #include <raylib.h>
+#include <Rendering/AssetID.h>
+
+class AssetManager;
 
 class SoundController {
 public:
-    SoundController() = default;
+    explicit SoundController(const AssetManager& asset_manager);
     ~SoundController() = default;
 
     // SFX
-    void playSFX(Sound sound);
+    void playSFX(AssetID id);
     void setSFXVolume(float volume);
 
     // Music
-    void playMusic(Music music);
+    void playMusic(AssetID id);
     void stopMusic();
     void pauseMusic();
     void resumeMusic();
@@ -19,6 +22,8 @@ public:
     void setMusicVolume(float volume);
 
 private:
+    const AssetManager& asset_manager;
+
     float sfx_volume = 1.0f;
     float music_volume = 1.0f;
     

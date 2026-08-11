@@ -2,7 +2,7 @@
 #include <States/LoadingState.h>
 
 Game::Game()
-    : attack_registry(AttackRegistry::instance()) {}
+    : sound_controller(asset_manager), attack_registry(AttackRegistry::instance()) {}
 
 Game::~Game() {
     while (!states.empty()) {
