@@ -13,7 +13,7 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
 
   // Load test SFX
   asset_manager.loadSound(AssetID::SFX_COIN, ASSET_DIR "/audio/coin.wav");
-  asset_manager.loadSound(AssetID::SFX_HIT, ASSET_DIR "/audio/hit.wav");
+  asset_manager.loadSound(AssetID::SFX_HIT, ASSET_DIR "/audio/hit.mp3");
   asset_manager.loadSound(AssetID::SFX_DEFLECT_1, ASSET_DIR "/audio/deflect_1.MP3");
   asset_manager.loadSound(AssetID::SFX_DEFLECT_2, ASSET_DIR "/audio/Deflect_2.MP3");
   asset_manager.loadSound(AssetID::SFX_DEFLECT_NPC, ASSET_DIR "/audio/deflect_NPC.MP3");

@@ -7,7 +7,11 @@ SoundController::SoundController(const AssetManager& asset_manager)
 void SoundController::playSFX(AssetID id) {
     Sound sound = asset_manager.getSound(id);
     if (sound.stream.buffer != nullptr) {
-        SetSoundVolume(sound, sfx_volume);
+        float pitch = GetRandomValue(95, 105) / 100.0f;
+        float volume_variance = GetRandomValue(90, 100) / 100.0f;
+        
+        SetSoundPitch(sound, pitch);
+        SetSoundVolume(sound, sfx_volume * volume_variance);
         PlaySound(sound);
     }
 }
