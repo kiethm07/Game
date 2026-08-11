@@ -146,7 +146,9 @@ DamageResult Enemy::takeDamage(float health_damage, float posture_damage, Charac
   const bool hit_applied = stats.applyDamage(health_damage, posture_damage);
 
   // If posture was already broken (they are in the 3s vulnerable window), next hit executes them
-  if (was_posture_broken && stats.isPostureBroken()) {
+  if (combat_component.getCurrentState() == CombatState::BeingExecuted) {
+      stats.applyDamage(stats.getCurrentHealth(), 0.0f);
+  } else if (was_posture_broken && stats.isPostureBroken()) {
       stats.applyDamage(stats.getCurrentHealth(), 0.0f);
   } else if (!was_posture_broken && stats.isPostureBroken()) {
       combat_component.breakPosture(3.0f);

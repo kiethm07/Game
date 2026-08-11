@@ -182,6 +182,9 @@ void Player::applyRootMotion(const RootMotion::Track &track, float dt) {
   // PhysicsManager's depenetration and ground snapping. Writing position
   // directly here would let a dodge pass through walls.
   Vector3 local = animator.sampleRootDelta(track);
+  if (combat_component.getCurrentState() == CombatState::Dodging) {
+      local = Vector3Scale(local, 1.5f);
+  }
   Vector3 world = RootMotion::toWorld(local, rotation.y);
   Vector3 velocity = Vector3Scale(world, 1.0f / dt);
 

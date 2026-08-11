@@ -46,6 +46,10 @@ void CombatComponent::update(float dt) {
         return;
     }
 
+    if (current_state == CombatState::BeingExecuted) {
+        return;
+    }
+
     //Guard (Parry + Block)
     if (current_state == CombatState::Parrying) {
         state_timer -= dt;

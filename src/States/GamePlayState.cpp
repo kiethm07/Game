@@ -419,15 +419,24 @@ StateAction GameplayState::update(float dt) {
           bool is_aerial = is_aerial_range && !is_normal_range;
           StealthState s_state = enemy->getStealthComponent().getStealthState();
 
+          bool in_smoke = false;
+          for (const auto& sc : smoke_clouds) {
+              if (sc.owner != enemy && Vector3DistanceSqr(e_pos, sc.position) <= sc.radius * sc.radius) {
+                  in_smoke = true;
+                  break;
+              }
+          }
+
           // 1. Aerial Takedown
           if (is_aerial && (s_state == StealthState::Unaware ||
-                            s_state == StealthState::Suspicious)) {
+                            s_state == StealthState::Suspicious || in_smoke)) {
             can_takedown = true;
           }
-          // 2. Stealth Takedown (Must be Unaware or Suspicious, and player
+          // 2. Stealth Takedown (Must be Unaware or Suspicious, or blinded by smoke, and player
           // closely behind)
           else if (s_state == StealthState::Unaware ||
-                   s_state == StealthState::Suspicious) {
+                   s_state == StealthState::Suspicious || in_smoke) {
+            
             Vector3 enemy_fwd = {std::sin(enemy->getRotation().y * DEG2RAD),
                                  0.0f,
                                  std::cos(enemy->getRotation().y * DEG2RAD)};
