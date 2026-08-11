@@ -1,6 +1,11 @@
 #include <GameManager/SoundController.h>
+#include <Rendering/AssetManager.h>
 
-void SoundController::playSFX(Sound sound) {
+SoundController::SoundController(const AssetManager& asset_manager) 
+    : asset_manager(asset_manager) {}
+
+void SoundController::playSFX(AssetID id) {
+    Sound sound = asset_manager.getSound(id);
     if (sound.stream.buffer != nullptr) {
         SetSoundVolume(sound, sfx_volume);
         PlaySound(sound);
@@ -11,7 +16,8 @@ void SoundController::setSFXVolume(float volume) {
     sfx_volume = volume;
 }
 
-void SoundController::playMusic(Music music) {
+void SoundController::playMusic(AssetID id) {
+    Music music = asset_manager.getMusic(id);
     if (music.stream.buffer != nullptr) {
         if (is_music_playing && current_music.stream.buffer != nullptr) {
             StopMusicStream(current_music);

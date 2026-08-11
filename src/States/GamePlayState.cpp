@@ -126,7 +126,7 @@ StateAction GameplayState::update(float dt) {
       money_drops[i].bob_timer += dt;
       if (Vector3DistanceSqr(player_pos, money_drops[i].position) < 2.0f * 2.0f) {
           player->addMoney(money_drops[i].amount);
-          sound_controller.playSFX(asset_manager.getSound(AssetID::SFX_COIN));
+          sound_controller.playSFX(AssetID::SFX_COIN);
           money_drops[i] = money_drops.back();
           money_drops.pop_back();
       }
@@ -349,7 +349,7 @@ StateAction GameplayState::update(float dt) {
             e->setKilledByStealth(true);
             e->setDecayType(DecayType::PETAL_DECAY);
         }
-        sound_controller.playSFX(asset_manager.getSound(AssetID::SFX_HIT));
+        sound_controller.playSFX(AssetID::SFX_HIT);
         player->performTakedown();
         deathblow_victim = pending_aerial_target;
         takedown_text_timer = 2.0f;
@@ -478,7 +478,7 @@ StateAction GameplayState::update(float dt) {
 
               // Let the hitbox apply the damage and blood in sync with the animation
               enemy->getCombatComponent().setBeingExecuted();
-              sound_controller.playSFX(asset_manager.getSound(AssetID::SFX_HIT));
+              sound_controller.playSFX(AssetID::SFX_HIT);
               player->performTakedown();
               deathblow_victim = enemy;
               takedown_text_timer = 2.0f;
