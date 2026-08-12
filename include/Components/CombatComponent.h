@@ -11,7 +11,8 @@ enum class CombatState {
     Parrying,
     Blocking,
     Dodging,
-    PostureBroken
+    PostureBroken,
+    BeingExecuted
 };
 
 class CombatComponent {
@@ -39,6 +40,8 @@ public:
     /// Forces the component into the PostureBroken state for the given duration,
     /// blocking movement and actions until it recovers.
     void breakPosture(float duration);
+
+    void setBeingExecuted() { current_state = CombatState::BeingExecuted; }
 
     bool canMove() const;
     bool canDodge() const;

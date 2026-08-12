@@ -115,16 +115,32 @@ std::vector<HurtBox> Enemy::getHurtBoxes() const {
 }
 
 DamageResult Enemy::takeDamage(float health_damage, float posture_damage, Character* attacker) {
-  if (combat_component.getCurrentState() == CombatState::Parrying) {
+  bool can_block = true;
+  if (attacker) {
+    float yaw_rad = rotation.y * DEG2RAD;
+    Vector3 forward = {std::sin(yaw_rad), 0.0f, std::cos(yaw_rad)};
+    Vector3 to_attacker = {attacker->getPosition().x - position.x, 0.0f, attacker->getPosition().z - position.z};
+    to_attacker = Vector3Normalize(to_attacker);
+    if (Vector3DotProduct(forward, to_attacker) < 0.707f) {
+      can_block = false;
+    }
+  }
+
+  if (can_block && combat_component.getCurrentState() == CombatState::Idle) {
+    combat_component.startGuard();
+    combat_component.stopGuard(); // Auto-release so they don't get stuck blocking
+  }
+
+  if (can_block && combat_component.getCurrentState() == CombatState::Parrying) {
     health_damage = 0.0f;
     // Posture damage remains normal, same as block
   }
-  else if (combat_component.getCurrentState() == CombatState::Blocking) {
+  else if (can_block && combat_component.getCurrentState() == CombatState::Blocking) {
     health_damage = 0.0f;
   }
 
   const bool blocked =
-      (combat_component.getCurrentState() == CombatState::Blocking);
+      (can_block && combat_component.getCurrentState() == CombatState::Blocking);
   bool was_posture_broken = stats.isPostureBroken();
 
   const bool hit_applied = stats.applyDamage(health_damage, posture_damage);
@@ -144,8 +160,9 @@ DamageResult Enemy::takeDamage(float health_damage, float posture_damage, Charac
           stealth_component.forceAwareness(200.0f);
           stealth_component.setLastKnownPlayerPos(attacker->getPosition());
       }
-      onDamaged(blocked);
-      if (combat_component.getCurrentState() == CombatState::Parrying) return DamageResult::PARRIED;
+      const bool parried = (can_block && combat_component.getCurrentState() == CombatState::Parrying);
+      onDamaged(blocked, parried);
+      if (parried) return DamageResult::PARRIED;
       return blocked ? DamageResult::BLOCKED : DamageResult::HIT;
   }
   return DamageResult::IGNORED;

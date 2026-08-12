@@ -34,6 +34,7 @@ public:
   /// or from the recovery of the same combo, so a takedown pressed out of a
   /// guard or a dodge would otherwise kill the target with no animation at all.
   void performTakedown() {
+      locomotion.resetFallSpeed(); // Prevent landing stagger from cancelling the takedown
       combat_component.interrupt();
       combat_component.initiateCombo(execution_combo);
   }
