@@ -34,6 +34,8 @@ enum class SwordmanAnimState {
 
   Death,
 
+  Parry,
+
   Count
 };
 

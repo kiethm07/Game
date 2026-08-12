@@ -21,6 +21,7 @@ public:
   std::vector<HurtBox> getHurtBoxes() const override;
   DamageResult takeDamage(float health_damage, float posture_damage, Character* attacker) override;
 
+  CombatComponent &getCombatComponent() { return combat_component; }
   const CombatComponent &getCombatComponent() const { return combat_component; }
   StealthComponent &getStealthComponent() { return stealth_component; }
   const StealthComponent &getStealthComponent() const { return stealth_component; }
@@ -30,7 +31,7 @@ protected:
   /// it. The hook exists so a subclass can react — a flinch is the whole of it
   /// today — without having to restate takeDamage's parry, block and
   /// posture-break rules, which are the same for every enemy.
-  virtual void onDamaged(bool /*blocked*/) {}
+  virtual void onDamaged(bool /*blocked*/, bool /*parried*/) {}
 
   CombatComponent combat_component;
   AIComponent ai_component;

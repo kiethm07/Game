@@ -9,6 +9,48 @@
 
 class CollisionMath {
 public:
+    // Distance squared between two line segments
+    static float closestDistanceSqrBetweenLineSegments(Vector3 p1, Vector3 q1, Vector3 p2, Vector3 q2) {
+        Vector3 d1 = Vector3Subtract(q1, p1);
+        Vector3 d2 = Vector3Subtract(q2, p2);
+        Vector3 r = Vector3Subtract(p1, p2);
+        float a = Vector3DotProduct(d1, d1); // Length squared of segment 1
+        float e = Vector3DotProduct(d2, d2); // Length squared of segment 2
+        float f = Vector3DotProduct(d2, r);
+
+        float s = 0.0f, t = 0.0f;
+        float c = Vector3DotProduct(d1, r);
+        float b = Vector3DotProduct(d1, d2);
+        float denom = a * e - b * b; 
+
+        if (denom != 0.0f) {
+            s = std::clamp((b * f - c * e) / denom, 0.0f, 1.0f);
+        } else {
+            s = 0.0f;
+        }
+
+        float tnom = b * s + f;
+        if (tnom < 0.0f) {
+            t = 0.0f;
+            s = (a > 0.0001f) ? std::clamp(-c / a, 0.0f, 1.0f) : 0.0f;
+        } else if (tnom > e) {
+            t = 1.0f;
+            s = (a > 0.0001f) ? std::clamp((b - c) / a, 0.0f, 1.0f) : 0.0f;
+        } else {
+            t = (e > 0.0001f) ? (tnom / e) : 0.0f;
+        }
+
+        Vector3 c1 = Vector3Add(p1, Vector3Scale(d1, s));
+        Vector3 c2 = Vector3Add(p2, Vector3Scale(d2, t));
+        return Vector3DistanceSqr(c1, c2);
+    }
+
+    static bool checkCapsuleCapsule(const Capsule& c1, const Capsule& c2) {
+        float dist_sq = closestDistanceSqrBetweenLineSegments(c1.getBase(), c1.getTip(), c2.getBase(), c2.getTip());
+        float combined_radius = c1.getRadius() + c2.getRadius();
+        return dist_sq <= (combined_radius * combined_radius);
+    }
+
     // Check overlap between attack Sphere (HitBox) and character Capsule (HurtBox)
     static bool checkSphereCapsule(const Sphere& sphere, const Capsule& capsule) {
         Vector3 AB = Vector3Subtract(capsule.getTip(), capsule.getBase());

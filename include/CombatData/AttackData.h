@@ -1,5 +1,50 @@
 #pragma once
 #include <CombatData/ArmorType.h>
+#include <vector>
+#include <raylib.h>
+#include <raymath.h>
+
+enum class HitBoxShapeType { Sphere, Capsule };
+
+struct HitBoxDefinition {
+    HitBoxShapeType type;
+
+    // For Sphere
+    float forward_offset;
+    float vertical_offset;
+    float radius;
+
+    // For Capsule
+    Vector3 start_offset;
+    Vector3 end_offset;
+    float capsule_radius;
+
+    float health_damage;
+    float posture_damage;
+
+    // Helper constructors
+    static HitBoxDefinition createSphere(float fwd, float vert, float r, float hd, float pd) {
+        HitBoxDefinition def;
+        def.type = HitBoxShapeType::Sphere;
+        def.forward_offset = fwd;
+        def.vertical_offset = vert;
+        def.radius = r;
+        def.health_damage = hd;
+        def.posture_damage = pd;
+        return def;
+    }
+
+    static HitBoxDefinition createCapsule(Vector3 start, Vector3 end, float r, float hd, float pd) {
+        HitBoxDefinition def;
+        def.type = HitBoxShapeType::Capsule;
+        def.start_offset = start;
+        def.end_offset = end;
+        def.capsule_radius = r;
+        def.health_damage = hd;
+        def.posture_damage = pd;
+        return def;
+    }
+};
 
 class AttackData {
 public:
@@ -35,7 +80,12 @@ public:
     /// answer for an attack whose clip carries no authored travel.
     bool usesRootMotion() const { return use_root_motion && clip_name != nullptr; }
 
+    const std::vector<HitBoxDefinition>& getHitBoxDefs() const { return hitbox_defs; }
+    void addHitBoxDef(const HitBoxDefinition& def) { hitbox_defs.push_back(def); }
+
 private:
+    std::vector<HitBoxDefinition> hitbox_defs;
+
     float startup_duration   = 0.0f; //No specific data yet
     float active_duration    = 0.0f; //No specific data yet
     float recovery_duration  = 0.0f; //No specific data yet

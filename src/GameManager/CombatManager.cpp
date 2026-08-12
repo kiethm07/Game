@@ -28,8 +28,13 @@ void CombatManager::drawDebug(const std::vector<Character*>& characters) const {
         // 2. Draw Active HitBoxes (Red Sphere Wireframes)
         std::vector<HitBox> hitboxes = character->getActiveHitBoxes();
         for (const auto& hitbox : hitboxes) {
-            Sphere sphere = hitbox.getShape();
-            DrawSphereWires(sphere.getCenter(), sphere.getRadius(), 10, 10, RED);
+            if (hitbox.isSphere()) {
+                Sphere sphere = hitbox.getSphere();
+                DrawSphereWires(sphere.getCenter(), sphere.getRadius(), 10, 10, RED);
+            } else if (hitbox.isCapsule()) {
+                Capsule capsule = hitbox.getCapsule();
+                DrawCapsuleWires(capsule.getBase(), capsule.getTip(), capsule.getRadius(), 8, 8, RED);
+            }
         }
     }
 }
@@ -59,19 +64,29 @@ void CombatManager::update(const std::vector<Character*>& characters, ParticleMa
                     });
                 if (already_hit) continue;
 
-                // Sphere (HitBox) vs Capsule (HurtBox) collision check
+                // Sphere/Capsule (HitBox) vs Capsule (HurtBox) collision check
                 auto hurtboxes = defender->getHurtBoxes();
                 for (const auto& hurtbox : hurtboxes) {
-                    if (CollisionMath::checkSphereCapsule(hitbox.getShape(), hurtbox.getShape())) {
+                    bool hit = false;
+                    if (hitbox.isSphere()) {
+                        hit = CollisionMath::checkSphereCapsule(hitbox.getSphere(), hurtbox.getShape());
+                    } else if (hitbox.isCapsule()) {
+                        hit = CollisionMath::checkCapsuleCapsule(hitbox.getCapsule(), hurtbox.getShape());
+                    }
+
+                    if (hit) {
 
                         DamageResult result = defender->takeDamage(hitbox.getHealthDamage(), hitbox.getPostureDamage(), attacker);
                         active_hits.push_back({ attacker->getId(), defender->getId() });
                         
                         if (particle_manager) {
                             if (result == DamageResult::BLOCKED) {
-                                particle_manager->emitSparks(hitbox.getShape().getCenter(), 10);
+                                particle_manager->emitSparks(hitbox.getCenter(), 10);
                             } else if (result == DamageResult::PARRIED) {
-                                particle_manager->emitSparks(hitbox.getShape().getCenter(), 50);
+                                particle_manager->emitSparks(hitbox.getCenter(), 50);
+                            } else if (result == DamageResult::HIT) {
+                                int blood_count = (hitbox.getHealthDamage() > 1000.0f) ? 100 : 30;
+                                particle_manager->emitBlood(hitbox.getCenter(), blood_count);
                             }
                         }
 

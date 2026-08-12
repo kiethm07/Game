@@ -4,7 +4,8 @@
 
 enum class ParticleType {
     SPARK,
-    SMOKE
+    SMOKE,
+    BLOOD
 };
 
 struct Particle {
@@ -24,6 +25,9 @@ public:
 
     // Emits bright sparks that shoot out quickly and fade
     void emitSparks(Vector3 position, int count);
+    
+    // Emits blood splatter particles
+    void emitBlood(Vector3 position, int count);
     
     // Emits slow-moving, expanding smoke spheres
     void emitVisualSmoke(Vector3 position, float radius, float duration);
