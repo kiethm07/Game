@@ -160,7 +160,7 @@ void Swordman::setupBehaviorTree() {
   };
   
   auto truncatePathBySmoke = [this](std::vector<Vector3>& path) {
-      if (!current_ctx || !current_ctx->smoke_clouds) return;
+      if (!current_ctx || !current_ctx->smoke_clouds || path.size() < 2) return;
       for (size_t i = 0; i < path.size() - 1; ++i) {
           Vector3 A = path[i];
           Vector3 B = path[i + 1];
