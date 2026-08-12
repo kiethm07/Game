@@ -33,17 +33,21 @@ struct AssetEntry {
       nullptr; ///< if set, alias animations to pointed-to source
 };
 
-// The player asset is built in two passes, both from ~/Documents/3D/pack.blend:
-//   1. tools/merge_animations.py folds the 51 per-clip Mixamo armatures into
-//      one skinned GLB at scale 1.0 -> Paladin.glb
-//   2. tools/bake_root_motion.py moves each clip's horizontal travel from
-//      mixamorig:Hips onto a dedicated `Root` bone -> Paladin.rootmotion.glb
-// Load only the second. Pointing this at Paladin.glb reverts bone 0 to the hips
+// The player asset is built in three passes from ~/Documents/3D/pack.blend:
+//   1. tools/retarget_sekiro.py moves the LowPolySekiroRigged model off its own
+//      40-bone rig onto the 69-bone Mixamo rig the clips animate, by rebuilding
+//      the Mixamo REST skeleton onto the model's joints -- legal only because
+//      every clip is pure rotation plus Hips translation. Saves pack_sekiro.blend
+//   2. tools/merge_animations.py folds the 60 per-clip Mixamo armatures into
+//      one skinned GLB at scale 1.0 -> Sekiro.glb
+//   3. tools/bake_root_motion.py moves each clip's horizontal travel from
+//      mixamorig:Hips onto a dedicated `Root` bone -> Sekiro.rootmotion.glb
+// Load only the third. Pointing this at Sekiro.glb reverts bone 0 to the hips
 // and root motion starts picking up hip sway.
 
 // The ashigaru has no model of its own yet, so it borrows the player's rather
 // than the single-clip Walk.glb it used to draw with: one skeleton, one set of
-// 58 named clips, which is what lets SwordmanAnimator's table name "Slash" and
+// 60 named clips, which is what lets SwordmanAnimator's table name "Slash" and
 // "Impact_2" the way the player's does. Aliased, not loaded a second time —
 // both IDs resolve to the one Model and the one animation array, and the
 // skinning shader re-uploads the bone matrices per draw, so each entity poses
@@ -54,8 +58,8 @@ struct AssetEntry {
 static const AssetID kAshigaruSource = AssetID::PLAYER_WOLF;
 
 static const AssetEntry kAssets[] = {
-    {AssetID::PLAYER_WOLF, ASSET_DIR "/Paladin.rootmotion.glb",
-     ASSET_DIR "/Paladin.rootmotion.glb", RendererKind::SkinnedCharacter},
+    {AssetID::PLAYER_WOLF, ASSET_DIR "/Sekiro.rootmotion.glb",
+     ASSET_DIR "/Sekiro.rootmotion.glb", RendererKind::SkinnedCharacter},
     {AssetID::ENEMY_ASHIGARU, nullptr, nullptr, RendererKind::SkinnedCharacter,
      &kAshigaruSource, &kAshigaruSource},
 };
