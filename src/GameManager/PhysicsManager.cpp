@@ -403,7 +403,12 @@ std::vector<Vector3> PhysicsManager::updatePhysics(
             // Characters genuinely in mid-air still have pos.y > 0 and fall
             // normally, so this does not reintroduce the invisible floor that
             // ground_y = -infinity was written to avoid.
-            if (pos.y <= 0.0f) {
+            if (pos.y <= MAX_STEP && pos.y >= 0.0f && character->isGrounded() && v_y <= 0.0f) {
+                pos.y = 0.0f;
+                v_y   = 0.0f;
+                character->setVerticalVelocity(0.0f);
+                character->setGrounded(true);
+            } else if (pos.y <= 0.0f) {
                 pos.y = 0.0f;
                 v_y   = 0.0f;
                 character->setVerticalVelocity(0.0f);

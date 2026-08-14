@@ -126,20 +126,9 @@ void Swordman::setupBehaviorTree() {
   using namespace BT;
 
   // ---------------------------------------------------------
-  // Common Helper: Constrain velocity to NavMesh to prevent falling off cliffs
-  // ---------------------------------------------------------
-  auto applyNavMeshVelocityConstraint = [this](Vector3& desired_velocity) {
-      if (!current_ctx->nav_query || current_ctx->dt < 0.0001f) return;
-      Vector3 intended_pos = Vector3Add(position, {desired_velocity.x * current_ctx->dt, 0.0f, desired_velocity.z * current_ctx->dt});
-      Vector3 safe_pos = current_ctx->nav_query->getConstrainedPosition(position, intended_pos);
-      desired_velocity.x = (safe_pos.x - position.x) / current_ctx->dt;
-      desired_velocity.z = (safe_pos.z - position.z) / current_ctx->dt;
-  };
-
-  // ---------------------------------------------------------
   // Common Helper: Move along a path
   // ---------------------------------------------------------
-  auto moveAlongPath = [this, applyNavMeshVelocityConstraint](float speed) {
+  auto moveAlongPath = [this](float speed) {
     if (current_path.empty()) {
       this->setHorizontalVelocity({0, 0, 0});
       return NodeState::SUCCESS;
@@ -149,7 +138,7 @@ void Swordman::setupBehaviorTree() {
     Vector3 dir = Vector3Subtract(target, position);
     float dist = Vector2Distance({position.x, position.z}, {target.x, target.z});
     
-    if (dist < 0.3f) {
+    if (dist < 0.5f) {
       current_path.erase(current_path.begin());
       if (current_path.empty()) {
         this->setHorizontalVelocity({0, 0, 0});
@@ -161,7 +150,6 @@ void Swordman::setupBehaviorTree() {
     
     Vector3 normalized_dir = Vector3Normalize({dir.x, 0.0f, dir.z});
     Vector3 target_vel = {normalized_dir.x * speed, 0.0f, normalized_dir.z * speed};
-    applyNavMeshVelocityConstraint(target_vel);
     this->setHorizontalVelocity(target_vel);
     
     float target_yaw = std::atan2(normalized_dir.x, normalized_dir.z) * RAD2DEG;
@@ -229,7 +217,7 @@ void Swordman::setupBehaviorTree() {
   // ---------------------------------------------------------
   // Aware Node (Combat)
   // ---------------------------------------------------------
-  auto combatAction = std::make_shared<Action>([this, moveAlongPath, truncatePathBySmoke, applyNavMeshVelocityConstraint]() {
+  auto combatAction = std::make_shared<Action>([this, moveAlongPath, truncatePathBySmoke]() {
     if (!current_ctx) return NodeState::FAILURE;
     if (combat_component.getCurrentState() == CombatState::PostureBroken) return NodeState::SUCCESS;
     
@@ -378,11 +366,9 @@ void Swordman::setupBehaviorTree() {
     path_recalc_timer -= current_ctx->dt;
     if (path_recalc_timer <= 0.0f) {
       if (current_ctx->nav_query) {
-          // Add a small deterministic offset based on enemy ID to prevent them from all aligning in a single straight line
-          Vector3 target_pos = stealth_component.getLastKnownPlayerPos();
-          Vector3 offset = { std::sin(getId() * 1.5f) * 1.5f, 0.0f, std::cos(getId() * 1.5f) * 1.5f };
-          current_path = current_ctx->nav_query->findPath(position, Vector3Add(target_pos, offset));
-          truncatePathBySmoke(current_path);
+        Vector3 target_pos = stealth_component.getLastKnownPlayerPos();
+        current_path = current_ctx->nav_query->findPath(position, target_pos);
+        truncatePathBySmoke(current_path);
       }
       path_recalc_timer = 0.25f;
     }
@@ -399,7 +385,7 @@ void Swordman::setupBehaviorTree() {
   // ---------------------------------------------------------
   // Suspicious Node (Investigation)
   // ---------------------------------------------------------
-  auto investigateAction = std::make_shared<Action>([this, moveAlongPath, truncatePathBySmoke, applyNavMeshVelocityConstraint]() {
+  auto investigateAction = std::make_shared<Action>([this, moveAlongPath, truncatePathBySmoke]() {
     if (!current_ctx) return NodeState::FAILURE;
     
     Vector3 target = stealth_component.getLastKnownPlayerPos();
