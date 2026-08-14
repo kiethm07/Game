@@ -87,7 +87,7 @@ StateAction GameplayState::update(float dt) {
   Vector3 player_pos = player->getPosition();
   const UpdateContext ctx{dt, camera_controller->getCameraForward(),
                           camera_controller->getCameraRight(), player_pos,
-                          &asset_manager, &nav_query, &obstacles, &smoke_clouds};
+                          &asset_manager, &nav_query, &obstacles, &smoke_clouds, locked_target};
 
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());

@@ -7,8 +7,11 @@ const SwordmanAnimator::Machine::Desc *SwordmanAnimator::descTable() {
       //                clip          loop   rate   root   fadeIn
       /* Idle        */ {"Idle", true, 1.0f, false, 0.15f},
       // Rate overridden per frame once something moves an enemy, the same way
-      // the player's run is; the 1.0 here is the clip's authored pace.
       /* Walk        */ {"Walk", true, 1.0f, false, 0.15f},
+      /* StrafeFwd   */ {"Walk", true, 1.0f, false, 0.15f},
+      /* StrafeBack  */ {"Walk_2", true, 1.0f, false, 0.15f},
+      /* StrafeLeft  */ {"Strafe_2", true, 1.0f, false, 0.15f},
+      /* StrafeRight */ {"Strafe", true, 1.0f, false, 0.15f},
       /* GuardImpact */ {"Impact", false, 1.0f, false, 0.05f},
       /* HitReact    */ {"Impact_2", false, 1.0f, false, 0.05f},
       // Fallback swing, used when an attack names no clip or names one the
@@ -120,8 +123,19 @@ SwordmanAnimator::resolve(const Frame &frame) const {
   if (combat.isGuarding() && anim.clipFor(SwordmanAnimState::Parry) >= 0)
     return anim.select(SwordmanAnimState::Parry, combat.getActionId());
 
-  if (frame.moving && anim.clipFor(SwordmanAnimState::Walk) >= 0)
-    return anim.select(SwordmanAnimState::Walk);
+  if (frame.moving) {
+      if (frame.strafing) {
+          SwordmanAnimState cycle = SwordmanAnimState::Walk;
+          if (std::abs(frame.localMoveDir.z) >= std::abs(frame.localMoveDir.x)) {
+              cycle = frame.localMoveDir.z > 0.0f ? SwordmanAnimState::StrafeForward : SwordmanAnimState::StrafeBack;
+          } else {
+              cycle = frame.localMoveDir.x > 0.0f ? SwordmanAnimState::StrafeLeft : SwordmanAnimState::StrafeRight;
+          }
+          if (anim.clipFor(cycle) >= 0) return anim.select(cycle);
+      }
+      if (anim.clipFor(SwordmanAnimState::Walk) >= 0)
+          return anim.select(SwordmanAnimState::Walk);
+  }
 
   return anim.select(SwordmanAnimState::Idle);
 }
