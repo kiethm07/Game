@@ -126,10 +126,28 @@ SwordmanAnimator::resolve(const Frame &frame) const {
   if (frame.moving) {
       if (frame.strafing) {
           SwordmanAnimState cycle = SwordmanAnimState::Walk;
-          if (std::abs(frame.localMoveDir.z) >= std::abs(frame.localMoveDir.x)) {
-              cycle = frame.localMoveDir.z > 0.0f ? SwordmanAnimState::StrafeForward : SwordmanAnimState::StrafeBack;
+          float z_weight = std::abs(frame.localMoveDir.z);
+          float x_weight = std::abs(frame.localMoveDir.x);
+          
+          float z_dir = frame.localMoveDir.z;
+          float x_dir = frame.localMoveDir.x;
+          
+          SwordmanAnimState current = anim.activeState();
+          // Hysteresis: strongly prefer the axis AND direction we are already playing to prevent flip-flopping
+          if (current == SwordmanAnimState::StrafeForward) {
+              z_weight += 0.35f; z_dir += 0.35f;
+          } else if (current == SwordmanAnimState::StrafeBack) {
+              z_weight += 0.35f; z_dir -= 0.35f;
+          } else if (current == SwordmanAnimState::StrafeLeft) {
+              x_weight += 0.35f; x_dir += 0.35f;
+          } else if (current == SwordmanAnimState::StrafeRight) {
+              x_weight += 0.35f; x_dir -= 0.35f;
+          }
+          
+          if (z_weight >= x_weight) {
+              cycle = z_dir > 0.0f ? SwordmanAnimState::StrafeForward : SwordmanAnimState::StrafeBack;
           } else {
-              cycle = frame.localMoveDir.x > 0.0f ? SwordmanAnimState::StrafeLeft : SwordmanAnimState::StrafeRight;
+              cycle = x_dir > 0.0f ? SwordmanAnimState::StrafeLeft : SwordmanAnimState::StrafeRight;
           }
           if (anim.clipFor(cycle) >= 0) return anim.select(cycle);
       }

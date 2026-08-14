@@ -28,6 +28,9 @@ Swordman::Swordman(Vector3 start_position) : Enemy(start_position) {
   spawn_position = start_position;
   spawn_yaw = 0.0f; // Could be randomized or passed in
   
+  // Stagger initial waiting time so they don't all attack at the exact same moment
+  attack_cooldown_timer = (getId() % 4) * 0.8f + ((rand() % 100) / 100.0f);
+  
   setupBehaviorTree();
 }
 
@@ -123,9 +126,20 @@ void Swordman::setupBehaviorTree() {
   using namespace BT;
 
   // ---------------------------------------------------------
+  // Common Helper: Constrain velocity to NavMesh to prevent falling off cliffs
+  // ---------------------------------------------------------
+  auto applyNavMeshVelocityConstraint = [this](Vector3& desired_velocity) {
+      if (!current_ctx->nav_query || current_ctx->dt < 0.0001f) return;
+      Vector3 intended_pos = Vector3Add(position, {desired_velocity.x * current_ctx->dt, 0.0f, desired_velocity.z * current_ctx->dt});
+      Vector3 safe_pos = current_ctx->nav_query->getConstrainedPosition(position, intended_pos);
+      desired_velocity.x = (safe_pos.x - position.x) / current_ctx->dt;
+      desired_velocity.z = (safe_pos.z - position.z) / current_ctx->dt;
+  };
+
+  // ---------------------------------------------------------
   // Common Helper: Move along a path
   // ---------------------------------------------------------
-  auto moveAlongPath = [this](float speed) {
+  auto moveAlongPath = [this, applyNavMeshVelocityConstraint](float speed) {
     if (current_path.empty()) {
       this->setHorizontalVelocity({0, 0, 0});
       return NodeState::SUCCESS;
@@ -135,7 +149,7 @@ void Swordman::setupBehaviorTree() {
     Vector3 dir = Vector3Subtract(target, position);
     float dist = Vector2Distance({position.x, position.z}, {target.x, target.z});
     
-    if (dist < 0.15f) {
+    if (dist < 0.3f) {
       current_path.erase(current_path.begin());
       if (current_path.empty()) {
         this->setHorizontalVelocity({0, 0, 0});
@@ -146,7 +160,9 @@ void Swordman::setupBehaviorTree() {
     }
     
     Vector3 normalized_dir = Vector3Normalize({dir.x, 0.0f, dir.z});
-    this->setHorizontalVelocity({normalized_dir.x * speed, 0.0f, normalized_dir.z * speed});
+    Vector3 target_vel = {normalized_dir.x * speed, 0.0f, normalized_dir.z * speed};
+    applyNavMeshVelocityConstraint(target_vel);
+    this->setHorizontalVelocity(target_vel);
     
     float target_yaw = std::atan2(normalized_dir.x, normalized_dir.z) * RAD2DEG;
     float angle_diff = target_yaw - rotation.y;
@@ -213,7 +229,7 @@ void Swordman::setupBehaviorTree() {
   // ---------------------------------------------------------
   // Aware Node (Combat)
   // ---------------------------------------------------------
-  auto combatAction = std::make_shared<Action>([this, moveAlongPath, truncatePathBySmoke]() {
+  auto combatAction = std::make_shared<Action>([this, moveAlongPath, truncatePathBySmoke, applyNavMeshVelocityConstraint]() {
     if (!current_ctx) return NodeState::FAILURE;
     if (combat_component.getCurrentState() == CombatState::PostureBroken) return NodeState::SUCCESS;
     
@@ -251,17 +267,25 @@ void Swordman::setupBehaviorTree() {
       
       combat_component.initiateCombo(combo);
       
-      // Randomize cooldown and preferred distance for the next cycle
-      attack_cooldown_timer = 1.5f + (rand() % 150) / 100.0f; // 1.5s to 3.0s
-      float base_dist = 3.0f + (rand() % 200) / 100.0f; // 3.0m to 5.0m
+      // Randomize cooldown completely for each turn (1.5s to 4.5s)
+      attack_cooldown_timer = 1.5f + (rand() % 300) / 100.0f;
+      float base_dist = 4.0f + (rand() % 300) / 100.0f; // 4.0m to 7.0m
       preferred_distance_min = base_dist;
-      preferred_distance_max = base_dist + 0.5f;
+      preferred_distance_max = base_dist + 1.0f;
       
       return NodeState::SUCCESS;
     }
     
     // 2. If close and on similar elevation, don't use NavMesh (prevents jitter), use direct movement
-    if (distance < 5.0f && std::abs(position.y - target_pos.y) < 1.0f) {
+    // Threshold must be larger than preferred_distance_max (which can be up to 8.0m) to prevent boundary vibration
+    // Vertical threshold increased to 3.0f to allow smooth direct combat on ramps without flip-flopping to NavMesh
+    bool has_nav_los = false;
+    if (current_ctx->nav_query) {
+        has_nav_los = current_ctx->nav_query->raycast(position, target_pos);
+    }
+    
+    // Only use direct movement if there are NO gaps or walls between enemy and player
+    if (distance < 10.0f && std::abs(position.y - target_pos.y) < 3.0f && has_nav_los) {
       Vector3 move_dir = {0, 0, 0};
       float current_speed = MOVEMENT_SPEED * 0.8f;
       
@@ -277,37 +301,58 @@ void Swordman::setupBehaviorTree() {
         Vector3 strafe_dir = Vector3Scale(tangent, circle_direction);
 
         // On Cooldown: Maintain a randomized preferred distance while circling
-        if (distance < preferred_distance_min) {
-            // Too close, back away aggressively while strafing
-            Vector3 back_dir = Vector3Scale(to_player_norm, -1.0f);
-            move_dir = Vector3Normalize(Vector3Add(back_dir, Vector3Scale(strafe_dir, 0.5f)));
-            current_speed = MOVEMENT_SPEED * 1.2f; 
-        } else if (distance > preferred_distance_max) {
-            // Too far, close in slightly while strafing
-            move_dir = Vector3Normalize(Vector3Add(to_player_norm, Vector3Scale(strafe_dir, 0.5f)));
-            current_speed = MOVEMENT_SPEED * 0.8f;
-        } else {
-            // Sweet spot, purely circle the player
-            move_dir = strafe_dir;
-            current_speed = MOVEMENT_SPEED * 0.7f;
+        float center_dist = (preferred_distance_min + preferred_distance_max) * 0.5f;
+        float dist_error = distance - center_dist;
+        
+        // Smoothly map distance error to a radial pull (-1.0 to back away, 1.0 to close in)
+        float radial_weight = std::fmax(-1.0f, std::fmin(1.0f, dist_error * 1.5f));
+        Vector3 radial_dir = Vector3Scale(to_player_norm, radial_weight);
+        
+        // Separation from other enemies
+        Vector3 separation = {0.0f, 0.0f, 0.0f};
+        if (current_ctx->activeCharacters) {
+            for (const Character* other : *current_ctx->activeCharacters) {
+                if (other == this || other->getFaction() != this->getFaction()) continue;
+                Vector3 to_other = Vector3Subtract(other->getPosition(), position);
+                to_other.y = 0.0f;
+                float dist_other = Vector3Length(to_other);
+                if (dist_other < 2.5f && dist_other > 0.001f) {
+                    float push_weight = 1.0f - (dist_other / 2.5f);
+                    separation = Vector3Add(separation, Vector3Scale(Vector3Normalize(to_other), -push_weight));
+                }
+            }
         }
+        
+        // Blend strafe and radial directions smoothly, and add separation
+        Vector3 desired_dir = Vector3Add(strafe_dir, radial_dir);
+        desired_dir = Vector3Add(desired_dir, Vector3Scale(separation, 1.5f)); // 1.5x weight to separation
+        
+        if (Vector3LengthSqr(desired_dir) > 0.001f) {
+            move_dir = Vector3Normalize(desired_dir);
+        } else {
+            move_dir = strafe_dir;
+        }
+        
+        // Scale speed so they move a bit faster when correcting distance
+        float speed_scale = 0.7f + std::abs(radial_weight) * 0.4f;
+        current_speed = MOVEMENT_SPEED * speed_scale;
       } else {
         // Attack is ready but out of reach: move directly towards player
         move_dir = to_player_norm;
         current_speed = MOVEMENT_SPEED; // Full speed when going in for the kill
       }
       
-      Vector3 current_velocity = {move_dir.x * current_speed, 0.0f, move_dir.z * current_speed};
+      Vector3 target_velocity = {move_dir.x * current_speed, 0.0f, move_dir.z * current_speed};
       
-      // Constrain direct movement to the NavMesh to prevent falling off cliffs
-      if (current_ctx->nav_query) {
-          Vector3 intended_pos = Vector3Add(position, Vector3Scale(current_velocity, current_ctx->dt));
-          Vector3 constrained_pos = current_ctx->nav_query->getConstrainedPosition(position, intended_pos);
-          Vector3 constrained_vel = Vector3Scale(Vector3Subtract(constrained_pos, position), 1.0f / current_ctx->dt);
-          this->setHorizontalVelocity(constrained_vel);
-      } else {
-          this->setHorizontalVelocity(current_velocity);
-      }
+      // Smooth the velocity to prevent micro-stuttering and vibration from separation forces
+      Vector3 old_vel = this->getHorizontalVelocity();
+      Vector3 smoothed_vel = Vector3Lerp(old_vel, target_velocity, 12.0f * current_ctx->dt);
+      
+      // Prevent falling off cliffs or gaps during direct combat movement
+      applyNavMeshVelocityConstraint(smoothed_vel);
+      
+      // Let the PhysicsManager handle collision, NavMesh constraining here fights the physics engine and causes jitter!
+      this->setHorizontalVelocity(smoothed_vel);
       
       // ALWAYS keep eye contact with the player during close combat
       float target_yaw = std::atan2(to_player_norm.x, to_player_norm.z) * RAD2DEG;
@@ -344,7 +389,7 @@ void Swordman::setupBehaviorTree() {
   // ---------------------------------------------------------
   // Suspicious Node (Investigation)
   // ---------------------------------------------------------
-  auto investigateAction = std::make_shared<Action>([this, moveAlongPath, truncatePathBySmoke]() {
+  auto investigateAction = std::make_shared<Action>([this, moveAlongPath, truncatePathBySmoke, applyNavMeshVelocityConstraint]() {
     if (!current_ctx) return NodeState::FAILURE;
     
     Vector3 target = stealth_component.getLastKnownPlayerPos();
