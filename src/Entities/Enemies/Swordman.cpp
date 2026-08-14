@@ -268,131 +268,33 @@ void Swordman::setupBehaviorTree() {
     // Threshold must be larger than preferred_distance_max (which can be up to 8.0m) to prevent boundary vibration
     // Vertical threshold increased to 3.0f to allow smooth direct combat on ramps without flip-flopping to NavMesh
     bool has_nav_los = false;
-    if (current_ctx->nav_query) {
+    if (current_ctx->nav_query != nullptr) {
       has_nav_los = current_ctx->nav_query->raycast(position, target_pos);
     }
     
     // Only use direct movement if there are NO gaps or walls between enemy and player
     if (distance < 10.0f && std::abs(position.y - target_pos.y) < 3.0f && has_nav_los) {
-      in_direct_combat = true;
-      Vector3 move_dir = {0, 0, 0};
-      float current_speed = MOVEMENT_SPEED * 0.8f;
-      
       if (attack_cooldown_timer > 0.0f) {
-        // Randomize strafe direction occasionally
-        if (circle_timer <= 0.0f) {
-          if (rand() % 2 == 0) {
-            circle_direction = -1.0f;
-          } else {
-            circle_direction = 1.0f;
-          }
-          circle_timer = (rand() % 200 + 200) / 100.0f; // 2.0s to 4.0s
-        }
-        
-        // Calculate tangent vector (perpendicular to player direction)
-        Vector3 tangent = {-to_player_norm.z, 0.0f, to_player_norm.x};
-        Vector3 strafe_dir = Vector3Scale(tangent, circle_direction);
-
-        // On Cooldown: Maintain a randomized preferred distance with deadband while circling
-        float radial_weight = 0.0f;
-        if (distance < preferred_distance_min) {
-          float underflow = preferred_distance_min - distance;
-          radial_weight = -std::fmin(1.0f, underflow * 1.0f);
-        } else if (distance > preferred_distance_max) {
-          float overflow = distance - preferred_distance_max;
-          radial_weight = std::fmin(1.0f, overflow * 1.0f);
-        }
-        Vector3 radial_dir = Vector3Scale(to_player_norm, radial_weight);
-        
-        // Separation from other enemies
-        Vector3 separation = {0.0f, 0.0f, 0.0f};
-        if (current_ctx->activeCharacters) {
-          for (const Character* other : *current_ctx->activeCharacters) {
-            if (other == this || other->getFaction() != this->getFaction()) continue;
-            Vector3 to_other = Vector3Subtract(other->getPosition(), position);
-            to_other.y = 0.0f;
-            float dist_other = Vector3Length(to_other);
-            if (dist_other < 2.5f && dist_other > 0.001f) {
-              float push_weight = 1.0f - (dist_other / 2.5f);
-              separation = Vector3Add(separation, Vector3Scale(Vector3Normalize(to_other), -push_weight));
-              
-              if (circle_timer <= 0.0f && dist_other < 1.8f && Vector3DotProduct(strafe_dir, to_other) > 0.7f) {
-                circle_direction = -circle_direction;
-                circle_timer = 2.0f;
-              }
-            }
-          }
-        }
-        
-        // Blend strafe and radial directions smoothly, and add separation
-        Vector3 desired_dir = Vector3Add(strafe_dir, radial_dir);
-        desired_dir = Vector3Add(desired_dir, Vector3Scale(separation, 1.2f));
-        
-        if (Vector3LengthSqr(desired_dir) > 0.001f) {
-          move_dir = Vector3Normalize(desired_dir);
-        } else {
-          move_dir = strafe_dir;
-        }
-        
-        // Scale speed so they move a bit faster when correcting distance
-        float speed_scale = 0.75f + std::abs(radial_weight) * 0.25f;
-        current_speed = MOVEMENT_SPEED * speed_scale;
+        updateCombatCircling(*current_ctx, target_pos, MOVEMENT_SPEED * 0.8f);
       } else {
-        // Attack is ready but out of reach: move directly towards player
-        move_dir = to_player_norm;
-        current_speed = MOVEMENT_SPEED;
+        // Attack is ready: move directly towards player to get into attack reach
+        in_direct_combat = true;
+        Vector3 move_dir = to_player_norm;
+        Vector3 target_vel = {move_dir.x * MOVEMENT_SPEED, 0.0f, move_dir.z * MOVEMENT_SPEED};
+        float lerp_alpha = 1.0f - std::exp(-15.0f * current_ctx->dt);
+        Vector3 old_vel = this->getHorizontalVelocity();
+        Vector3 smoothed_vel = Vector3Lerp(old_vel, target_vel, lerp_alpha);
+        this->setHorizontalVelocity(smoothed_vel);
+
+        float target_yaw = std::atan2(to_player_norm.x, to_player_norm.z) * RAD2DEG;
+        float angle_diff = target_yaw - rotation.y;
+        while (angle_diff < -180.0f) angle_diff += 360.0f;
+        while (angle_diff > 180.0f) angle_diff -= 360.0f;
+        float rot_alpha = 1.0f - std::exp(-18.0f * current_ctx->dt);
+        rotation.y += angle_diff * rot_alpha;
+        while (rotation.y < 0.0f) rotation.y += 360.0f;
+        while (rotation.y >= 360.0f) rotation.y -= 360.0f;
       }
-      
-      // Ledge / Cliff / NavMesh Edge deflection: prevent stepping off platforms and ramps
-      if (current_ctx->nav_query != nullptr && Vector3LengthSqr(move_dir) > 0.001f) {
-        float probe_dist = 1.2f;
-        Vector3 probe_pos = Vector3Add(position, Vector3Scale(move_dir, probe_dist));
-        float hit_t = 1.0f;
-        Vector3 hit_normal = {0.0f, 0.0f, 0.0f};
-        bool is_clear = current_ctx->nav_query->raycast(position, probe_pos, &hit_t, &hit_normal);
-        if (!is_clear) {
-          float normal_dot = Vector3DotProduct(move_dir, hit_normal);
-          if (normal_dot < 0.0f) {
-            // Remove velocity into the cliff to slide safely along the ledge
-            Vector3 slide_dir = Vector3Subtract(move_dir, Vector3Scale(hit_normal, normal_dot));
-            
-            // If near edge, gently push inward to stay safely on the platform
-            if (hit_t < 0.6f) {
-              float push_factor = (0.6f - hit_t) / 0.6f;
-              slide_dir = Vector3Add(slide_dir, Vector3Scale(hit_normal, push_factor * 0.8f));
-            }
-            
-            if (Vector3LengthSqr(slide_dir) > 0.001f) {
-              move_dir = Vector3Normalize(slide_dir);
-            } else {
-              circle_direction = -circle_direction;
-              circle_timer = 2.0f;
-              move_dir = hit_normal;
-            }
-          }
-        }
-      }
-      
-      Vector3 target_velocity = {move_dir.x * current_speed, 0.0f, move_dir.z * current_speed};
-      
-      // Frame-rate independent exponential smoothing
-      float lerp_alpha = 1.0f - std::exp(-15.0f * current_ctx->dt);
-      Vector3 old_vel = this->getHorizontalVelocity();
-      Vector3 smoothed_vel = Vector3Lerp(old_vel, target_velocity, lerp_alpha);
-      
-      // PhysicsManager handles collision and depenetration without NavMesh constraint fighting
-      this->setHorizontalVelocity(smoothed_vel);
-      
-      // ALWAYS keep eye contact with the player during close combat
-      float target_yaw = std::atan2(to_player_norm.x, to_player_norm.z) * RAD2DEG;
-      float angle_diff = target_yaw - rotation.y;
-      while (angle_diff < -180.0f) angle_diff += 360.0f;
-      while (angle_diff > 180.0f) angle_diff -= 360.0f;
-      float rot_alpha = 1.0f - std::exp(-18.0f * current_ctx->dt);
-      rotation.y += angle_diff * rot_alpha;
-      while (rotation.y < 0.0f) rotation.y += 360.0f;
-      while (rotation.y >= 360.0f) rotation.y -= 360.0f;
-      
       return NodeState::RUNNING;
     }
     
