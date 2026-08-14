@@ -46,6 +46,9 @@ public:
   int getDecayType() const { return static_cast<int>(decay_type); }
   void setDecayType(DecayType type) { decay_type = type; }
 
+  bool isStrafing() const { return is_strafing; }
+  Vector3 getLocalMoveDir() const { return localMoveDir; }
+
 protected:
   /// Called once per hit that actually landed, with whether the guard caught
   /// it. The hook exists so a subclass can react — a flinch is the whole of it
@@ -53,11 +56,16 @@ protected:
   /// posture-break rules, which are the same for every enemy.
   virtual void onDamaged(bool /*blocked*/, bool /*parried*/) {}
 
+  void updateStrafing(const Vector3& velocity);
+
   CombatComponent combat_component;
   AIComponent ai_component;
   StealthComponent stealth_component;
   int moveState = 0;
   bool dropped_loot = false;
+  
+  bool is_strafing = false;
+  Vector3 localMoveDir = {0.0f, 0.0f, 0.0f};
   
   bool killed_by_stealth = false;
   float dissolve_timer = 0.0f;
