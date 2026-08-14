@@ -85,9 +85,6 @@ StateAction GameplayState::update(float dt) {
   // 1. Tick entities through the shared polymorphic update path. Each reads
   // input/AI internally and shifts its own position safely.
   Vector3 player_pos = player->getPosition();
-  const UpdateContext ctx{dt, camera_controller->getCameraForward(),
-                          camera_controller->getCameraRight(), player_pos,
-                          &asset_manager, &nav_query, &obstacles, &smoke_clouds, locked_target};
 
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());
@@ -97,6 +94,10 @@ StateAction GameplayState::update(float dt) {
     if (enemy->isModelUnloaded()) continue;
     active_characters.push_back(enemy.get());
   }
+
+  const UpdateContext ctx{dt, camera_controller->getCameraForward(),
+                          camera_controller->getCameraRight(), player_pos,
+                          &asset_manager, &nav_query, &obstacles, &smoke_clouds, locked_target, &active_characters};
 
   // 1.5. Evaluate Stealth before AI update so AI can react in the same frame
   stealth_manager.update(active_characters, player.get(), obstacles, smoke_clouds, dt);

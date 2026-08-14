@@ -46,6 +46,9 @@ struct UpdateContext {
 
   /// The character the player is currently locked onto, if any.
   Character *lockedTarget = nullptr;
+
+  /// Read-only access to all active characters for separation steering.
+  const std::vector<Character*> *activeCharacters = nullptr;
 };
 
 class Character {
