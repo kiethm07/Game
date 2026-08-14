@@ -9,6 +9,10 @@ const PlayerAnimator::Machine::Desc *PlayerAnimator::descTable() {
       /* Idle        */ {"Idle", true, 1.0f, false, 0.15f},
       /* Walk        */ {"Walk", true, 1.0f, false, 0.15f},
       /* Run         */ {"Run", true, 1.0f, false, 0.15f},
+      /* StrafeFwd   */ {"Walk", true, 1.0f, false, 0.15f},
+      /* StrafeBack  */ {"Walk_2", true, 1.0f, false, 0.15f},
+      /* StrafeLeft  */ {"Strafe_2", true, 1.0f, false, 0.15f},
+      /* StrafeRight */ {"Strafe", true, 1.0f, false, 0.15f},
       /* Jump        */ {"Jump", false, 1.0f, false, 0.08f},
       // Loops, because a fall lasts as long as the drop does rather than as
       // long as the clip. The fade in is the longest in the table: it runs at
@@ -320,6 +324,15 @@ PlayerAnimator::resolve(const Frame &frame) const {
     PlayerAnimState cycle = (frame.gait == Gait::Sprinting)
                                 ? PlayerAnimState::Run
                                 : PlayerAnimState::Walk;
+                                
+    if (frame.lockedOn && frame.gait != Gait::Sprinting) {
+      if (std::abs(frame.localMoveDir.z) >= std::abs(frame.localMoveDir.x)) {
+        cycle = frame.localMoveDir.z > 0.0f ? PlayerAnimState::StrafeForward : PlayerAnimState::StrafeBack;
+      } else {
+        cycle = frame.localMoveDir.x > 0.0f ? PlayerAnimState::StrafeLeft : PlayerAnimState::StrafeRight;
+      }
+    }
+
     if (anim.clipFor(cycle) < 0)
       cycle = (cycle == PlayerAnimState::Run) ? PlayerAnimState::Walk
                                               : PlayerAnimState::Run;

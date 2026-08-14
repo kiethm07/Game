@@ -16,6 +16,11 @@ enum class SwordmanAnimState {
   /// horizontal velocity.
   Walk,
 
+  StrafeForward,
+  StrafeBack,
+  StrafeLeft,
+  StrafeRight,
+
   /// The flinch, split the way the player's is: a hit that landed on a raised
   /// guard is a different animation from one that got through. Enemies never
   /// raise a guard today, so only HitReact is reachable — but Enemy::takeDamage
@@ -60,6 +65,9 @@ public:
     /// Death is a state of the character, not of the combat machine — it
     /// outranks every other rung and is never left.
     bool dead = false;
+
+    bool strafing = false;
+    Vector3 localMoveDir = {0.0f, 0.0f, 0.0f};
   };
 
   SwordmanAnimator();

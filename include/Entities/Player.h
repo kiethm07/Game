@@ -142,7 +142,7 @@ private:
   std::vector<SmokeCloud> pending_smoke_clouds;
 
   void updateLocomotionVelocity(const UpdateContext &ctx, Vector3 moveDirection,
-                                float speedScale);
+                                float speedScale, Gait gait);
   void applyRootMotion(const RootMotion::Track &track, float dt);
 
   Vector3 calculateCameraRelativeDirection(Vector3 camForward,
