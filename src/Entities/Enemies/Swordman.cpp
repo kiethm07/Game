@@ -103,24 +103,9 @@ void Swordman::update(const UpdateContext &ctx) {
   frame.moving = (velocity.x != 0.0f || velocity.z != 0.0f);
   frame.dead = dead;
 
-  if (stealth_component.getStealthState() == StealthState::Aware) {
-      frame.strafing = true;
-      float yawRad = rotation.y * DEG2RAD;
-      float sinYaw = std::sin(yawRad);
-      float cosYaw = std::cos(yawRad);
-      
-      Vector3 normVel = {0.0f, 0.0f, 0.0f};
-      if (frame.moving) {
-          normVel = Vector3Normalize(velocity);
-      }
-      
-      // +Z is forward, +X is left in this engine's animation local space
-      frame.localMoveDir.z = normVel.x * sinYaw + normVel.z * cosYaw;
-      frame.localMoveDir.x = normVel.x * cosYaw - normVel.z * sinYaw;
-  } else {
-      frame.strafing = false;
-      frame.localMoveDir = {0.0f, 0.0f, 0.0f};
-  }
+  updateStrafing(velocity);
+  frame.strafing = isStrafing();
+  frame.localMoveDir = getLocalMoveDir();
 
   animator.update(frame, dt);
 }

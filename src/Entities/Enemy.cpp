@@ -7,6 +7,27 @@ Enemy::Enemy(Vector3 start_position, Faction faction) : Character(faction) {
   rotation = {0.0f, 0.0f, 0.0f};
 }
 
+void Enemy::updateStrafing(const Vector3& velocity) {
+  if (stealth_component.getStealthState() == StealthState::Aware) {
+      is_strafing = true;
+      float yawRad = rotation.y * DEG2RAD;
+      float sinYaw = std::sin(yawRad);
+      float cosYaw = std::cos(yawRad);
+      
+      Vector3 normVel = {0.0f, 0.0f, 0.0f};
+      if (velocity.x != 0.0f || velocity.z != 0.0f) {
+          normVel = Vector3Normalize(velocity);
+      }
+      
+      // +Z is forward, +X is left in this engine's animation local space
+      localMoveDir.z = normVel.x * sinYaw + normVel.z * cosYaw;
+      localMoveDir.x = normVel.x * cosYaw - normVel.z * sinYaw;
+  } else {
+      is_strafing = false;
+      localMoveDir = {0.0f, 0.0f, 0.0f};
+  }
+}
+
 void Enemy::drawHPBar(const Camera3D &camera) const {
 
   Vector3 head_pos = {position.x, position.y + body_height + 0.2f, position.z};
