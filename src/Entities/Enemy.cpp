@@ -9,22 +9,23 @@ Enemy::Enemy(Vector3 start_position, Faction faction) : Character(faction) {
 
 void Enemy::updateStrafing(const Vector3& velocity) {
   if (stealth_component.getStealthState() == StealthState::Aware) {
-      is_strafing = true;
-      float yawRad = rotation.y * DEG2RAD;
-      float sinYaw = std::sin(yawRad);
-      float cosYaw = std::cos(yawRad);
-      
-      Vector3 normVel = {0.0f, 0.0f, 0.0f};
-      if (velocity.x != 0.0f || velocity.z != 0.0f) {
-          normVel = Vector3Normalize(velocity);
-      }
-      
-      // +Z is forward, +X is left in this engine's animation local space
-      localMoveDir.z = normVel.x * sinYaw + normVel.z * cosYaw;
-      localMoveDir.x = normVel.x * cosYaw - normVel.z * sinYaw;
+    is_strafing = true;
+    float yaw_rad = rotation.y * DEG2RAD;
+    float sin_yaw = std::sin(yaw_rad);
+    float cos_yaw = std::cos(yaw_rad);
+    
+    Vector3 norm_vel = {0.0f, 0.0f, 0.0f};
+    float speed_sqr = velocity.x * velocity.x + velocity.z * velocity.z;
+    if (speed_sqr > 0.01f) {
+      norm_vel = Vector3Normalize(velocity);
+    }
+    
+    // +Z is forward, +X is left in this engine's animation local space
+    localMoveDir.z = norm_vel.x * sin_yaw + norm_vel.z * cos_yaw;
+    localMoveDir.x = norm_vel.x * cos_yaw - norm_vel.z * sin_yaw;
   } else {
-      is_strafing = false;
-      localMoveDir = {0.0f, 0.0f, 0.0f};
+    is_strafing = false;
+    localMoveDir = {0.0f, 0.0f, 0.0f};
   }
 }
 

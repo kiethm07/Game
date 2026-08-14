@@ -239,13 +239,15 @@ void Swordman::setupBehaviorTree() {
       
       // Allow smooth tracking during the wind-up/startup phase of an attack, or while in move cooldown
       if (combat_component.getCurrentState() == CombatState::AttackStartup || move_cooldown_timer > 0.0f) {
-          Vector3 target_pos = stealth_component.getLastKnownPlayerPos();
-          Vector3 to_player = Vector3Subtract(target_pos, position);
-          float target_yaw = std::atan2(to_player.x, to_player.z) * RAD2DEG;
-          float angle_diff = target_yaw - rotation.y;
-          while (angle_diff < -180.0f) angle_diff += 360.0f;
-          while (angle_diff > 180.0f) angle_diff -= 360.0f;
-          rotation.y += angle_diff * (15.0f * current_ctx->dt);
+        Vector3 target_pos = stealth_component.getLastKnownPlayerPos();
+        Vector3 to_player = Vector3Subtract(target_pos, position);
+        float target_yaw = std::atan2(to_player.x, to_player.z) * RAD2DEG;
+        float angle_diff = target_yaw - rotation.y;
+        while (angle_diff < -180.0f) angle_diff += 360.0f;
+        while (angle_diff > 180.0f) angle_diff -= 360.0f;
+        rotation.y += angle_diff * (15.0f * current_ctx->dt);
+        while (rotation.y < 0.0f) rotation.y += 360.0f;
+        while (rotation.y >= 360.0f) rotation.y -= 360.0f;
       }
       
       return NodeState::RUNNING; // Currently attacking or staggered
@@ -261,9 +263,6 @@ void Swordman::setupBehaviorTree() {
     // Enemy walks up to 1.8m to swing, then backs out to 4.0m on cooldown!
     if (distance < 1.8f && attack_cooldown_timer <= 0.0f) {
       this->setHorizontalVelocity({0, 0, 0});
-      
-      // We removed the instant snap here! 
-      // It will now smoothly track the player during the AttackStartup phase (handled above)
       
       combat_component.initiateCombo(combo);
       
@@ -281,7 +280,7 @@ void Swordman::setupBehaviorTree() {
     // Vertical threshold increased to 3.0f to allow smooth direct combat on ramps without flip-flopping to NavMesh
     bool has_nav_los = false;
     if (current_ctx->nav_query) {
-        has_nav_los = current_ctx->nav_query->raycast(position, target_pos);
+      has_nav_los = current_ctx->nav_query->raycast(position, target_pos);
     }
     
     // Only use direct movement if there are NO gaps or walls between enemy and player
@@ -292,66 +291,75 @@ void Swordman::setupBehaviorTree() {
       if (attack_cooldown_timer > 0.0f) {
         // Randomize strafe direction occasionally
         if (circle_timer <= 0.0f) {
-            circle_direction = (rand() % 2 == 0) ? -1.0f : 1.0f;
-            circle_timer = (rand() % 200 + 200) / 100.0f; // 2.0s to 4.0s
+          if (rand() % 2 == 0) {
+            circle_direction = -1.0f;
+          } else {
+            circle_direction = 1.0f;
+          }
+          circle_timer = (rand() % 200 + 200) / 100.0f; // 2.0s to 4.0s
         }
         
         // Calculate tangent vector (perpendicular to player direction)
         Vector3 tangent = {-to_player_norm.z, 0.0f, to_player_norm.x};
         Vector3 strafe_dir = Vector3Scale(tangent, circle_direction);
 
-        // On Cooldown: Maintain a randomized preferred distance while circling
-        float center_dist = (preferred_distance_min + preferred_distance_max) * 0.5f;
-        float dist_error = distance - center_dist;
-        
-        // Smoothly map distance error to a radial pull (-1.0 to back away, 1.0 to close in)
-        float radial_weight = std::fmax(-1.0f, std::fmin(1.0f, dist_error * 1.5f));
+        // On Cooldown: Maintain a randomized preferred distance with deadband while circling
+        float radial_weight = 0.0f;
+        if (distance < preferred_distance_min) {
+          float underflow = preferred_distance_min - distance;
+          radial_weight = -std::fmin(1.0f, underflow * 1.0f);
+        } else if (distance > preferred_distance_max) {
+          float overflow = distance - preferred_distance_max;
+          radial_weight = std::fmin(1.0f, overflow * 1.0f);
+        }
         Vector3 radial_dir = Vector3Scale(to_player_norm, radial_weight);
         
         // Separation from other enemies
         Vector3 separation = {0.0f, 0.0f, 0.0f};
         if (current_ctx->activeCharacters) {
-            for (const Character* other : *current_ctx->activeCharacters) {
-                if (other == this || other->getFaction() != this->getFaction()) continue;
-                Vector3 to_other = Vector3Subtract(other->getPosition(), position);
-                to_other.y = 0.0f;
-                float dist_other = Vector3Length(to_other);
-                if (dist_other < 2.5f && dist_other > 0.001f) {
-                    float push_weight = 1.0f - (dist_other / 2.5f);
-                    separation = Vector3Add(separation, Vector3Scale(Vector3Normalize(to_other), -push_weight));
-                }
+          for (const Character* other : *current_ctx->activeCharacters) {
+            if (other == this || other->getFaction() != this->getFaction()) continue;
+            Vector3 to_other = Vector3Subtract(other->getPosition(), position);
+            to_other.y = 0.0f;
+            float dist_other = Vector3Length(to_other);
+            if (dist_other < 2.5f && dist_other > 0.001f) {
+              float push_weight = 1.0f - (dist_other / 2.5f);
+              separation = Vector3Add(separation, Vector3Scale(Vector3Normalize(to_other), -push_weight));
+              
+              if (dist_other < 1.8f && Vector3DotProduct(strafe_dir, to_other) > 0.7f) {
+                circle_direction = -circle_direction;
+                circle_timer = 2.0f;
+              }
             }
+          }
         }
         
         // Blend strafe and radial directions smoothly, and add separation
         Vector3 desired_dir = Vector3Add(strafe_dir, radial_dir);
-        desired_dir = Vector3Add(desired_dir, Vector3Scale(separation, 1.5f)); // 1.5x weight to separation
+        desired_dir = Vector3Add(desired_dir, Vector3Scale(separation, 1.2f));
         
         if (Vector3LengthSqr(desired_dir) > 0.001f) {
-            move_dir = Vector3Normalize(desired_dir);
+          move_dir = Vector3Normalize(desired_dir);
         } else {
-            move_dir = strafe_dir;
+          move_dir = strafe_dir;
         }
         
         // Scale speed so they move a bit faster when correcting distance
-        float speed_scale = 0.7f + std::abs(radial_weight) * 0.4f;
+        float speed_scale = 0.75f + std::abs(radial_weight) * 0.25f;
         current_speed = MOVEMENT_SPEED * speed_scale;
       } else {
         // Attack is ready but out of reach: move directly towards player
         move_dir = to_player_norm;
-        current_speed = MOVEMENT_SPEED; // Full speed when going in for the kill
+        current_speed = MOVEMENT_SPEED;
       }
       
       Vector3 target_velocity = {move_dir.x * current_speed, 0.0f, move_dir.z * current_speed};
       
-      // Smooth the velocity to prevent micro-stuttering and vibration from separation forces
+      // Smooth the velocity to prevent micro-stuttering
       Vector3 old_vel = this->getHorizontalVelocity();
       Vector3 smoothed_vel = Vector3Lerp(old_vel, target_velocity, 12.0f * current_ctx->dt);
       
-      // Prevent falling off cliffs or gaps during direct combat movement
-      applyNavMeshVelocityConstraint(smoothed_vel);
-      
-      // Let the PhysicsManager handle collision, NavMesh constraining here fights the physics engine and causes jitter!
+      // PhysicsManager handles collision and depenetration without NavMesh constraint fighting
       this->setHorizontalVelocity(smoothed_vel);
       
       // ALWAYS keep eye contact with the player during close combat
@@ -359,7 +367,9 @@ void Swordman::setupBehaviorTree() {
       float angle_diff = target_yaw - rotation.y;
       while (angle_diff < -180.0f) angle_diff += 360.0f;
       while (angle_diff > 180.0f) angle_diff -= 360.0f;
-      rotation.y += angle_diff * (10.0f * current_ctx->dt);
+      rotation.y += angle_diff * (18.0f * current_ctx->dt);
+      while (rotation.y < 0.0f) rotation.y += 360.0f;
+      while (rotation.y >= 360.0f) rotation.y -= 360.0f;
       
       return NodeState::RUNNING;
     }
