@@ -68,6 +68,7 @@ public:
 
     bool strafing = false;
     Vector3 localMoveDir = {0.0f, 0.0f, 0.0f};
+    float speed = 0.0f;
   };
 
   SwordmanAnimator();

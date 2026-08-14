@@ -7,8 +7,8 @@ Enemy::Enemy(Vector3 start_position, Faction faction) : Character(faction) {
   rotation = {0.0f, 0.0f, 0.0f};
 }
 
-void Enemy::updateStrafing(const Vector3& velocity) {
-  if (stealth_component.getStealthState() == StealthState::Aware) {
+void Enemy::updateStrafing(const Vector3& velocity, bool enable_strafing) {
+  if (enable_strafing && stealth_component.getStealthState() == StealthState::Aware) {
     is_strafing = true;
     float yaw_rad = rotation.y * DEG2RAD;
     float sin_yaw = std::sin(yaw_rad);

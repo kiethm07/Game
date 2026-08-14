@@ -56,7 +56,7 @@ protected:
   /// posture-break rules, which are the same for every enemy.
   virtual void onDamaged(bool /*blocked*/, bool /*parried*/) {}
 
-  void updateStrafing(const Vector3& velocity);
+  void updateStrafing(const Vector3& velocity, bool enable_strafing = true);
 
   CombatComponent combat_component;
   AIComponent ai_component;
