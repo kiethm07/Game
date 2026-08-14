@@ -67,7 +67,7 @@ std::vector<Vector3> NavMeshQuery::findPath(Vector3 start, Vector3 end) const {
     return path;
 }
 
-bool NavMeshQuery::raycast(Vector3 start, Vector3 end) const {
+bool NavMeshQuery::raycast(Vector3 start, Vector3 end, float* hit_t, Vector3* hit_normal) const {
     if (!m_navQuery) return false;
 
     float extents[3] = { 2.0f, 4.0f, 2.0f };
@@ -75,17 +75,25 @@ bool NavMeshQuery::raycast(Vector3 start, Vector3 end) const {
     float endPos[3] = { end.x, end.y, end.z };
 
     dtPolyRef startRef;
-    m_navQuery->findNearestPoly(startPos, extents, m_filter, &startRef, 0);
+    float nearestStart[3];
+    m_navQuery->findNearestPoly(startPos, extents, m_filter, &startRef, nearestStart);
 
     if (!startRef) return false;
 
     float t = 0.0f;
-    float hitNormal[3];
+    float hitNormal[3] = {0.0f, 0.0f, 0.0f};
     dtPolyRef path[16];
     int pathCount = 0;
 
-    // Raycast along the NavMesh. t will be 1.0f if the ray reached endPos without hitting an edge.
-    m_navQuery->raycast(startRef, startPos, endPos, m_filter, &t, hitNormal, path, &pathCount, 16);
+    // Raycast along the NavMesh. t will be >= 1.0f if the ray reached endPos without hitting an edge.
+    m_navQuery->raycast(startRef, nearestStart, endPos, m_filter, &t, hitNormal, path, &pathCount, 16);
+
+    if (hit_t != nullptr) {
+        *hit_t = t;
+    }
+    if (hit_normal != nullptr) {
+        *hit_normal = { hitNormal[0], hitNormal[1], hitNormal[2] };
+    }
 
     return (t >= 1.0f);
 }

@@ -104,9 +104,10 @@ void Swordman::update(const UpdateContext &ctx) {
   // the travel exactly.
   const Vector3 velocity = getHorizontalVelocity();
   frame.moving = (velocity.x != 0.0f || velocity.z != 0.0f);
+  frame.speed = Vector3Length(velocity);
   frame.dead = dead;
 
-  updateStrafing(velocity);
+  updateStrafing(velocity, in_direct_combat);
   frame.strafing = isStrafing();
   frame.localMoveDir = getLocalMoveDir();
 
@@ -254,9 +255,9 @@ void Swordman::setupBehaviorTree() {
       
       combat_component.initiateCombo(combo);
       
-      // Randomize cooldown completely for each turn (1.5s to 4.5s)
-      attack_cooldown_timer = 1.5f + (rand() % 300) / 100.0f;
-      float base_dist = 4.0f + (rand() % 300) / 100.0f; // 4.0m to 7.0m
+      // Randomize cooldown completely for each turn (1.5s to 3.5s)
+      attack_cooldown_timer = 1.5f + (rand() % 200) / 100.0f;
+      float base_dist = 3.0f + (rand() % 150) / 100.0f; // 3.0m to 4.5m
       preferred_distance_min = base_dist;
       preferred_distance_max = base_dist + 1.0f;
       
@@ -273,6 +274,7 @@ void Swordman::setupBehaviorTree() {
     
     // Only use direct movement if there are NO gaps or walls between enemy and player
     if (distance < 10.0f && std::abs(position.y - target_pos.y) < 3.0f && has_nav_los) {
+      in_direct_combat = true;
       Vector3 move_dir = {0, 0, 0};
       float current_speed = MOVEMENT_SPEED * 0.8f;
       
@@ -314,7 +316,7 @@ void Swordman::setupBehaviorTree() {
               float push_weight = 1.0f - (dist_other / 2.5f);
               separation = Vector3Add(separation, Vector3Scale(Vector3Normalize(to_other), -push_weight));
               
-              if (dist_other < 1.8f && Vector3DotProduct(strafe_dir, to_other) > 0.7f) {
+              if (circle_timer <= 0.0f && dist_other < 1.8f && Vector3DotProduct(strafe_dir, to_other) > 0.7f) {
                 circle_direction = -circle_direction;
                 circle_timer = 2.0f;
               }
@@ -341,11 +343,42 @@ void Swordman::setupBehaviorTree() {
         current_speed = MOVEMENT_SPEED;
       }
       
+      // Ledge / Cliff / NavMesh Edge deflection: prevent stepping off platforms and ramps
+      if (current_ctx->nav_query != nullptr && Vector3LengthSqr(move_dir) > 0.001f) {
+        float probe_dist = 1.2f;
+        Vector3 probe_pos = Vector3Add(position, Vector3Scale(move_dir, probe_dist));
+        float hit_t = 1.0f;
+        Vector3 hit_normal = {0.0f, 0.0f, 0.0f};
+        bool is_clear = current_ctx->nav_query->raycast(position, probe_pos, &hit_t, &hit_normal);
+        if (!is_clear) {
+          float normal_dot = Vector3DotProduct(move_dir, hit_normal);
+          if (normal_dot < 0.0f) {
+            // Remove velocity into the cliff to slide safely along the ledge
+            Vector3 slide_dir = Vector3Subtract(move_dir, Vector3Scale(hit_normal, normal_dot));
+            
+            // If near edge, gently push inward to stay safely on the platform
+            if (hit_t < 0.6f) {
+              float push_factor = (0.6f - hit_t) / 0.6f;
+              slide_dir = Vector3Add(slide_dir, Vector3Scale(hit_normal, push_factor * 0.8f));
+            }
+            
+            if (Vector3LengthSqr(slide_dir) > 0.001f) {
+              move_dir = Vector3Normalize(slide_dir);
+            } else {
+              circle_direction = -circle_direction;
+              circle_timer = 2.0f;
+              move_dir = hit_normal;
+            }
+          }
+        }
+      }
+      
       Vector3 target_velocity = {move_dir.x * current_speed, 0.0f, move_dir.z * current_speed};
       
-      // Smooth the velocity to prevent micro-stuttering
+      // Frame-rate independent exponential smoothing
+      float lerp_alpha = 1.0f - std::exp(-15.0f * current_ctx->dt);
       Vector3 old_vel = this->getHorizontalVelocity();
-      Vector3 smoothed_vel = Vector3Lerp(old_vel, target_velocity, 12.0f * current_ctx->dt);
+      Vector3 smoothed_vel = Vector3Lerp(old_vel, target_velocity, lerp_alpha);
       
       // PhysicsManager handles collision and depenetration without NavMesh constraint fighting
       this->setHorizontalVelocity(smoothed_vel);
@@ -355,12 +388,15 @@ void Swordman::setupBehaviorTree() {
       float angle_diff = target_yaw - rotation.y;
       while (angle_diff < -180.0f) angle_diff += 360.0f;
       while (angle_diff > 180.0f) angle_diff -= 360.0f;
-      rotation.y += angle_diff * (18.0f * current_ctx->dt);
+      float rot_alpha = 1.0f - std::exp(-18.0f * current_ctx->dt);
+      rotation.y += angle_diff * rot_alpha;
       while (rotation.y < 0.0f) rotation.y += 360.0f;
       while (rotation.y >= 360.0f) rotation.y -= 360.0f;
       
       return NodeState::RUNNING;
     }
+    
+    in_direct_combat = false;
     
     // 3. If far, use NavMesh to chase
     path_recalc_timer -= current_ctx->dt;

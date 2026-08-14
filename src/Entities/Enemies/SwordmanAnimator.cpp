@@ -127,47 +127,48 @@ SwordmanAnimator::resolve(const Frame &frame) const {
     return anim.select(SwordmanAnimState::Parry, combat.getActionId());
 
   if (frame.moving) {
+    SwordmanAnimState cycle = SwordmanAnimState::Walk;
     if (frame.strafing) {
-      SwordmanAnimState cycle = SwordmanAnimState::Walk;
       float z_weight = std::abs(frame.localMoveDir.z);
       float x_weight = std::abs(frame.localMoveDir.x);
 
-      float z_dir = frame.localMoveDir.z;
-      float x_dir = frame.localMoveDir.x;
-
       SwordmanAnimState current = anim.activeState();
-      // Hysteresis: strongly prefer the axis and direction currently playing
-      if (current == SwordmanAnimState::StrafeForward) {
-        z_weight += 0.45f;
-        z_dir += 0.45f;
-      } else if (current == SwordmanAnimState::StrafeBack) {
-        z_weight += 0.45f;
-        z_dir -= 0.45f;
-      } else if (current == SwordmanAnimState::StrafeLeft) {
-        x_weight += 0.45f;
-        x_dir += 0.45f;
-      } else if (current == SwordmanAnimState::StrafeRight) {
-        x_weight += 0.45f;
-        x_dir -= 0.45f;
+      // Hysteresis: only add bias to the axis comparison, never distorting direction signs
+      if (current == SwordmanAnimState::StrafeForward || current == SwordmanAnimState::StrafeBack) {
+        z_weight += 0.35f;
+      } else if (current == SwordmanAnimState::StrafeLeft || current == SwordmanAnimState::StrafeRight) {
+        x_weight += 0.35f;
       }
 
       if (z_weight >= x_weight) {
-        if (z_dir >= 0.0f) {
+        if (frame.localMoveDir.z >= 0.0f) {
           cycle = SwordmanAnimState::StrafeForward;
         } else {
           cycle = SwordmanAnimState::StrafeBack;
         }
       } else {
-        if (x_dir >= 0.0f) {
+        if (frame.localMoveDir.x >= 0.0f) {
           cycle = SwordmanAnimState::StrafeLeft;
         } else {
           cycle = SwordmanAnimState::StrafeRight;
         }
       }
-      if (anim.clipFor(cycle) >= 0) return anim.select(cycle);
     }
-    if (anim.clipFor(SwordmanAnimState::Walk) >= 0)
-      return anim.select(SwordmanAnimState::Walk);
+
+    if (anim.clipFor(cycle) < 0) {
+      cycle = SwordmanAnimState::Walk;
+    }
+
+    if (anim.clipFor(cycle) >= 0) {
+      Machine::Selection selection = anim.select(cycle);
+      if (frame.assets != nullptr && frame.speed > 0.0f) {
+        const RootMotion::Track& track = anim.track(*frame.assets, cycle);
+        if (track.hasMotion && track.authoredSpeed > 0.0f) {
+          selection.rate = frame.speed / track.authoredSpeed;
+        }
+      }
+      return selection;
+    }
   }
 
   return anim.select(SwordmanAnimState::Idle);

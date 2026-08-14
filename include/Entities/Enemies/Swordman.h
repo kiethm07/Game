@@ -44,4 +44,5 @@ private:
   float circle_timer = 0.0f;
   float preferred_distance_min = 3.5f;
   float preferred_distance_max = 4.5f;
+  bool in_direct_combat = false;
 };
