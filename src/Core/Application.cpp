@@ -4,6 +4,7 @@ Application::Application() {
   // SetConfigFlags(FLAG_WINDOW_TOPMOST | FLAG_WINDOW_UNDECORATED);
   // InitWindow(GetScreenWidth(), GetScreenHeight(), "Borderless fullscreen");
   InitWindow(1366, 768, "Game");
+  InitAudioDevice();
   SetTargetFPS(60);
 
   game.pushState(std::make_unique<MainMenuState>());

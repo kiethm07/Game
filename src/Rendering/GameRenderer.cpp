@@ -6,64 +6,17 @@
 #include <Util/Frustum.h>
 #include <raymath.h>
 #include <rlgl.h>
+#include <Rendering/AssetManifest.h>
 
 // ---------------------------------------------------------------------------
 // Asset Manifest
 // ---------------------------------------------------------------------------
 // To add a new entity:
 //   1. Add its AssetID to AssetID.h
-//   2. Add one row here — model/anim paths (or nullptr) AND the renderer kind.
+//   2. Add one row to AssetManifest.h — model/anim paths (or nullptr) AND the renderer kind.
 //      Loading, sharing, and renderer registration all flow from this table.
 // ---------------------------------------------------------------------------
 namespace {
-/// Which IEntityRenderer strategy an asset is drawn with.
-enum class RendererKind {
-  SkinnedCharacter, ///< SkinnedEntityRenderer (GPU-skinned GLB)
-  DebugCube,        ///< DebugCubeRenderer (placeholder proxy)
-};
-
-struct AssetEntry {
-  AssetID id;
-  const char *modelPath; ///< nullptr → no model to load
-  const char *animPath;  ///< nullptr → no animations to load
-  RendererKind renderer = RendererKind::SkinnedCharacter;
-  const AssetID *sharedModelId =
-      nullptr; ///< if set, alias model to pointed-to source
-  const AssetID *sharedAnimId =
-      nullptr; ///< if set, alias animations to pointed-to source
-};
-
-// The player asset is built in three passes from ~/Documents/3D/pack.blend:
-//   1. tools/retarget_sekiro.py moves the LowPolySekiroRigged model off its own
-//      40-bone rig onto the 69-bone Mixamo rig the clips animate, by rebuilding
-//      the Mixamo REST skeleton onto the model's joints -- legal only because
-//      every clip is pure rotation plus Hips translation. Saves pack_sekiro.blend
-//   2. tools/merge_animations.py folds the 60 per-clip Mixamo armatures into
-//      one skinned GLB at scale 1.0 -> Sekiro.glb
-//   3. tools/bake_root_motion.py moves each clip's horizontal travel from
-//      mixamorig:Hips onto a dedicated `Root` bone -> Sekiro.rootmotion.glb
-// Load only the third. Pointing this at Sekiro.glb reverts bone 0 to the hips
-// and root motion starts picking up hip sway.
-
-// The ashigaru has no model of its own yet, so it borrows the player's rather
-// than the single-clip Walk.glb it used to draw with: one skeleton, one set of
-// 60 named clips, which is what lets SwordmanAnimator's table name "Slash" and
-// "Impact_2" the way the player's does. Aliased, not loaded a second time —
-// both IDs resolve to the one Model and the one animation array, and the
-// skinning shader re-uploads the bone matrices per draw, so each entity poses
-// it independently.
-//
-// Swapping in a real ashigaru asset is this pointer becoming a path, plus
-// whatever clip names the new asset carries.
-static const AssetID kAshigaruSource = AssetID::PLAYER_WOLF;
-
-static const AssetEntry kAssets[] = {
-    {AssetID::PLAYER_WOLF, ASSET_DIR "/Sekiro.rootmotion.glb",
-     ASSET_DIR "/Sekiro.rootmotion.glb", RendererKind::SkinnedCharacter},
-    {AssetID::ENEMY_ASHIGARU, nullptr, nullptr, RendererKind::SkinnedCharacter,
-     &kAshigaruSource, &kAshigaruSource},
-};
-
 std::unique_ptr<IEntityRenderer> makeRenderer(RendererKind kind) {
   switch (kind) {
   case RendererKind::DebugCube:
@@ -201,29 +154,17 @@ void GameRenderer::loadLevelModel(const Level &level) {
 }
 
 void GameRenderer::initializeAssets() {
-  // 1. Load assets declared in the manifest table.
-  for (const auto &entry : kAssets) {
-    if (entry.modelPath)
-      assetManager.loadModel(entry.id, entry.modelPath);
-    if (entry.animPath)
-      assetManager.loadAnimations(entry.id, entry.animPath);
-  }
+  // Models, animations and aliases are loaded by LoadingState before this
+  // object exists — see the manifest walk there. Repeating those passes here
+  // would only trip AssetManager's already-loaded guards, so this function
+  // registers the renderer strategies and the environment shaders.
 
-  // 2. Register model and animation aliases (sharing). Must run after all loads
-  // above.
-  for (const auto &entry : kAssets) {
-    if (entry.sharedModelId)
-      assetManager.shareModel(entry.id, *entry.sharedModelId);
-    if (entry.sharedAnimId)
-      assetManager.shareAnimations(entry.id, *entry.sharedAnimId);
-  }
-
-  // 3. Register a rendering strategy for each AssetID, straight from the table.
+  // 1. Register a rendering strategy for each AssetID, straight from the table.
   for (const auto &entry : kAssets) {
     entityRenderers[entry.id] = makeRenderer(entry.renderer);
   }
 
-  // 4. Environment shaders. Not owned by AssetManager: they belong to the
+  // 2. Environment shaders. Not owned by AssetManager: they belong to the
   //    environment, and AssetManager's shaders are keyed to a model's vertex
   //    format. Both pull in shadow_common.glsl, hence ShaderLibrary rather than
   //    raylib's LoadShader.

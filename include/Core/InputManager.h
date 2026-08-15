@@ -18,7 +18,10 @@ enum class GameAction {
   Dodge,
   LockOn,
   Takedown,
-  Crouch
+  Crouch,
+  UseItem,
+  NextItem,
+  PrevItem
 };
 
 enum class InputState { Idle, Pressed, Held, Released };

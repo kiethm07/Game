@@ -16,6 +16,10 @@ public:
   virtual CharacterRenderData getRenderData() const override = 0;
   void drawHPBar(const Camera3D &camera) const;
 
+  bool isBeingExecuted() const override {
+    return combat_component.getCurrentState() == CombatState::BeingExecuted;
+  }
+
   float getColliderRadius() const override;
   float getColliderHeight() const override;
   std::vector<HurtBox> getHurtBoxes() const override;
@@ -25,6 +29,22 @@ public:
   const CombatComponent &getCombatComponent() const { return combat_component; }
   StealthComponent &getStealthComponent() { return stealth_component; }
   const StealthComponent &getStealthComponent() const { return stealth_component; }
+
+  bool hasDroppedLoot() const { return dropped_loot; }
+  void setDroppedLoot(bool dropped) { dropped_loot = dropped; }
+
+  bool isKilledByStealth() const { return killed_by_stealth; }
+  void setKilledByStealth(bool killed) { killed_by_stealth = killed; }
+  
+  float getDissolveTimer() const { return dissolve_timer; }
+  void addDissolveTimer(float dt) { dissolve_timer += dt; }
+  bool isFullyDissolved() const { return dissolve_timer >= 2.0f; }
+
+  bool isModelUnloaded() const { return model_unloaded; }
+  void setModelUnloaded(bool unloaded) { model_unloaded = unloaded; }
+
+  int getDecayType() const { return static_cast<int>(decay_type); }
+  void setDecayType(DecayType type) { decay_type = type; }
 
 protected:
   /// Called once per hit that actually landed, with whether the guard caught
@@ -37,6 +57,12 @@ protected:
   AIComponent ai_component;
   StealthComponent stealth_component;
   int moveState = 0;
+  bool dropped_loot = false;
+  
+  bool killed_by_stealth = false;
+  float dissolve_timer = 0.0f;
+  bool model_unloaded = false;
+  DecayType decay_type = DecayType::ASH_DECAY;
 
   float body_height = 2.0f;
   float body_radius = 0.5f;
