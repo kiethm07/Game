@@ -21,6 +21,7 @@ out vec3 fragPosition;
 out vec2 fragTexCoord;
 out vec4 fragColor;
 out vec3 fragNormal;
+out vec3 fragLocalPos;
 
 void main()
 {
@@ -52,6 +53,7 @@ void main()
     fragTexCoord = vertexTexCoord;
     fragColor = vertexColor;
     fragNormal = normalize(vec3(matNormal*skinnedNormal));
+    fragLocalPos = skinnedPosition.xyz;
 
     gl_Position = mvp*skinnedPosition;
 }

@@ -42,35 +42,43 @@ void Swordman::update(const UpdateContext &ctx) {
 
   const bool dead = stats.isDead();
   if (!dead) {
-    bool in_smoke = false;
-    if (ctx.smoke_clouds) {
-        for (const auto& smoke : *ctx.smoke_clouds) {
-            if (smoke.owner == this) continue;
-            if (Vector3DistanceSqr(position, smoke.position) <= smoke.radius * smoke.radius) {
-                in_smoke = true;
-                break;
-            }
-        }
-    }
-
-    if (in_smoke) {
-        stealth_component.blind();
-        combat_component.interrupt();
-        setHorizontalVelocity({0.0f, 0.0f, 0.0f});
-        if (!animator.isFlinching()) {
-            animator.queueReaction(false);
-        }
-    }
-    
     if (combat_component.getCurrentState() == CombatState::BeingExecuted) {
         setHorizontalVelocity({0.0f, 0.0f, 0.0f});
-    } else if (combat_component.getCurrentState() == CombatState::PostureBroken) {
-        if (!animator.isFlinching()) {
-            animator.queueReaction(false);
-        }
     } else {
+        bool in_smoke = false;
+        if (ctx.smoke_clouds) {
+            for (const auto& smoke : *ctx.smoke_clouds) {
+                if (smoke.owner == this) continue;
+                if (Vector3DistanceSqr(position, smoke.position) <= smoke.radius * smoke.radius) {
+                    in_smoke = true;
+                    break;
+                }
+            }
+        }
+
+        if (in_smoke) {
+            stealth_component.blind();
+            combat_component.interrupt();
+            setHorizontalVelocity({0.0f, 0.0f, 0.0f});
+            if (!animator.isFlinching()) {
+                animator.queueReaction(false);
+            }
+        }
+
+        bool was_posture_broken = (combat_component.getCurrentState() == CombatState::PostureBroken);
+        
         combat_component.update(dt);
-        ai_component.update();
+        
+        if (combat_component.getCurrentState() == CombatState::PostureBroken) {
+            if (!animator.isFlinching()) {
+                animator.queueReaction(false);
+            }
+        } else {
+            if (was_posture_broken) {
+                stats.resetPosture();
+            }
+            ai_component.update();
+        }
     }
   }
   if (combat_component.getCurrentState() == CombatState::Idle) {
@@ -486,5 +494,10 @@ CharacterRenderData Swordman::getRenderData() const {
   transform.rotation = rotation;
   transform.scale = visual_size;
 
-  return {AssetID::ENEMY_ASHIGARU, transform, animator.renderState()};
+  float dissolveProgress = 0.0f;
+  if (killed_by_stealth) {
+      dissolveProgress = std::fmin(dissolve_timer / 2.0f, 1.0f);
+  }
+
+  return {AssetID::ENEMY_ASHIGARU, transform, animator.renderState(), dissolveProgress, decay_type};
 }

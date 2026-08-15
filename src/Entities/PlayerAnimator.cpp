@@ -40,10 +40,10 @@ const PlayerAnimator::Machine::Desc *PlayerAnimator::descTable() {
       // retiming the clips keeps the authored travel exact — rate only changes
       // how fast the same root offset is consumed — and keeps the i-frame
       // window in step, since dodgeDuration() divides the clip by this rate.
-      /* DodgeFwd    */ {"Dodge_Forward", false, 1.75f, true, 0.05f},
-      /* DodgeBack   */ {"Dodge_Back", false, 2.0f, true, 0.05f},
-      /* DodgeLeft   */ {"Dodge_Left", false, 1.75f, true, 0.05f},
-      /* DodgeRight  */ {"Dodge_Right", false, 1.75f, true, 0.05f},
+      /* DodgeFwd    */ {"Dodge_Forward", false, 2.25f, true, 0.05f},
+      /* DodgeBack   */ {"Dodge_Back", false, 2.5f, true, 0.05f},
+      /* DodgeLeft   */ {"Dodge_Left", false, 2.25f, true, 0.05f},
+      /* DodgeRight  */ {"Dodge_Right", false, 2.25f, true, 0.05f},
       // Fallback swing, used when an attack names no clip or names one the
       // loaded asset does not contain. Attacks that do name a clip override
       // this in resolve().

@@ -4,6 +4,8 @@
 #include <rlgl.h>
 #include <GameManager/SmokeCloud.h>
 #include <CombatData/AttackRegistry.h>
+#include <Entities/Items/HealingGourd.h>
+#include <Entities/Items/SmokeBomb.h>
 
 Player::Player(const InputManager &input_manager)
     : Character(Faction::Player), input_manager(input_manager) {
@@ -12,6 +14,9 @@ Player::Player(const InputManager &input_manager)
   execution_combo = {AttackID::PlayerExecution};
   position = {0, 0, 0};
   rotation = {0, 180.0f, 0};
+
+  inventory.push_back(std::make_unique<HealingGourd>());
+  inventory.push_back(std::make_unique<SmokeBomb>());
 }
 
 void Player::update(const UpdateContext &ctx) {
@@ -58,8 +63,22 @@ void Player::update(const UpdateContext &ctx) {
   // Re-evaluated after the inputs rather than reusing the one above. An attack
   // started this frame has to stop movement on this frame; a gate read before
   // the input that began it would let one frame of free steering through.
-  const ActionGate move_gate =
+  ActionGate move_gate =
       locomotion.gate(combat_component, isGrounded(), sprint_held);
+
+  // Item timer logic
+  if (item_use_timer > 0.0f) {
+      item_use_timer -= dt;
+      move_gate.moveSpeedScale = 0.5f; // Slow down while using item
+      if (item_use_timer <= 0.0f) {
+          item_use_timer = 0.0f;
+          if (!inventory.empty() && active_item_index < inventory.size()) {
+              inventory[active_item_index]->use(this);
+              inventory[active_item_index]->consume();
+          }
+      }
+  }
+
   gait = move_gate.gait;
 
   // Two movement regimes. Free locomotion is code-driven so it stays responsive
@@ -163,6 +182,9 @@ void Player::applyRootMotion(const RootMotion::Track &track, float dt) {
   // PhysicsManager's depenetration and ground snapping. Writing position
   // directly here would let a dodge pass through walls.
   Vector3 local = animator.sampleRootDelta(track);
+  if (combat_component.getCurrentState() == CombatState::Dodging) {
+      local = Vector3Scale(local, 1.5f);
+  }
   Vector3 world = RootMotion::toWorld(local, rotation.y);
   Vector3 velocity = Vector3Scale(world, 1.0f / dt);
 
@@ -254,6 +276,10 @@ std::vector<HitBox> Player::getActiveHitBoxes() const {
 
 DamageResult Player::takeDamage(float health_damage, float posture_damage,
                                 Character *attacker) {
+  if (isExecuting()) {
+    return DamageResult::IGNORED;
+  }
+
   bool can_block = true;
   if (attacker) {
     float yaw_rad = rotation.y * DEG2RAD;
@@ -301,6 +327,9 @@ DamageResult Player::takeDamage(float health_damage, float posture_damage,
   bool hit_applied = stats.applyDamage(health_damage, posture_damage);
 
   if (hit_applied) {
+    // Cancel item usage on flinch
+    cancelItemUse();
+
     // Queued, not played here: this runs from CombatManager's pass, and the
     // reaction needs a frame's assets to find the clip's length. Gated on the
     // hit having connected, so an i-framed hit does not flinch.
@@ -340,6 +369,27 @@ Vector3 Player::calculateCameraRelativeDirection(Vector3 camForward,
 
 void Player::handleCombatAndUtilityInputs(const UpdateContext &ctx,
                                           const ActionGate &gate) {
+  // If we are currently using an item, block combat actions
+  if (item_use_timer > 0.0f) {
+      return;
+  }
+
+  // Item cycling
+  if (!inventory.empty()) {
+      if (input_manager.isActionPressed(GameAction::NextItem)) {
+          active_item_index = (active_item_index + 1) % inventory.size();
+      } else if (input_manager.isActionPressed(GameAction::PrevItem)) {
+          active_item_index = (active_item_index - 1 + inventory.size()) % inventory.size();
+      }
+
+      // Start using item
+      if (input_manager.isActionPressed(GameAction::UseItem)) {
+          if (!inventory[active_item_index]->isEmpty() && isGrounded() && !isExecuting() && !stats.isDead()) {
+              item_use_timer = inventory[active_item_index]->getUseDuration();
+          }
+      }
+  }
+
   if (input_manager.isActionPressed(GameAction::Attack) && gate.canAttack) {
     combat_component.initiateCombo(combo);
   }

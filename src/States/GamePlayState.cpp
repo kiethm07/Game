@@ -14,8 +14,8 @@ namespace {
 constexpr const char *kLevelPath = ASSET_DIR "/levels/castle_approach/level.json";
 } // namespace
 
-GameplayState::GameplayState(const InputManager &input_manager)
-    : input_manager(input_manager) {
+GameplayState::GameplayState(const InputManager &input_manager, AssetManager &asset_manager, SoundController &sound_controller)
+    : input_manager(input_manager), asset_manager(asset_manager), sound_controller(sound_controller) {
   camera_controller = std::make_unique<CameraController>();
 
   // The world, authored in Blender and exported by tools/export_level.py.
@@ -47,6 +47,14 @@ GameplayState::GameplayState(const InputManager &input_manager)
   }
 
   player = std::make_unique<Player>(input_manager);
+
+  // Load test SFX
+  asset_manager.loadSound(AssetID::SFX_COIN, ASSET_DIR "/audio/coin.wav");
+  asset_manager.loadSound(AssetID::SFX_HIT, ASSET_DIR "/audio/hit.mp3");
+  asset_manager.loadSound(AssetID::SFX_DEFLECT_1, ASSET_DIR "/audio/deflect_1.MP3");
+  asset_manager.loadSound(AssetID::SFX_DEFLECT_2, ASSET_DIR "/audio/Deflect_2.MP3");
+  asset_manager.loadSound(AssetID::SFX_DEFLECT_NPC, ASSET_DIR "/audio/deflect_NPC.MP3");
+  asset_manager.loadSound(AssetID::SFX_DEATHBLOW, ASSET_DIR "/audio/deflect_end.mp3");
   player->setPosition(level.playerSpawn.position);
   player->setRotation({0.0f, level.playerSpawn.yaw, 0.0f});
 
@@ -109,6 +117,7 @@ StateAction GameplayState::update(float dt) {
 
   active_characters.push_back(player.get());
   for (auto &enemy : enemies) {
+    if (enemy->isModelUnloaded()) continue;
     active_characters.push_back(enemy.get());
   }
 
@@ -119,7 +128,37 @@ StateAction GameplayState::update(float dt) {
 
   player->update(ctx);
   for (auto &enemy : enemies) {
+    if (enemy->isModelUnloaded()) continue;
+
     enemy->update(ctx);
+    
+    // Check for loot drops and handle decaying
+    if (enemy->getStats().isDead()) {
+        if (!enemy->hasDroppedLoot()) {
+            enemy->setDroppedLoot(true);
+            MoneyDrop md;
+            md.position = enemy->getPosition();
+            md.amount = 10 + rand() % 15;
+            md.bob_timer = 0.0f;
+            money_drops.push_back(md);
+        }
+        
+        if (enemy->isKilledByStealth()) {
+            enemy->addDissolveTimer(dt);
+        }
+    }
+  }
+
+
+  // Check for money pickups
+  for (int i = (int)money_drops.size() - 1; i >= 0; --i) {
+      money_drops[i].bob_timer += dt;
+      if (Vector3DistanceSqr(player_pos, money_drops[i].position) < 2.0f * 2.0f) {
+          player->addMoney(money_drops[i].amount);
+          sound_controller.playSFX(AssetID::SFX_COIN);
+          money_drops[i] = money_drops.back();
+          money_drops.pop_back();
+      }
   }
 
   // 2. Resolve Physics Pipeline (4-Step: Gravity -> Integration -> Ejection
@@ -132,7 +171,7 @@ StateAction GameplayState::update(float dt) {
   }
 
   // 3. Resolve Combat
-  combat_manager.update(active_characters, &particle_manager);
+  combat_manager.update(active_characters, &particle_manager, &sound_controller);
 
   // Shares segmentBlocked with the stealth sensors rather than keeping its own
   // copy of the test. The old copy walked the obstacle list only, so once the
@@ -170,6 +209,8 @@ StateAction GameplayState::update(float dt) {
       Vector3 cam_fwd = camera_controller->getCameraForward();
 
       for (const auto& enemy : enemies) {
+        if (enemy->isModelUnloaded()) continue;
+
         if (!enemy->getStats().isDead()) {
           float dist_to_player = Vector3Distance(player->getPosition(), enemy->getPosition());
           Vector3 to_enemy = Vector3Subtract(enemy->getPosition(), cam_pos);
@@ -257,17 +298,14 @@ StateAction GameplayState::update(float dt) {
       smoke_cooldown_timer -= dt;
   }
 
-  // Debug smoke spawning
-  if (IsKeyPressed(KEY_O) && smoke_cooldown_timer <= 0.0f) {
-      SmokeCloud sc;
-      sc.position = player->getPosition();
-      sc.radius = 3.5f;
-      sc.life = 6.0f;
-      sc.owner = player.get();
+  // Process smoke clouds spawned by items (e.g. Smoke Bomb)
+  std::vector<SmokeCloud> new_clouds = player->takePendingSmokeClouds();
+  for (const auto& sc : new_clouds) {
       smoke_clouds.push_back(sc);
       particle_manager.emitVisualSmoke(sc.position, sc.radius, sc.life);
-      smoke_cooldown_timer = 8.0f; // 8 seconds cooldown
   }
+
+  // Debug smoke spawning on enemy
   if (IsKeyPressed(KEY_P) && !enemies.empty() && smoke_cooldown_timer <= 0.0f) {
       SmokeCloud sc;
       sc.position = enemies[0]->getPosition();
@@ -308,17 +346,41 @@ StateAction GameplayState::update(float dt) {
       float new_z = p_pos.z + (e_pos.z - p_pos.z) * lerp_factor;
       player->setPosition({new_x, p_pos.y, new_z});
 
+      // Face the enemy while falling
+      Vector3 to_enemy = Vector3Subtract(e_pos, p_pos);
+      if (to_enemy.x * to_enemy.x + to_enemy.z * to_enemy.z > 0.001f) {
+          float target_yaw = std::atan2(to_enemy.x, to_enemy.z) * RAD2DEG;
+          player->setRotation({0.0f, target_yaw, 0.0f});
+      }
+
       // If we reach the threshold Y or hit the ground
       if (p_pos.y - e_pos.y < 0.2f || player->isGrounded()) {
         takedown_type_str = "AERIAL TAKEDOWN";
-        player->setPosition({e_pos.x, e_pos.y, e_pos.z});
+        
+        // Snap position 1.2 units away so they aren't inside each other (prevents physics ejection)
+        Vector3 dir = to_enemy;
+        dir.y = 0.0f;
+        if (Vector3LengthSqr(dir) > 0.001f) {
+            dir = Vector3Normalize(dir);
+            player->setPosition({e_pos.x - dir.x * 1.2f, e_pos.y, e_pos.z - dir.z * 1.2f});
+        } else {
+            player->setPosition({e_pos.x, e_pos.y, e_pos.z + 1.2f});
+        }
+        
         player->setVerticalVelocity(0.0f);
-        player->setRotation(pending_aerial_target->getRotation());
+        // Player keeps the rotation looking at the enemy
+        
+        // Force the enemy to face away from the player (turn their back to the player)
+        // so the execution animation doesn't look like they are face-to-face
+        pending_aerial_target->setRotation(player->getRotation());
 
         // Let the hitbox apply the damage and blood in sync with the animation
         if (Enemy* e = dynamic_cast<Enemy*>(pending_aerial_target)) {
             e->getCombatComponent().setBeingExecuted();
+            e->setKilledByStealth(true);
+            e->setDecayType(DecayType::PETAL_DECAY);
         }
+        sound_controller.playSFX(AssetID::SFX_DEATHBLOW);
         player->performTakedown();
         deathblow_victim = pending_aerial_target;
         takedown_text_timer = 2.0f;
@@ -329,7 +391,7 @@ StateAction GameplayState::update(float dt) {
   }
 
   // Takedown logic
-  if (!pending_aerial_target &&
+  if (!pending_aerial_target && !player->isExecuting() &&
       input_manager.isActionPressed(GameAction::Takedown)) {
     for (auto &enemy_ptr : enemies) {
       Enemy *enemy = enemy_ptr.get();
@@ -384,15 +446,24 @@ StateAction GameplayState::update(float dt) {
           bool is_aerial = is_aerial_range && !is_normal_range;
           StealthState s_state = enemy->getStealthComponent().getStealthState();
 
+          bool in_smoke = false;
+          for (const auto& sc : smoke_clouds) {
+              if (sc.owner != enemy && Vector3DistanceSqr(e_pos, sc.position) <= sc.radius * sc.radius) {
+                  in_smoke = true;
+                  break;
+              }
+          }
+
           // 1. Aerial Takedown
           if (is_aerial && (s_state == StealthState::Unaware ||
-                            s_state == StealthState::Suspicious)) {
+                            s_state == StealthState::Suspicious || in_smoke)) {
             can_takedown = true;
           }
-          // 2. Stealth Takedown (Must be Unaware or Suspicious, and player
+          // 2. Stealth Takedown (Must be Unaware or Suspicious, or blinded by smoke, and player
           // closely behind)
           else if (s_state == StealthState::Unaware ||
-                   s_state == StealthState::Suspicious) {
+                   s_state == StealthState::Suspicious || in_smoke) {
+            
             Vector3 enemy_fwd = {std::sin(enemy->getRotation().y * DEG2RAD),
                                  0.0f,
                                  std::cos(enemy->getRotation().y * DEG2RAD)};
@@ -441,10 +512,13 @@ StateAction GameplayState::update(float dt) {
                                     -std::cos(enemy_yaw)};
                 player->setPosition({e_pos.x + backward.x * 1.2f, p_pos.y,
                                      e_pos.z + backward.z * 1.2f});
+                enemy->setKilledByStealth(true);
+                enemy->setDecayType(DecayType::ASH_DECAY);
               }
 
               // Let the hitbox apply the damage and blood in sync with the animation
               enemy->getCombatComponent().setBeingExecuted();
+              sound_controller.playSFX(AssetID::SFX_DEATHBLOW);
               player->performTakedown();
               deathblow_victim = enemy;
               takedown_text_timer = 2.0f;
@@ -456,6 +530,16 @@ StateAction GameplayState::update(float dt) {
     }
   }
 
+  // Cleanup fully dissolved bodies at the very end of the frame
+  for (auto& enemy : enemies) {
+      if (enemy->isFullyDissolved() && !enemy->isModelUnloaded()) {
+          if (locked_target == enemy.get()) locked_target = nullptr;
+          if (deathblow_victim == enemy.get()) deathblow_victim = nullptr;
+          if (pending_aerial_target == enemy.get()) pending_aerial_target = nullptr;
+          enemy->setModelUnloaded(true);
+      }
+  }
+
   return StateAction::KeepCurrent;
 }
 
@@ -463,6 +547,7 @@ void GameplayState::draw() {
   renderList.clear();
   renderList.push_back(player->getRenderData());
   for (const auto &enemy : enemies) {
+    if (enemy->isModelUnloaded()) continue;
     renderList.push_back(enemy->getRenderData());
   }
 
@@ -481,10 +566,18 @@ void GameplayState::draw() {
 
   particle_manager.draw();
 
+  // Draw Money Drops
+  for (const auto& md : money_drops) {
+      float y_offset = sinf(md.bob_timer * 3.0f) * 0.2f + 0.5f;
+      Vector3 draw_pos = {md.position.x, md.position.y + y_offset, md.position.z};
+      DrawSphere(draw_pos, 0.15f, GOLD);
+  }
+
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());
   active_characters.push_back(player.get());
   for (const auto &enemy : enemies) {
+    if (enemy->isModelUnloaded()) continue;
     active_characters.push_back(enemy.get());
   }
 
@@ -516,6 +609,7 @@ void GameplayState::draw() {
   // --- HEALTH BARS ---
   player->drawHPBar2D();
   for (const auto &enemy : enemies) {
+    if (enemy->isModelUnloaded()) continue;
     enemy->drawHPBar(camera_controller->getCamera());
   }
 
@@ -531,6 +625,35 @@ void GameplayState::draw() {
   if (player->isInSmoke()) {
       // Draw a full-screen semi-transparent gray overlay
       DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), {100, 100, 100, 150});
+  }
+
+  // --- MONEY UI ---
+  if (IsKeyDown(KEY_I)) {
+      std::string money_str = "Money: " + std::to_string(player->getMoney());
+      int font_size = 30;
+      int text_width = MeasureText(money_str.c_str(), font_size);
+      DrawText(money_str.c_str(), GetScreenWidth() - text_width - 30, 30, font_size, GOLD);
+  }
+
+  // --- ITEM UI ---
+  const auto& inventory = player->getInventory();
+  if (!inventory.empty()) {
+      int active_idx = player->getActiveItemIndex();
+      if (active_idx >= 0 && active_idx < inventory.size()) {
+          const auto& active_item = inventory[active_idx];
+          std::string item_text = "[Q] < " + active_item->getName() + " (" + std::to_string(active_item->getCount()) + ") > [E]   Use: [X]";
+          int item_font_size = 20;
+          DrawText(item_text.c_str(), 20, GetScreenHeight() - 70, item_font_size, active_item->isEmpty() ? GRAY : BLACK);
+
+          // If using, draw a progress bar
+          float use_timer = player->getItemUseTimer();
+          if (use_timer > 0.0f) {
+              float duration = active_item->getUseDuration();
+              float progress = 1.0f - (use_timer / duration);
+              DrawRectangle(20, GetScreenHeight() - 85, 200, 10, DARKGRAY);
+              DrawRectangle(20, GetScreenHeight() - 85, (int)(200 * progress), 10, SKYBLUE);
+          }
+      }
   }
 }
 

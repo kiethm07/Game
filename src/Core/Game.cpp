@@ -1,7 +1,8 @@
 #include <Core/Game.h>
+#include <States/LoadingState.h>
 
 Game::Game()
-    : attack_registry(AttackRegistry::instance()) {}
+    : sound_controller(asset_manager), attack_registry(AttackRegistry::instance()) {}
 
 Game::~Game() {
     while (!states.empty()) {
@@ -13,6 +14,7 @@ void Game::update() {
     if (!states.empty()) {
         time_manager.update();
         input_manager.update();
+        sound_controller.updateMusic();
 
         float dt = time_manager.getDeltaTime();
         StateAction action = states.back()->update(dt);
@@ -25,10 +27,13 @@ void Game::update() {
             popState();
             pushState(std::make_unique<MainMenuState>());
         }
+        if (action == StateAction::ChangeToLoading) {
+            popState();
+            pushState(std::make_unique<LoadingState>(asset_manager));
+        }
         if (action == StateAction::ChangeToGameplay) {
             popState();
-            pushState(std::make_unique<GameplayState>(input_manager));
-            // ChangeState(std::make_unique<GamePlayState>());
+            pushState(std::make_unique<GameplayState>(input_manager, asset_manager, sound_controller));
         }
     }
 }

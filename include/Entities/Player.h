@@ -6,7 +6,12 @@
 #include <Entities/Character.h>
 #include <Entities/PlayerAnimator.h>
 #include <Entities/PlayerLocomotion.h>
+#include <Entities/Items/Item.h>
+#include <Entities/Items/Item.h>
+#include <GameManager/SmokeCloud.h>
 #include <Rendering/RootMotion.h>
+#include <memory>
+#include <vector>
 
 class Player : public Character {
 public:
@@ -26,6 +31,9 @@ public:
 
   bool isCrouching() const override { return locomotion.getStance() == Stance::Crouching; }
   bool isInSmoke() const { return in_smoke_flag; }
+
+  void addMoney(int amount) { money += amount; }
+  int getMoney() const { return money; }
 
   CombatComponent& getCombatComponent() { return combat_component; }
 
@@ -56,7 +64,27 @@ public:
   /// alongside it: the two cannot drift, and an execution cut short — a landing
   /// stagger interrupts one — drops the shot on the same frame it drops the
   /// animation, instead of leaving the camera composed on a swing that stopped.
-  bool isExecuting() const;
+  bool isExecuting() const override;
+
+  const std::vector<std::unique_ptr<Item>>& getInventory() const { return inventory; }
+  int getActiveItemIndex() const { return active_item_index; }
+  float getItemUseTimer() const { return item_use_timer; }
+  
+  void cancelItemUse() { item_use_timer = 0.0f; }
+
+  void spawnSmokeCloud(Vector3 position, float radius, float life) {
+      SmokeCloud sc;
+      sc.position = position;
+      sc.radius = radius;
+      sc.life = life;
+      sc.owner = this;
+      pending_smoke_clouds.push_back(sc);
+  }
+  std::vector<SmokeCloud> takePendingSmokeClouds() {
+      std::vector<SmokeCloud> clouds = pending_smoke_clouds;
+      pending_smoke_clouds.clear();
+      return clouds;
+  }
 
 private:
   const InputManager &input_manager;
@@ -85,6 +113,7 @@ private:
   static constexpr float AIR_ACCELERATION = 13.0f;
 
   bool in_smoke_flag = false;
+  int money = 0;
 
   CombatComponent combat_component;
   MovementComponent movement_component;
@@ -106,6 +135,11 @@ private:
 
   /// Which clip plays, and the clock that drives it.
   PlayerAnimator animator;
+
+  std::vector<std::unique_ptr<Item>> inventory;
+  int active_item_index = 0;
+  float item_use_timer = 0.0f;
+  std::vector<SmokeCloud> pending_smoke_clouds;
 
   void updateLocomotionVelocity(const UpdateContext &ctx, Vector3 moveDirection,
                                 float speedScale);

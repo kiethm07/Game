@@ -77,7 +77,9 @@ public:
     //Guard
     bool is_guard_held = false;
     const float DEFAULT_PARRY_WINDOW = 0.20f;
-    //const float PARRY_PENALTY_WINDOW = 0.10f;
+    const float PARRY_PENALTY_WINDOW = 0.05f;
+    const float PARRY_SPAM_COOLDOWN = 0.50f;
+    float spam_timer = 0.0f;
 
     //Attack
     const Combo* active_combo_ptr = nullptr;

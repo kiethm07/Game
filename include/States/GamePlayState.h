@@ -24,10 +24,19 @@
 
 #include <memory>
 #include <vector>
+#include <string>
+
+#include <GameManager/SoundController.h>
+
+struct MoneyDrop {
+    Vector3 position;
+    int amount;
+    float bob_timer;
+};
 
 class GameplayState : public GameState {
 public:
-  GameplayState(const InputManager &input_manager);
+  GameplayState(const InputManager &input_manager, AssetManager &asset_manager, SoundController &sound_controller);
   ~GameplayState() override = default;
 
   void enter() override;
@@ -38,7 +47,7 @@ public:
 private:
   /// Declared before `renderer`, which holds a reference to it: destruction is
   /// reverse-declaration order, so the renderer dies first.
-  AssetManager asset_manager;
+  AssetManager& asset_manager;
 
   /// The loaded map. Also declared before `renderer`, which reads its visual
   /// mesh path and bounds during construction.
@@ -57,10 +66,12 @@ private:
   PhysicsManager physics_manager;
   StealthManager stealth_manager;
   std::vector<SmokeCloud> smoke_clouds;
+  std::vector<MoneyDrop> money_drops;
   ParticleManager particle_manager;
   std::vector<CharacterRenderData> renderList;
 
   const InputManager &input_manager;
+  SoundController &sound_controller;
   
   float takedown_text_timer = 0.0f;
   std::string takedown_type_str = "";
