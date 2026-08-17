@@ -175,7 +175,7 @@ private:
   /// How fast the player travels relative to the run clip's authored speed.
   /// 1.0 plays the clip at its natural pace; higher time-scales the clip to
   /// match so the feet keep up instead of sliding.
-  static constexpr float RUN_SPEED_SCALE = 1.6f;
+  static constexpr float RUN_SPEED_SCALE = 6.7f;
 
   /// One row per PlayerAnimState, in enum order. A member so the private
   /// constants above are in scope for it.

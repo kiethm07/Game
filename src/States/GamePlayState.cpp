@@ -11,7 +11,12 @@ namespace {
 /// The level this state loads. One map for now — StateAction carries no
 /// payload, so there is nowhere for a level choice to come from until there is
 /// a map-select screen to make it.
-constexpr const char *kLevelPath = ASSET_DIR "/levels/castle_approach/level.json";
+///
+/// castle_full rather than one of the phase slices: the whole exterior ships as
+/// a single level, so there is no checkpoint hand-off to implement and nothing
+/// has to decide which phase the player is in. The phase1_/phase2_ levels are
+/// still built and still export, they are just not what comes up.
+constexpr const char *kLevelPath = ASSET_DIR "/levels/castle_full/level.json";
 } // namespace
 
 GameplayState::GameplayState(const InputManager &input_manager, AssetManager &asset_manager, SoundController &sound_controller)
