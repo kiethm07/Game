@@ -387,6 +387,79 @@ def export_collision(collection):
     return obstacles, corners
 
 
+def representative_colour(node):
+    """A single colour standing in for whatever this node produces, or None."""
+    if node.type == "VALTORGB":
+        # The midpoint of the gradient. Both of the driving coordinates in this
+        # map -- a face normal's Z and a generated Z -- sweep the whole ramp
+        # over an object, so its middle is the honest average.
+        return tuple(node.color_ramp.evaluate(0.5))
+    if node.type == "RGB":
+        return tuple(node.outputs[0].default_value)
+    if node.type == "MIX_RGB":
+        a = node.inputs[1].default_value
+        b = node.inputs[2].default_value
+        return tuple((a[i] + b[i]) * 0.5 for i in range(4))
+    return None
+
+
+def flatten_procedural_colours(collection):
+    """Give every linked Base Color a flat value glTF can carry.
+
+    glTF has no node graphs. A Base Color driven by a node exports as a plain
+    white baseColorFactor and the object arrives colourless -- silently, since
+    nothing is technically missing.
+
+    That is what happened to the scatter: `rocks`, `tree  trunk` and
+    `tree leaves` each drive Base Color through a ColorRamp off a texture
+    coordinate, so all three shipped as [1, 1, 1, 1] while the other 58
+    materials in the level carried real colours. Trees and rocks rendered
+    white. There are no vertex colours to fall back on either, and this engine
+    is on record for rendering those black when they are present, so the fix is
+    a flat factor rather than baked per-vertex colour.
+
+    Done here rather than in the .blend on purpose: the node setups are how the
+    art is authored and they look right in Blender. This is a glTF limitation,
+    so it is glTF's exporter that compensates, in memory, at the point of
+    writing. The .blend is not modified.
+    """
+    seen = {}
+    for obj in collection.all_objects:
+        if obj.type != "MESH" or obj.data is None:
+            continue
+        for material in obj.data.materials:
+            if material is None or not material.use_nodes:
+                continue
+            seen[material.name] = material
+
+    flattened, skipped = [], []
+    for name, material in sorted(seen.items()):
+        bsdf = next((n for n in material.node_tree.nodes
+                     if n.type == "BSDF_PRINCIPLED"), None)
+        if bsdf is None:
+            continue
+        base = bsdf.inputs.get("Base Color")
+        if base is None or not base.links:
+            continue
+        link = base.links[0]
+        colour = representative_colour(link.from_node)
+        if colour is None:
+            skipped.append("%s (%s)" % (name, link.from_node.type))
+            continue
+        material.node_tree.links.remove(link)
+        base.default_value = colour
+        flattened.append((name, colour))
+
+    for name, colour in flattened:
+        print("[export_level]   flattened %s -> base colour (%.3f, %.3f, %.3f)"
+              % (name, colour[0], colour[1], colour[2]))
+    for note in skipped:
+        # Loud, because the object will export white and look untextured.
+        print("[export_level]   WARNING %s drives Base Color from a node this "
+              "script cannot reduce; it will export white." % note)
+    return len(flattened)
+
+
 def export_glb(collection, path):
     """Write the VISUAL collection to a .glb raylib can actually load.
 
@@ -400,6 +473,8 @@ def export_glb(collection, path):
     defaults that off, and without it a textured level loads untextured with
     only an "IMAGE: Data format not supported" warning to say why.
     """
+    flatten_procedural_colours(collection)
+
     bpy.ops.object.select_all(action="DESELECT")
     for obj in collection.all_objects:
         obj.select_set(True)

@@ -12,11 +12,14 @@ namespace {
 /// payload, so there is nowhere for a level choice to come from until there is
 /// a map-select screen to make it.
 ///
-/// castle_full rather than one of the phase slices: the whole exterior ships as
-/// a single level, so there is no checkpoint hand-off to implement and nothing
-/// has to decide which phase the player is in. The phase1_/phase2_ levels are
-/// still built and still export, they are just not what comes up.
-constexpr const char *kLevelPath = ASSET_DIR "/levels/castle_full/level.json";
+/// phase2_approach: the bridge, the gate, the courtyard and the keep, plus the
+/// mountain pass that leads out to phase 3. It is the phase with the fortress
+/// on it, so it is the one worth having up by default.
+///
+/// The other two exist and export (phase1_forest, phase3_battlefield); there is
+/// still no checkpoint hand-off, so switching between them means editing this
+/// line.
+constexpr const char *kLevelPath = ASSET_DIR "/levels/phase2_approach/level.json";
 } // namespace
 
 GameplayState::GameplayState(const InputManager &input_manager, AssetManager &asset_manager, SoundController &sound_controller)

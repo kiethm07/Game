@@ -370,6 +370,50 @@ BOUNDARY_RECT = None
 BOUNDARY_POLY = None
 BOUNDARY_SEGMENT_LENGTH = 4.0   # rect and poly; ring derives its own from the arc
 
+# --- Shore boundary ---------------------------------------------------------
+#
+# "shore" is a ring whose radius is measured per heading instead of assumed:
+# the island is not round, and a single radius is wrong in both directions at
+# once. Measured against the waterline, the shore runs from 24.5 to 52.5 units
+# out. The flat 46 the ring used stood over open water on 22 of 36 headings --
+# by 15.5 units across the northern bay and 21.5 across the western one -- so
+# the player could walk most of the way out into the moat before being stopped.
+#
+# Authored Z of the water surface, read off the `water` slab's top. Not derived
+# at build time on purpose: if the art's water level ever moves, that should be
+# a deliberate edit here rather than a boundary that quietly follows it.
+WATER_LEVEL = -2.88
+
+# A sample counts as land only this far above the water, so the wall lands on
+# ground the player can actually stand on rather than on the wet edge.
+SHORE_CLEARANCE = 0.3
+
+# Grid the land/water contour is traced on, in authored units.
+#
+# The pass is the constraint, not the island: its walkable strip narrows to 3.5
+# units at the saddle, and BOUNDARY_THICKNESS takes half its width from each
+# side of the corridor. At 1.5 the wall is placed within a unit and a half of
+# the true edge and about 3 units stay open -- 9 m shipped, tight on purpose.
+# Coarser than about 2 and the walls meet in the middle and seal the pass.
+CONTOUR_CELL = 1.5
+
+# Regions the contour treats as standable and does NOT wall, as
+# ((min_xy, max_xy, deck_z), ...) in authored XY.
+#
+# For walkways carried by a prop rather than by terrain. The bridge is the only
+# one: it is a building, not landscape, so the channel it crosses reads as open
+# water and the contour walls both ends of it -- which cuts the compound off
+# from the spawn entirely and takes the level from 48,072 walkable m2 to
+# 14,807.
+#
+# Marking it land is half the fix; the other half is not walling it. The deck
+# is 1.97 units wide, narrower than one cell plus the two BOUNDARY_THICKNESS
+# walls that would flank it, so the railings would meet in the middle and seal
+# the bridge shut. The consequence is deliberate and worth knowing: the player
+# can still walk off the side of the bridge. The box is kept within a unit of
+# the deck edge so that is a step off a bridge, not a stroll onto open water.
+CONTOUR_OPEN_BOXES = ()
+
 # The bridge's centreline, still used to place spawns and walkability landmarks.
 GATE_AXIS_Y = -16.42
 
@@ -407,50 +451,54 @@ COLOR_TREE = (0.42, 0.26, 0.14, 1.0)
 COLOR_BOUNDARY = (0.70, 0.13, 0.13, 1.0)
 
 
-# --- Boundary helpers -------------------------------------------------------
+# --- Mountain corridor ------------------------------------------------------
+#
+# The path's plan-view edges every 2 units, taken from where the mesh is
+# actually *walkable* (surface normal >= COS_MAX_SLOPE) and pushed out by
+# CORRIDOR_OUTSET.
+#
+# Measuring the walkable strip rather than the mesh's full extent is the whole
+# point. The ribbon carries its own steep rock sides -- at x = -204 the faces
+# span 5 units of y beyond the part you can stand on -- so edges read off the
+# raw geometry put the wall out where the player has already left the path.
+# These walls sit just off the last standable metre instead, which is what
+# stops a sideways jump onto the mountain: `mountains` is backdrop and is not
+# in the collision mesh at all, so anything past this edge is a fall, not a
+# ledge.
+#
+# The ribbon narrows to 3.5 units at the saddle. With BOUNDARY_THICKNESS 2.0
+# eating a unit from each side that still leaves ~3 units -- 9 m shipped --
+# which is walkable but deliberately tight; this is a mountain pass.
+CORRIDOR_OUTSET = 0.75
 
-def arc_points(centre, radius, start_deg, end_deg, step_deg=15.0):
-    """Points along a circle from start to end, counter-clockwise, inclusive.
-
-    Used to build the island's share of a poly boundary at the same radius the
-    whole-map ring uses, so a phase that only *opens* the ring somewhere is not
-    also silently resizing it.
-    """
-    span = (end_deg - start_deg) % 360.0 or 360.0
-    steps = max(1, int(math.ceil(span / step_deg)))
-    out = []
-    for i in range(steps + 1):
-        angle = math.radians(start_deg + span * i / steps)
-        out.append((centre[0] + radius * math.cos(angle),
-                    centre[1] + radius * math.sin(angle)))
-    return out
-
-
-# The mountain path's plan-view edges, measured off the mesh in 6-unit slices
-# and taken at each slice's midpoint, with a 2-unit margin added outside. The
-# ribbon is 4.5 to 16 units wide, curves northwest, and bulges around x = -220
-# where it crosses the saddle -- which is why the corridor is a measured
-# polyline and not two straight walls.
 MOUNTAIN_CORRIDOR_NORTH = [
-    (-192.2, 13.5), (-198.2, 14.1), (-204.2, 13.7), (-210.2, 14.6),
-    (-216.2, 22.9), (-222.2, 22.9), (-228.2, 23.5), (-234.2, 22.1),
-    (-240.5, 16.6),
+    (-186.0, 7.25), (-188.0, 7.50), (-190.0, 6.50), (-192.0, 8.25),
+    (-194.0, 11.00), (-196.0, 12.00), (-198.0, 12.25), (-200.0, 11.75),
+    (-202.0, 12.75), (-204.0, 9.25), (-206.0, 10.00), (-208.0, 11.75),
+    (-210.0, 12.50), (-212.0, 12.50), (-214.0, 13.25), (-216.0, 17.50),
+    (-218.0, 22.75), (-220.0, 22.50), (-222.0, 22.25), (-224.0, 21.75),
+    (-226.0, 18.50), (-228.0, 21.50), (-230.0, 23.00), (-232.0, 21.50),
+    (-234.0, 19.50), (-236.0, 17.25),
 ]
 MOUNTAIN_CORRIDOR_SOUTH = [
-    (-240.5, 11.8), (-234.2, 7.9), (-228.2, 7.0), (-222.2, 6.6),
-    (-216.2, 5.4), (-210.2, 3.7), (-204.2, 3.0), (-198.2, -1.8),
-    (-192.2, -5.9),
+    (-236.0, 10.75), (-234.0, 9.25), (-232.0, 9.25), (-230.0, 9.25),
+    (-228.0, 9.00), (-226.0, 7.75), (-224.0, 10.50), (-222.0, 12.50),
+    (-220.0, 10.00), (-218.0, 8.00), (-216.0, 7.25), (-214.0, 7.25),
+    (-212.0, 6.75), (-210.0, 6.75), (-208.0, 4.75), (-206.0, 4.25),
+    (-204.0, 4.25), (-202.0, 5.25), (-200.0, 6.50), (-198.0, 2.75),
+    (-196.0, -1.50), (-194.0, -2.50), (-192.0, -5.25), (-190.0, -5.25),
+    (-188.0, -6.00), (-186.0, -7.50),
 ]
 
 # The corridor's eastern continuation, over the island itself. The boundary
-# does not need these -- the island ring already encloses that ground -- but
-# the scatter mask does: the path's foot lies on the island, and trees seeded
-# on `ground` land on it.
+# does not need these -- the shore ring already encloses that ground -- but the
+# scatter mask does: the path's foot lies on the island, and trees seeded on
+# `ground` land on it.
 MOUNTAIN_CORRIDOR_EAST_NORTH = [
-    (-168.2, -5.4), (-174.2, 0.3), (-180.2, 4.2), (-186.2, 9.8),
+    (-168.2, -5.4), (-174.2, 0.3), (-180.2, 4.2),
 ]
 MOUNTAIN_CORRIDOR_EAST_SOUTH = [
-    (-186.2, -10.0), (-180.2, -12.7), (-174.2, -14.2), (-168.2, -13.9),
+    (-180.2, -12.7), (-174.2, -14.2), (-168.2, -13.9),
 ]
 
 # The whole climb as one closed outline: east lip, out along the north edge,
@@ -459,16 +507,6 @@ MOUNTAIN_CORRIDOR_POLY = (MOUNTAIN_CORRIDOR_EAST_NORTH
                           + MOUNTAIN_CORRIDOR_NORTH
                           + MOUNTAIN_CORRIDOR_SOUTH
                           + MOUNTAIN_CORRIDOR_EAST_SOUTH)
-
-# The island ring, opened between 150 and 170 degrees where the path leaves its
-# northwest shoulder, then the corridor out and back. Walking the arc first and
-# the corridor second keeps the loop simple: the arc ends at the mouth's north
-# lip and the corridor returns to its south lip.
-PHASE2_BOUNDARY_POLY = (
-    arc_points(ISLAND_CENTRE, 46.0, 170.0, 150.0)
-    + MOUNTAIN_CORRIDOR_NORTH
-    + MOUNTAIN_CORRIDOR_SOUTH
-)
 
 # --- Phase profiles ---------------------------------------------------------
 #
@@ -531,43 +569,45 @@ PROFILES = {
         "SCATTER_EMITTERS": ("ground_east",),
         # path1 is the forest trail; path2 is inside the compound.
         "PATHS": ("path1",),
-        "PLAY_CENTRE": (-78.5, -16.9),
-        # Walkable ground measured out to 48 units from the centre on the
-        # diagonal, so the scatter has to reach at least that far or the
-        # corners of the level come out bald.
-        "SCATTER_PLAY_RADIUS": 50.0,
-        # Sizes the walkability grid, which is a square of this half-extent
-        # about the play centre. `ground_east` reaches 42 units from that
-        # centre on y, so the default 39 would leave the north and south ends
-        # of the forest outside the grid and silently unchecked.
-        "PLAY_RADIUS": 45.0,
+        # All of this phase's coordinates were regenerated by
+        # tools/scale_terrain.py when `ground_east` was taken to half its plan
+        # area (5,184 -> 2,592 units^2). They are the old ones put through the
+        # same map the mesh was: scale 0.70711 about the ravine-seam pivot at
+        # (-111.45, -16.85). Re-deriving them by hand would be 13 more chances
+        # to put a spawn off the terrain.
+        "PLAY_CENTRE": (-88.15, -16.89),
+        "SCATTER_PLAY_RADIUS": 35.4,
+        # Sizes the walkability grid, a square of this half-extent about the
+        # play centre. NOT the scaled 31.8: the grid has to contain the
+        # boundary rect's corners, and the furthest is 34.96 out. Under that
+        # the fill runs off the edge of its own grid and under-reports.
+        "PLAY_RADIUS": 36.0,
         "GROUND_TREE_TARGET": 300,
         "GROUND_ROCK_TARGET": 90,
         "BOUNDARY_SHAPE": "rect",
-        # Walkable cells run x -107.5..-47.5, y -54.7..21.3 on a 4-unit grid.
-        # The walls sit just outside that, so the player reaches the edge of
-        # the terrain rather than being stopped short of it. The west wall at
-        # -108.5 is the ravine lip: `ground_east` and `ground` overlap between
-        # -111.4 and -106.6, and the far side belongs to phase 2.
-        "BOUNDARY_RECT": ((-108.5, -55.0), (-48.0, 22.0)),
-        # The furthest corner of that rectangle is 48.5 from the play centre,
-        # so nothing beyond 50 can be touched however the player moves. The
-        # fortress starts at 48.7 and is drawn in full -- it is what the phase
-        # walks toward -- but none of it is collided.
-        "PROPS_COLLIDE_RADIUS": 50.0,
-        "PLAYER_SPAWN_XY": (-52.0, -16.0),
-        "PLAYER_FACES_XY": (-108.0, -16.0),
+        # The west wall stays on the ravine lip, which is why the scale was
+        # anchored there: `ground_east` still starts at -111.3 and the seam
+        # with phase 2 is untouched. The other three walls came in with the
+        # terrain.
+        "BOUNDARY_RECT": ((-109.36, -43.83), (-66.58, 10.62)),
+        # Furthest reachable corner is now 34.96 from the play centre, and the
+        # fortress's nearest piece is ~39 -- the centre moved 9.7 closer to it
+        # when the forest shrank, so this came down with the rest. The castle
+        # is still drawn in full; none of it is collided.
+        "PROPS_COLLIDE_RADIUS": 36.0,
+        "PLAYER_SPAWN_XY": (-69.41, -16.25),
+        "PLAYER_FACES_XY": (-109.01, -16.25),
         "ENEMY_SPAWNS_XY": [
-            ("01", -70.0, -8.0),
-            ("02", -78.5, -16.9),
-            ("03", -96.0, -22.0),
+            ("01", -82.14, -10.59),
+            ("02", -88.15, -16.89),
+            ("03", -100.53, -20.49),
         ],
         "WALK_LANDMARKS": {
-            "spawn clearing": (-52.0, -16.0),
-            "mid forest": (-78.5, -16.9),
-            "north woods": (-78.0, 8.0),
-            "south woods": (-80.0, -40.0),
-            "ravine edge": (-106.0, -16.0),
+            "spawn clearing": (-69.41, -16.25),
+            "mid forest": (-88.15, -16.89),
+            "north woods": (-87.80, 0.72),
+            "south woods": (-89.21, -33.22),
+            "ravine edge": (-107.60, -16.25),
         },
     },
 
@@ -602,8 +642,14 @@ PROFILES = {
         "PLAY_RADIUS": 70.0,
         "GROUND_TREE_TARGET": 160,
         "GROUND_ROCK_TARGET": 70,
-        "BOUNDARY_SHAPE": "poly",
-        "BOUNDARY_POLY": PHASE2_BOUNDARY_POLY,
+        # Walled at the land/water contour rather than at a radius. This phase
+        # is the one that needs it: the island's shore runs 24.5 to 52.5 units
+        # out so no single radius fits it, and the pass needs its own two sides
+        # walled at the edge of what you can stand on. One rule covers both.
+        "BOUNDARY_SHAPE": "contour",
+        # The bridge deck spans x -140.6..-127.2 at y -17.4..-15.4, top at
+        # z -0.47. Held to within a unit of that on every side.
+        "CONTOUR_OPEN_BOXES": (((-141.5, -18.2), (-126.8, -14.6), -0.47),),
         # Keep the island's trees off the climb, including the stretch of it
         # that lies on the island.
         "SCATTER_EXCLUDE_POLY": MOUNTAIN_CORRIDOR_POLY,
@@ -652,38 +698,47 @@ PROFILES = {
         "TERRAIN_BACKDROP": ("mountain_path",),
         "SCATTER_EMITTERS": ("battleground",),
         "PATHS": (),
-        "PLAY_CENTRE": (-249.3, 4.4),
-        "SCATTER_PLAY_RADIUS": 70.0,
-        # The arena reaches 53 units from its centre on both axes.
-        "PLAY_RADIUS": 58.0,
+        # Regenerated by tools/scale_terrain.py when `battleground` was taken
+        # to half its plan area (9,411 -> 4,705 units^2): scale 0.70711 about
+        # (-240.2, 14.2), which is where the mountain path lands and also this
+        # phase's spawn. Anchoring there means the arena shrank around the
+        # player's arrival instead of retreating from it, so the pass still
+        # touches down on terrain and the spawn did not move at all.
+        "PLAY_CENTRE": (-246.63, 7.27),
+        "SCATTER_PLAY_RADIUS": 49.5,
+        # Contains the boundary rect's furthest corner at 49.55.
+        "PLAY_RADIUS": 51.0,
         "GROUND_TREE_TARGET": 200,
         "GROUND_ROCK_TARGET": 80,
         "BOUNDARY_SHAPE": "rect",
-        # Walkable cells run x -297.9..-201.9, y -43.5..52.5.
-        "BOUNDARY_RECT": ((-299.0, -45.0), (-200.0, 54.0)),
+        "BOUNDARY_RECT": ((-281.78, -27.66), (-211.77, 42.34)),
         # The fortress is over the mountains and 74 units away at its nearest
         # corner -- 222 m at WORLD_SCALE, behind the ridge the player just
         # crossed. Dropping it takes all 158 props out of this level rather
         # than drawing a castle nobody can see. The build report prints the
         # count, so if this is ever wrong it is wrong loudly.
         "PROPS_RADIUS": 60.0,
-        # Where the pass lands on the battleground.
+        # The pass's landing, and the pivot the shrink was anchored on.
         "PLAYER_SPAWN_XY": (-240.2, 14.2),
-        "PLAYER_FACES_XY": (-270.0, 10.0),
+        "PLAYER_FACES_XY": (-261.27, 11.23),
         "ENEMY_SPAWNS_XY": [
-            ("01", -260.0, 0.0),
-            ("02", -270.0, 10.0),
-            ("03", -280.0, 20.0),
+            ("01", -254.20, 4.16),
+            ("02", -261.27, 11.23),
+            ("03", -268.34, 18.30),
         ],
         "WALK_LANDMARKS": {
             "pass landing": (-240.2, 14.2),
-            "arena centre": (-249.3, 4.4),
-            "north field": (-270.0, 30.0),
+            "arena centre": (-246.63, 7.27),
+            "north field": (-261.27, 25.37),
             # Taken off the built level's reachability map, not picked by eye:
-            # (-260, -30) sat under a trunk proxy and reported unreachable on
-            # a level that is in fact open there.
-            "south field": (-262.0, -26.0),
-            "far end": (-292.0, 40.0),
+            # the pre-scale equivalent of this point sat under a trunk proxy
+            # and reported unreachable on a level that is in fact open there.
+            "south field": (-255.61, -14.23),
+            # Not the scaled (-276.83, 32.44), which came down under a trunk.
+            # Halving the arena doubled the scatter density -- the tree target
+            # is a count, not a density -- so landmarks are likelier to land on
+            # one than they were. Read off the built reachability map.
+            "far end": (-274.0, 34.0),
         },
     },
 }
@@ -1533,6 +1588,106 @@ def terrain_height_any(terrains, x, y):
     return best
 
 
+def build_boundary_contour(collision, terrains, _play_centre):
+    """Wall the play terrain wherever it stops being standable.
+
+    A radial ring cannot describe this island. Measured against the waterline
+    the shore runs from 24.5 to 52.5 units out, so a single radius stands over
+    open water on 22 of 36 headings; and marching outward per heading collapses
+    in the two deep inlets, where the first stretch of water is only 10 units
+    from the centre and everything past it reads as sea. The island is not
+    star-shaped about any point, so no function of angle describes it.
+
+    So the boundary is not a shape fitted to the terrain -- it *is* the
+    terrain's edge. Cells are land when the play meshes give a surface above
+    the waterline, and a wall goes on every edge between a land cell and one
+    that is not. That answers both failure modes with one rule:
+
+      * the moat, because water is not land; and
+      * stepping sideways off the mountain path, because `mountains` is
+        backdrop and carries no collision, so a cell beside the path has no
+        surface at all and walls itself.
+
+    Runs of collinear edges are merged, which matters: unmerged, this emits one
+    proxy per cell edge and the count runs into the hundreds for a perimeter
+    that is mostly straight.
+    """
+    lo_x = lo_y = float("inf")
+    hi_x = hi_y = float("-inf")
+    for terrain in terrains:
+        for raw in terrain.bound_box:
+            corner = terrain.matrix_world @ Vector(raw)
+            lo_x, hi_x = min(lo_x, corner.x), max(hi_x, corner.x)
+            lo_y, hi_y = min(lo_y, corner.y), max(hi_y, corner.y)
+
+    cell = CONTOUR_CELL
+    nx = int(math.ceil((hi_x - lo_x) / cell)) + 2
+    ny = int(math.ceil((hi_y - lo_y) / cell)) + 2
+    origin = (lo_x - cell, lo_y - cell)
+
+    land = {}
+    unwalled = set()
+    for i in range(nx):
+        for j in range(ny):
+            x = origin[0] + (i + 0.5) * cell
+            y = origin[1] + (j + 0.5) * cell
+            z = terrain_height_any(terrains, x, y)
+            if z is not None and z > WATER_LEVEL + SHORE_CLEARANCE:
+                land[(i, j)] = z
+                continue
+            for lo, hi, deck_z in CONTOUR_OPEN_BOXES:
+                if lo[0] <= x <= hi[0] and lo[1] <= y <= hi[1]:
+                    land[(i, j)] = deck_z
+                    unwalled.add((i, j))
+                    break
+
+    # Edges as (axis, line index, cell index along the wall). axis 0 walls a
+    # vertical grid line (the wall runs along y), axis 1 a horizontal one.
+    edges = {}
+    for (i, j), z in land.items():
+        if (i, j) in unwalled:
+            continue
+        for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            if (i + di, j + dj) in land:
+                continue
+            if di:
+                edges.setdefault((0, i + (1 if di > 0 else 0)), {})[j] = z
+            else:
+                edges.setdefault((1, j + (1 if dj > 0 else 0)), {})[i] = z
+
+    boxes = 0
+    for (axis, line), spans in sorted(edges.items()):
+        keys = sorted(spans)
+        start = prev = keys[0]
+        run_z = [spans[start]]
+        for key in keys[1:] + [None]:
+            if key is not None and key == prev + 1:
+                prev = key
+                run_z.append(spans[key])
+                continue
+            length = (prev - start + 1) * cell
+            mid = origin[1 - axis] + (start + (prev - start + 1) * 0.5) * cell
+            fixed = origin[axis] + line * cell
+            cx, cy = (fixed, mid) if axis == 0 else (mid, fixed)
+            # Seated on the lowest land the run touches, so a wall spanning a
+            # slope cannot float clear of its bottom end.
+            base = min(run_z)
+            add_box(collision, "BOX_Boundary_%d_%04d_%04d" % (axis, line, start),
+                    centre=(cx, cy, base + BOUNDARY_HEIGHT * 0.5 - 1.0),
+                    size=((BOUNDARY_THICKNESS, length, BOUNDARY_HEIGHT)
+                          if axis == 0 else
+                          (BOUNDARY_THICKNESS, length, BOUNDARY_HEIGHT)),
+                    yaw_deg=0.0 if axis == 0 else 90.0,
+                    colour=COLOR_BOUNDARY)
+            boxes += 1
+            if key is None:
+                break
+            start = prev = key
+            run_z = [spans[key]]
+
+    return {"boxes": boxes, "land_cells": len(land)}
+
+
 def build_boundary_poly(collision, terrains, poly):
     """Walls along a closed polyline, in authored XY.
 
@@ -1633,6 +1788,8 @@ def build_boundary(collision, terrains, centre):
         return build_boundary_rect(collision, terrains, BOUNDARY_RECT)
     if BOUNDARY_SHAPE == "poly":
         return build_boundary_poly(collision, terrains, BOUNDARY_POLY)
+    if BOUNDARY_SHAPE == "contour":
+        return build_boundary_contour(collision, terrains, centre)
 
     for index in range(BOUNDARY_SEGMENTS):
         angle = math.tau * index / BOUNDARY_SEGMENTS
@@ -2063,6 +2220,10 @@ def main():
           "(ground, buildings, bridge and rocks are the mesh now)"
           % (total_proxies, proxies["trees"]["boxes"],
              proxies["boundary"]["boxes"]))
+    if "shore_radius" in proxies["boundary"]:
+        lo, hi = proxies["boundary"]["shore_radius"]
+        print("[make_castle_level]           shore measured at radius %.1f to "
+              "%.1f about the island centre (was a flat ring)" % (lo, hi))
     print("[make_castle_level] walkable  %.0f m2 reachable from the spawn"
           % walk_area)
     for name, ok in reach.items():
