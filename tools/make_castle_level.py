@@ -75,6 +75,25 @@ ROCKS = "final rocks"
 # in the level at all -- it just has to not end up in VISUAL.
 LIBRARY = ("buildings", "rocks", "trees")
 
+# ...except `buildings` is not purely a library any more, and treating it as one
+# silently drops part of the castle.
+#
+# As of the final map it holds 10 parked originals *and* 15 structures standing
+# on the island at z ~= 0..5: entrance.002, tower1.001, tower1.008,
+# `wall entrance.002`, wall.001-.007, .009, .010, .013 and .018. They are not
+# duplicates of anything in `finals buildings` -- the nearest finals piece to
+# each is 1.8-5 m away, i.e. they are the adjoining segments of the same wall
+# runs, and three of them are the western gate complex at the foot of the
+# mountain path. Skipping them ships a fortress with 15 gaps in its walls and
+# no error to say so.
+#
+# So a library collection is filtered by height rather than trusted wholesale:
+# anything standing above this Z is placed art and is built like any other prop.
+# The parked kit sits 25 m down, so the threshold has an enormous margin and
+# does not need to be tuned. Every object it picks up is named in the build
+# report -- this is exactly the kind of rule that must not act quietly.
+LIBRARY_PARKED_MAX_Z = -10.0
+
 SOURCE_COLLECTIONS = (LANDSCAPE, BUILDINGS, ROCKS) + LIBRARY
 
 # --- Recentre ---------------------------------------------------------------
@@ -91,6 +110,23 @@ SOURCE_COLLECTIONS = (LANDSCAPE, BUILDINGS, ROCKS) + LIBRARY
 # complains if it has drifted.
 RECENTRE = Vector((146.9, 16.1, 0.0))
 RECENTRE_TOLERANCE = 1.0
+
+# Where the authored `ground` mesh actually sits, which is what the drift guard
+# above is really checking. Split out from RECENTRE because they stopped being
+# the same number once this script grew phase profiles: RECENTRE is "how far to
+# shift so *this phase's* play area lands on the origin", which differs per
+# phase, while the island centre is a fact about the art and does not.
+ISLAND_CENTRE = (-146.9, -16.1)
+
+# The centre this phase's play area is built around -- what terrain clipping,
+# scatter culling and the boundary are measured from. A phase profile moves it
+# onto its own stretch of the map.
+#
+# None means "the centre measured off the ground mesh", which is what the
+# whole-map profile has always used. Kept as None rather than set to
+# ISLAND_CENTRE so that profile still builds from the *derived* centre to the
+# last decimal, and adding phases cannot nudge the existing level.
+PLAY_CENTRE = None
 
 # --- Scale ------------------------------------------------------------------
 
@@ -164,6 +200,60 @@ WATER_GRID = 8
 # before this, so the clip lands on backdrop the player only ever sees edge-on.
 BACKDROP_RADIUS = 68.0
 
+# --- Terrain sets -----------------------------------------------------------
+#
+# Which authored landscape meshes this phase is built from. The final map has
+# four of them where there used to be one, and they are what the phase split
+# actually cuts along:
+#
+#   ground         the castle island. All 52 placed structures stand on it, so
+#                  it is phase 2 and nothing else can be.
+#   ground_east    the forest across the ravine. Phase 1.
+#   mountain_path  the ribbon climbing northwest off the island and back down
+#                  onto the battleground. Phase 2's exit, so phase 2 carries it.
+#   battleground   the arena on the far side. Phase 3.
+#
+# TERRAIN_PLAY is chunked into VISUAL, merged into COLLISION_MESH, and is what
+# markers, the boundary and the walkability check are all measured against.
+# TERRAIN_BACKDROP is drawn and nothing else -- it is how a phase keeps the
+# neighbouring phase on its skyline without paying to collide it.
+#
+# `water` and `mountains` are always backdrop and are not listed here: they are
+# not any phase's terrain, they are the moat and the ring around everything.
+#
+# The default is the single `ground` this script was written for, so the
+# whole-map profiles build exactly what they always did.
+TERRAIN_PLAY = ("ground",)
+TERRAIN_BACKDROP = ()
+
+# The authored trail meshes, laid over the terrain and collided with it. They
+# are per-phase for the same reason the terrain is: `path1` is the forest trail
+# running east across ground_east, `path2` is the short run inside the compound.
+PATHS = ("path1", "path2")
+
+# Props (buildings and rocks) further than this from the play centre are left
+# out entirely. None keeps every one of them, which is the whole-map behaviour
+# and the default: a phase that does not set it cannot lose a building by
+# accident. A phase sets it only when the fortress is genuinely out of sight --
+# and the build report always names the count dropped, so a wrong value is
+# visible rather than inferred.
+PROPS_RADIUS = None
+
+# Props further than this are drawn but not collided.
+#
+# Distinct from PROPS_RADIUS because "can the player see it" and "can the
+# player touch it" have different answers across a ravine. Phase 1 is the case
+# that forced the split: the fortress is the thing the player walks toward for
+# the whole phase and has to be drawn, but it is on the far side of a gap the
+# phase's west wall stops them at, so every one of its triangles in
+# COLLISION_MESH is a triangle the BVH carries and nothing can ever hit. Left
+# unset it was 97,478 of the phase's 108,019 collision triangles -- 90% of the
+# mesh, for geometry on the wrong side of a wall.
+#
+# None means everything built is also solid, which is what a phase whose props
+# are all inside its play area wants.
+PROPS_COLLIDE_RADIUS = None
+
 # --- Buildings --------------------------------------------------------------
 
 # Planar decimation merges coplanar faces and leaves hard edges alone, which is
@@ -183,7 +273,15 @@ BUILDING_DECIMATE_MIN_TRIS = 3000
 # just arrives bald. They are realised here by reading the depsgraph directly
 # rather than through duplicates_make_real, so each instance can be culled as
 # it is read.
-GROUND_EMITTER = "ground"
+# The play terrain's own emitters. A tuple because the final map carries a
+# separate tree/rock scatter on each of its four landscape meshes, and a phase
+# must read the ones belonging to *its* terrain -- pointed at `ground` while
+# building the forest, gather_ground_scatter culls every instance it finds by
+# distance and the level arrives bald. Kept in step with TERRAIN_PLAY by
+# profile rather than derived from it: `mountain_path` is play terrain and has
+# no particle systems at all, and asking for a non-existent emitter is a
+# silently empty read.
+SCATTER_EMITTERS = ("ground",)
 MOUNTAIN_EMITTER = "mountains"
 
 # Island half-extent is ~40 m. Trees past this are on the outer slope, below
@@ -199,6 +297,18 @@ COMPOUND_MARGIN = 2.0
 # The bridge corridor, likewise, in original world XY.
 BRIDGE_MIN_XY = (-141.0, -20.0)
 BRIDGE_MAX_XY = (-126.0, -12.5)
+
+# Scatter is also kept out of any closed polygon listed here, in authored XY.
+# A polygon rather than another box because the one region that needs it is the
+# mountain path, which curves through 30 degrees and bulges at the saddle -- an
+# AABB tight enough to spare the island's trees does not contain the path, and
+# one that contains the path strips the whole northwest quarter of the island.
+#
+# This is the trees-in-the-compound problem again, and it matters more here:
+# a trunk proxy is 2.2 authored units across and the path narrows to 4.5, so a
+# single tree seeded on the climb closes it. Three of them did -- BOX_Tree_007,
+# _052 and _059 -- and the walkability check reported the pass unreachable.
+SCATTER_EXCLUDE_POLY = ()
 
 # How many survivors to keep. Subsampling is deterministic (sort by position,
 # take every Nth) so that a re-run produces the same forest, not a new one.
@@ -247,6 +357,19 @@ BOUNDARY_SEGMENTS = 32
 BOUNDARY_HEIGHT = 6.0
 BOUNDARY_THICKNESS = 2.0
 
+# "ring" closes a circle of radius BOUNDARY_RADIUS around PLAY_CENTRE, which is
+# what a single self-contained island arena wants. "rect" walls off an
+# axis-aligned box instead, which is what a *phase* wants: a phase is a corridor
+# with a start and an exit, and a circle centred on it either leaves the exit
+# open or walls off ground the player is meant to cross. "poly" is a closed
+# polyline, for a play area that is neither -- phase 2's island-plus-mountain-
+# path is an L, and no rectangle contains it without also containing a large
+# amount of empty air the player would walk out into. Authored XY throughout.
+BOUNDARY_SHAPE = "ring"
+BOUNDARY_RECT = None
+BOUNDARY_POLY = None
+BOUNDARY_SEGMENT_LENGTH = 4.0   # rect and poly; ring derives its own from the arc
+
 # The bridge's centreline, still used to place spawns and walkability landmarks.
 GATE_AXIS_Y = -16.42
 
@@ -282,6 +405,355 @@ COLOR_BRIDGE = (0.72, 0.62, 0.36, 1.0)
 COLOR_ROCK = (0.45, 0.45, 0.48, 1.0)
 COLOR_TREE = (0.42, 0.26, 0.14, 1.0)
 COLOR_BOUNDARY = (0.70, 0.13, 0.13, 1.0)
+
+
+# --- Boundary helpers -------------------------------------------------------
+
+def arc_points(centre, radius, start_deg, end_deg, step_deg=15.0):
+    """Points along a circle from start to end, counter-clockwise, inclusive.
+
+    Used to build the island's share of a poly boundary at the same radius the
+    whole-map ring uses, so a phase that only *opens* the ring somewhere is not
+    also silently resizing it.
+    """
+    span = (end_deg - start_deg) % 360.0 or 360.0
+    steps = max(1, int(math.ceil(span / step_deg)))
+    out = []
+    for i in range(steps + 1):
+        angle = math.radians(start_deg + span * i / steps)
+        out.append((centre[0] + radius * math.cos(angle),
+                    centre[1] + radius * math.sin(angle)))
+    return out
+
+
+# The mountain path's plan-view edges, measured off the mesh in 6-unit slices
+# and taken at each slice's midpoint, with a 2-unit margin added outside. The
+# ribbon is 4.5 to 16 units wide, curves northwest, and bulges around x = -220
+# where it crosses the saddle -- which is why the corridor is a measured
+# polyline and not two straight walls.
+MOUNTAIN_CORRIDOR_NORTH = [
+    (-192.2, 13.5), (-198.2, 14.1), (-204.2, 13.7), (-210.2, 14.6),
+    (-216.2, 22.9), (-222.2, 22.9), (-228.2, 23.5), (-234.2, 22.1),
+    (-240.5, 16.6),
+]
+MOUNTAIN_CORRIDOR_SOUTH = [
+    (-240.5, 11.8), (-234.2, 7.9), (-228.2, 7.0), (-222.2, 6.6),
+    (-216.2, 5.4), (-210.2, 3.7), (-204.2, 3.0), (-198.2, -1.8),
+    (-192.2, -5.9),
+]
+
+# The corridor's eastern continuation, over the island itself. The boundary
+# does not need these -- the island ring already encloses that ground -- but
+# the scatter mask does: the path's foot lies on the island, and trees seeded
+# on `ground` land on it.
+MOUNTAIN_CORRIDOR_EAST_NORTH = [
+    (-168.2, -5.4), (-174.2, 0.3), (-180.2, 4.2), (-186.2, 9.8),
+]
+MOUNTAIN_CORRIDOR_EAST_SOUTH = [
+    (-186.2, -10.0), (-180.2, -12.7), (-174.2, -14.2), (-168.2, -13.9),
+]
+
+# The whole climb as one closed outline: east lip, out along the north edge,
+# around the head of the pass, back along the south edge, east lip again.
+MOUNTAIN_CORRIDOR_POLY = (MOUNTAIN_CORRIDOR_EAST_NORTH
+                          + MOUNTAIN_CORRIDOR_NORTH
+                          + MOUNTAIN_CORRIDOR_SOUTH
+                          + MOUNTAIN_CORRIDOR_EAST_SOUTH)
+
+# The island ring, opened between 150 and 170 degrees where the path leaves its
+# northwest shoulder, then the corridor out and back. Walking the arc first and
+# the corridor second keeps the loop simple: the arc ends at the mouth's north
+# lip and the corridor returns to its south lip.
+PHASE2_BOUNDARY_POLY = (
+    arc_points(ISLAND_CENTRE, 46.0, 170.0, 150.0)
+    + MOUNTAIN_CORRIDOR_NORTH
+    + MOUNTAIN_CORRIDOR_SOUTH
+)
+
+# --- Phase profiles ---------------------------------------------------------
+#
+# The campaign's exterior is four narrative phases, and phases 1 and 2 are both
+# cut from *this* art -- the forest east of the ravine, and the walled compound
+# west of it. They ship as separate levels because each ends at a checkpoint and
+# loads the next, so neither needs the other's collision, scatter or spawns
+# resident.
+#
+# A profile is only ever a set of overrides for the constants above. Everything
+# it does not name keeps the module default, and `castle_approach` names nothing
+# at all -- so the whole-map level this script has always built regenerates
+# byte-for-byte, and the phase levels cannot drift away from it silently.
+#
+# The seam between phase 1 and phase 2 is the bridge, deliberately: phase 1's
+# west wall is at the bridge mouth and phase 2's spawn is on the bridge's east
+# end, so the player stops and restarts within a few metres. Both phases keep
+# the far side in their backdrop, so the compound is visible across the ravine
+# throughout phase 1 and the forest is still behind you in phase 2.
+PROFILES = {
+    # The original single-arena level, phases 1 and 2 together. Unchanged.
+    "castle_approach": {},
+
+    # The whole map again, but sized for the enlarged island. Same art, same
+    # spawns, same seam-free single level as `castle_approach` -- the only
+    # difference is how far out the play area reaches.
+    #
+    # The island was expanded in Blender (footprint 899 -> 2698 m^2, and held
+    # on its east shore so the bridge landing did not move). Measured against
+    # the derived play centre, walkable land now runs out at radius 45.9 where
+    # it used to stop inside 37. Left at the defaults, BOUNDARY_RADIUS would
+    # put its invisible wall across 6.8% of the island -- precisely the new
+    # outer ground the expansion was for, so the level would ship with the
+    # extra land visible and unreachable.
+    #
+    # The three radii keep the spacing the defaults use (boundary, +1, +2), so
+    # scatter and terrain detail still stop just outside the wall rather than
+    # at it. MOUNTAIN_BAND's inner edge moves out past the new shoreline: at 42
+    # it would now scatter backdrop conifers on top of the island itself.
+    "castle_full": {
+        "BOUNDARY_RADIUS": 46.0,
+        "SCATTER_PLAY_RADIUS": 47.0,
+        "PLAY_RADIUS": 48.0,
+        "MOUNTAIN_BAND": (48.0, 72.0),
+    },
+
+    # Phase 1 -- the forest, on its own mesh.
+    #
+    # Rewritten for the final map. The forest used to be the eastern lobe of
+    # `ground` and was cut out of it by a rectangle; it is now `ground_east`, a
+    # separate 84k-triangle open surface with its own tree and rock scatter,
+    # spanning x -111.4..-45.6 and y -58.7..25.0. The old rectangle
+    # ((-129.5, -40), (-108.5, 10)) lies almost entirely west of that mesh --
+    # it would build a phase on terrain this phase no longer owns.
+    "phase1_forest": {
+        "TERRAIN_PLAY": ("ground_east",),
+        # The island across the ravine, drawn and not collided. It is what the
+        # player is walking toward for the whole phase.
+        "TERRAIN_BACKDROP": ("ground",),
+        "SCATTER_EMITTERS": ("ground_east",),
+        # path1 is the forest trail; path2 is inside the compound.
+        "PATHS": ("path1",),
+        "PLAY_CENTRE": (-78.5, -16.9),
+        # Walkable ground measured out to 48 units from the centre on the
+        # diagonal, so the scatter has to reach at least that far or the
+        # corners of the level come out bald.
+        "SCATTER_PLAY_RADIUS": 50.0,
+        # Sizes the walkability grid, which is a square of this half-extent
+        # about the play centre. `ground_east` reaches 42 units from that
+        # centre on y, so the default 39 would leave the north and south ends
+        # of the forest outside the grid and silently unchecked.
+        "PLAY_RADIUS": 45.0,
+        "GROUND_TREE_TARGET": 300,
+        "GROUND_ROCK_TARGET": 90,
+        "BOUNDARY_SHAPE": "rect",
+        # Walkable cells run x -107.5..-47.5, y -54.7..21.3 on a 4-unit grid.
+        # The walls sit just outside that, so the player reaches the edge of
+        # the terrain rather than being stopped short of it. The west wall at
+        # -108.5 is the ravine lip: `ground_east` and `ground` overlap between
+        # -111.4 and -106.6, and the far side belongs to phase 2.
+        "BOUNDARY_RECT": ((-108.5, -55.0), (-48.0, 22.0)),
+        # The furthest corner of that rectangle is 48.5 from the play centre,
+        # so nothing beyond 50 can be touched however the player moves. The
+        # fortress starts at 48.7 and is drawn in full -- it is what the phase
+        # walks toward -- but none of it is collided.
+        "PROPS_COLLIDE_RADIUS": 50.0,
+        "PLAYER_SPAWN_XY": (-52.0, -16.0),
+        "PLAYER_FACES_XY": (-108.0, -16.0),
+        "ENEMY_SPAWNS_XY": [
+            ("01", -70.0, -8.0),
+            ("02", -78.5, -16.9),
+            ("03", -96.0, -22.0),
+        ],
+        "WALK_LANDMARKS": {
+            "spawn clearing": (-52.0, -16.0),
+            "mid forest": (-78.5, -16.9),
+            "north woods": (-78.0, 8.0),
+            "south woods": (-80.0, -40.0),
+            "ravine edge": (-106.0, -16.0),
+        },
+    },
+
+    # Phase 2 -- cross the bridge, take the gate, then climb the pass out.
+    #
+    # The one phase that carries two play meshes: the island and the ribbon
+    # that climbs off its northwest shoulder, over a saddle at z = 11.5 and
+    # back down to the battleground. The climb is the phase's exit, so it is
+    # built here rather than in phase 3.
+    "phase2_approach": {
+        "TERRAIN_PLAY": ("ground", "mountain_path"),
+        "TERRAIN_BACKDROP": ("ground_east",),
+        # `mountain_path` carries no particle systems at all, so the scatter is
+        # the island's.
+        "SCATTER_EMITTERS": ("ground",),
+        "PATHS": ("path2",),
+        # Midway between the island centre and the head of the pass, so
+        # Level::bounds -- and with it the shadow cascades -- are centred on
+        # what this phase actually spans rather than on one end of it.
+        "PLAY_CENTRE": (-172.0, -16.0),
+        # Measured from that centre, the island's far shore is 65 units away,
+        # so the island scatter needs a radius this wide to survive the cull.
+        # It is not a detail budget here, it is the difference between a
+        # forested island and a bare one.
+        "SCATTER_PLAY_RADIUS": 70.0,
+        # The walkability grid is a square of this half-extent about the play
+        # centre, and this phase is the reason that matters: its play area runs
+        # 66 units either side of the centre, and the *spawn* is 48 units out
+        # on the island. At the default 39 the spawn falls outside the grid
+        # entirely, the flood fill has nowhere to expand to, and the level
+        # reports every landmark unreachable while being perfectly fine.
+        "PLAY_RADIUS": 70.0,
+        "GROUND_TREE_TARGET": 160,
+        "GROUND_ROCK_TARGET": 70,
+        "BOUNDARY_SHAPE": "poly",
+        "BOUNDARY_POLY": PHASE2_BOUNDARY_POLY,
+        # Keep the island's trees off the climb, including the stretch of it
+        # that lies on the island.
+        "SCATTER_EXCLUDE_POLY": MOUNTAIN_CORRIDOR_POLY,
+        "PLAYER_SPAWN_XY": (-124.0, -16.4),
+        "PLAYER_FACES_XY": (-141.2, -16.4),
+        # The first four are the whole-map level's ambush, unchanged and for a
+        # specific reason: they are the points already verified to sit on the
+        # *collision mesh*. Markers are placed by raycasting the terrain, but
+        # verify_level.py checks them against the collision mesh, which also
+        # carries the buildings -- so a spot that is fine on the terrain can be
+        # 2 m under a wall footprint on the mesh. Moving any of them means
+        # re-running verify_level.py, not reasoning about the terrain.
+        #
+        # 05 and 06 are new, on the climb: probed at z 1.96 and 10.55 with
+        # surface normals of 0.94 and 0.80, so both are on walkable path rather
+        # than on the cliff beside it.
+        "ENEMY_SPAWNS_XY": [
+            ("01", -125.5, -13.5),
+            ("02", -125.5, -19.5),
+            ("03", -144.5, -13.5),
+            ("04", -145.5, -19.5),
+            ("05", -186.2, -1.0),
+            ("06", -204.2, 8.0),
+        ],
+        "WALK_LANDMARKS": {
+            "bridge east": (-124.0, -16.4),
+            "gate": (-141.2, GATE_AXIS_Y),
+            "courtyard": (-147.0, -16.0),
+            "keep door": (-152.0, -16.0),
+            "path foot": (-186.2, -1.0),
+            "pass summit": (-204.2, 8.0),
+            "pass exit": (-234.0, 14.0),
+        },
+    },
+
+    # Phase 3 -- the battlefield beyond the pass.
+    #
+    # A flat arena: every probe across it came back with a surface normal of
+    # 1.000 and a height within 0.1 of z = 1.05, which is what it should be for
+    # a boss fight. 38k triangles before decimation and no buildings on it at
+    # all.
+    "phase3_battlefield": {
+        "TERRAIN_PLAY": ("battleground",),
+        # The pass the player has just come down, kept on the skyline behind
+        # them. Clipped to BACKDROP_RADIUS like the moat is.
+        "TERRAIN_BACKDROP": ("mountain_path",),
+        "SCATTER_EMITTERS": ("battleground",),
+        "PATHS": (),
+        "PLAY_CENTRE": (-249.3, 4.4),
+        "SCATTER_PLAY_RADIUS": 70.0,
+        # The arena reaches 53 units from its centre on both axes.
+        "PLAY_RADIUS": 58.0,
+        "GROUND_TREE_TARGET": 200,
+        "GROUND_ROCK_TARGET": 80,
+        "BOUNDARY_SHAPE": "rect",
+        # Walkable cells run x -297.9..-201.9, y -43.5..52.5.
+        "BOUNDARY_RECT": ((-299.0, -45.0), (-200.0, 54.0)),
+        # The fortress is over the mountains and 74 units away at its nearest
+        # corner -- 222 m at WORLD_SCALE, behind the ridge the player just
+        # crossed. Dropping it takes all 158 props out of this level rather
+        # than drawing a castle nobody can see. The build report prints the
+        # count, so if this is ever wrong it is wrong loudly.
+        "PROPS_RADIUS": 60.0,
+        # Where the pass lands on the battleground.
+        "PLAYER_SPAWN_XY": (-240.2, 14.2),
+        "PLAYER_FACES_XY": (-270.0, 10.0),
+        "ENEMY_SPAWNS_XY": [
+            ("01", -260.0, 0.0),
+            ("02", -270.0, 10.0),
+            ("03", -280.0, 20.0),
+        ],
+        "WALK_LANDMARKS": {
+            "pass landing": (-240.2, 14.2),
+            "arena centre": (-249.3, 4.4),
+            "north field": (-270.0, 30.0),
+            # Taken off the built level's reachability map, not picked by eye:
+            # (-260, -30) sat under a trunk proxy and reported unreachable on
+            # a level that is in fact open there.
+            "south field": (-262.0, -26.0),
+            "far end": (-292.0, 40.0),
+        },
+    },
+}
+
+# Landmarks the walkability flood-fill must reach from the spawn. Overridden per
+# profile; this is the whole-map set.
+WALK_LANDMARKS = {
+    "player spawn": PLAYER_SPAWN_XY,
+    "bridge middle": (-134.0, GATE_AXIS_Y),
+    "gate": (-141.2, GATE_AXIS_Y),
+    "courtyard": (-147.0, -16.0),
+    "keep approach": (-152.0, -16.0),
+}
+
+
+def apply_profile(name):
+    """Overwrite the module constants with one profile's values.
+
+    Assigning globals is blunt, but every tunable above is read inside a
+    function body at call time rather than captured as a default argument, so
+    rebinding them here is seen by the whole pipeline. The two that *are*
+    default-bound -- CHUNK_SIZE and UNDERSIDE_NORMAL_Z -- describe the renderer
+    and the mesh, not the phase, and no profile sets them. That is checked
+    rather than trusted.
+    """
+    try:
+        overrides = PROFILES[name]
+    except KeyError:
+        raise SystemExit("unknown profile %r -- known: %s"
+                         % (name, ", ".join(sorted(PROFILES))))
+
+    baked = {"CHUNK_SIZE", "UNDERSIDE_NORMAL_Z"}
+    for key, value in overrides.items():
+        if key not in globals():
+            raise SystemExit("profile %r sets unknown constant %r" % (name, key))
+        if key in baked:
+            raise SystemExit(
+                "profile %r sets %s, which is bound as a default argument and "
+                "so would not take effect. Make it an explicit parameter first."
+                % (name, key))
+        globals()[key] = value
+
+    # RECENTRE is not a free constant once a profile moves the play area: it is
+    # whatever shift puts that area on the origin. Derived here so a profile
+    # cannot set the centre and the shift to disagree. Left alone when the
+    # profile does not move the centre, so the whole-map build keeps using the
+    # hardcoded value it always has.
+    if PLAY_CENTRE is not None:
+        globals()["RECENTRE"] = Vector((-PLAY_CENTRE[0], -PLAY_CENTRE[1], 0.0))
+
+    if BOUNDARY_SHAPE == "rect" and not BOUNDARY_RECT:
+        raise SystemExit("profile %r asks for a rect boundary without setting "
+                         "BOUNDARY_RECT" % name)
+    if BOUNDARY_SHAPE == "poly" and not BOUNDARY_POLY:
+        raise SystemExit("profile %r asks for a poly boundary without setting "
+                         "BOUNDARY_POLY" % name)
+    if BOUNDARY_SHAPE == "poly" and len(BOUNDARY_POLY) < 3:
+        raise SystemExit("profile %r gives BOUNDARY_POLY only %d points; a "
+                         "closed boundary needs at least 3"
+                         % (name, len(BOUNDARY_POLY)))
+    unknown = set(SCATTER_EMITTERS) - set(TERRAIN_PLAY)
+    if unknown:
+        # Not fatal -- the whole-map profiles legitimately scatter off `ground`
+        # while it is the only play terrain -- but a phase that reads an
+        # emitter belonging to terrain it is not building gets instances culled
+        # to nothing by distance, and a bald level is hard to trace back here.
+        print("[make_castle_level] NOTE profile %r scatters off %s, which is "
+              "not in TERRAIN_PLAY %s"
+              % (name, sorted(unknown), list(TERRAIN_PLAY)))
+    return name
 
 
 # ---------------------------------------------------------------------------
@@ -546,6 +1018,23 @@ def in_box(point, lo, hi, margin=0.0):
             and lo[1] - margin <= point.y <= hi[1] + margin)
 
 
+def in_poly(point, poly):
+    """Even-odd point-in-polygon test on a closed polyline, in plan view."""
+    x, y = point.x, point.y
+    inside = False
+    n = len(poly)
+    for i in range(n):
+        ax, ay = poly[i]
+        bx, by = poly[(i + 1) % n]
+        # Half-open on y so a vertex exactly level with the test point is
+        # counted once rather than zero or twice.
+        if (ay > y) != (by > y):
+            t = (y - ay) / (by - ay)
+            if x < ax + t * (bx - ax):
+                inside = not inside
+    return inside
+
+
 def read_instances(emitter_name):
     """Every particle instance the emitter produces, as (source, matrix).
 
@@ -585,7 +1074,16 @@ def subsample(items, target):
 
 def gather_ground_scatter(island_centre):
     trees, rocks = [], []
-    for source, matrix in read_instances(GROUND_EMITTER):
+    instances = []
+    for emitter in SCATTER_EMITTERS:
+        if bpy.data.objects.get(emitter) is None:
+            raise SystemExit(
+                "SCATTER_EMITTERS names %r, which is not in this .blend. An "
+                "emitter that does not exist reads as zero instances, so the "
+                "phase would export with no trees and no error." % emitter)
+        instances.extend(read_instances(emitter))
+
+    for source, matrix in instances:
         position = matrix.translation
         offset = Vector((position.x - island_centre[0],
                          position.y - island_centre[1]))
@@ -594,6 +1092,8 @@ def gather_ground_scatter(island_centre):
         if in_box(position, COMPOUND_MIN_XY, COMPOUND_MAX_XY, COMPOUND_MARGIN):
             continue
         if in_box(position, BRIDGE_MIN_XY, BRIDGE_MAX_XY):
+            continue
+        if SCATTER_EXCLUDE_POLY and in_poly(position, SCATTER_EXCLUDE_POLY):
             continue
         (trees if source.name.startswith("tree") else rocks).append(
             (source, matrix))
@@ -625,59 +1125,110 @@ def island_centre_of(ground):
 
 
 def check_recentre(island_centre):
-    derived = Vector((-island_centre[0], -island_centre[1], 0.0))
-    drift = (derived - RECENTRE).length
+    """Guard against the *art* having moved under the hardcoded constants.
+
+    Compares against ISLAND_CENTRE, not RECENTRE: once phases exist RECENTRE is
+    per-phase and says nothing about where the terrain is, so checking it here
+    would fail every phase build for no reason. What must not change silently is
+    the ground mesh's own centre, because every profile's coordinates are
+    written against it.
+    """
+    drift = math.hypot(island_centre[0] - ISLAND_CENTRE[0],
+                       island_centre[1] - ISLAND_CENTRE[1])
     if drift > RECENTRE_TOLERANCE:
         raise SystemExit(
-            "RECENTRE is %s but the island now centres on %s (drift %.2f m). "
-            "The terrain has moved since this constant was set. Update "
-            "RECENTRE and rebuild collision -- do not leave them disagreeing, "
-            "or the proxies end up %.1f m from the geometry they wrap."
-            % (tuple(round(c, 2) for c in RECENTRE),
-               tuple(round(-c, 2) for c in derived[:2]), drift, drift))
-    return derived
+            "ISLAND_CENTRE is %s but the island now centres on %s (drift "
+            "%.2f m). The terrain has moved since this constant was set. "
+            "Update ISLAND_CENTRE and every profile's coordinates together -- "
+            "do not leave them disagreeing, or the proxies end up %.1f m from "
+            "the geometry they wrap."
+            % (tuple(round(c, 2) for c in ISLAND_CENTRE),
+               tuple(round(c, 2) for c in island_centre), drift, drift))
+    return Vector((-island_centre[0], -island_centre[1], 0.0))
+
+
+def terrain_object(name):
+    obj = bpy.data.objects.get(name)
+    if obj is None or obj.type != "MESH":
+        raise SystemExit(
+            "terrain set names %r, which is not a mesh in this .blend. The "
+            "final map's landscape is: %s."
+            % (name, ", ".join(sorted(
+                o.name for o in source_collection(LANDSCAPE).objects
+                if o.type == "MESH"))))
+    return obj
+
+
+def decimated_terrain(obj, report, kind, clip_centre=None):
+    """One landscape mesh: underside dropped, optionally clipped, decimated.
+
+    This is what used to be written out inline for `ground` alone, unchanged in
+    behaviour and now applied to whichever meshes the phase names. The two-pass
+    shape is deliberate: the decimation ratio has to be measured *after* the
+    underside is gone, or a mesh that is a third downward faces gets a ratio a
+    third too aggressive and the visible surface is the part that pays.
+    """
+    mesh = baked_mesh(obj)
+    before = tri_count(mesh)
+    dropped = drop_underside(mesh, obj.matrix_world)
+    if clip_centre is not None:
+        clip_to_radius(mesh, obj.matrix_world, clip_centre, BACKDROP_RADIUS)
+    after_cull = tri_count(mesh)
+    ratio = min(1.0, GROUND_TARGET_TRIS / float(max(1, after_cull)))
+    bpy.data.meshes.remove(mesh)
+
+    mesh = baked_mesh(obj)
+    drop_underside(mesh, obj.matrix_world)
+    if clip_centre is not None:
+        clip_to_radius(mesh, obj.matrix_world, clip_centre, BACKDROP_RADIUS)
+    temp = make_object("__terrain_tmp", mesh, bpy.context.scene.collection,
+                       obj.matrix_world)
+    final = baked_mesh(temp, [decimate_setup(ratio=ratio)])
+    bpy.data.objects.remove(temp, do_unlink=True)
+    bpy.data.meshes.remove(mesh)
+    report["terrain"].append(
+        (obj.name, kind, (before, dropped, after_cull, tri_count(final))))
+    return final
 
 
 def build_terrain(report, centre):
     """The landscape, as (chunked entries, backdrop entries).
 
-    The split is a judgement about what is worth culling. `ground` is the
-    playable island and chunks cleanly. `water` and `mountains` are the moat
-    and the ring around it: both are visible from very nearly everywhere the
-    camera can be, and both are wider than any cell, so chunking them would buy
-    a few thousand triangles at the cost of dozens of draw calls. They are kept
-    whole and drawn unconditionally instead -- which is a deliberate choice
-    here rather than the accident it would be if they were merged in with
-    geometry that *can* be culled.
+    The split is a judgement about what is worth culling. The phase's own
+    terrain chunks cleanly. `water` and `mountains` are the moat and the ring
+    around it: both are visible from very nearly everywhere the camera can be,
+    and both are wider than any cell, so chunking them would buy a few thousand
+    triangles at the cost of dozens of draw calls. They are kept whole and
+    drawn unconditionally instead -- which is a deliberate choice here rather
+    than the accident it would be if they were merged in with geometry that
+    *can* be culled.
+
+    TERRAIN_BACKDROP meshes are the neighbouring phases' ground. They are
+    clipped to BACKDROP_RADIUS like the moat is, for the same reason: they
+    exist to be seen from here, not walked on, and Level::bounds is what pays
+    for anything further out.
     """
     entries = []
     backdrop = []
 
-    ground = bpy.data.objects["ground"]
-    mesh = baked_mesh(ground)
-    before = tri_count(mesh)
-    dropped = drop_underside(mesh, ground.matrix_world)
-    after_cull = tri_count(mesh)
-    ratio = min(1.0, GROUND_TARGET_TRIS / float(max(1, after_cull)))
-    bpy.data.meshes.remove(mesh)
+    for name in TERRAIN_PLAY:
+        obj = terrain_object(name)
+        entries.append((decimated_terrain(obj, report, "play"),
+                        obj.matrix_world.copy()))
 
-    mesh = baked_mesh(ground)
-    drop_underside(mesh, ground.matrix_world)
-    temp = make_object("__ground_tmp", mesh, bpy.context.scene.collection,
-                       ground.matrix_world)
-    final = baked_mesh(temp, [decimate_setup(ratio=ratio)])
-    bpy.data.objects.remove(temp, do_unlink=True)
-    bpy.data.meshes.remove(mesh)
-    report["ground"] = (before, dropped, after_cull, tri_count(final))
-    entries.append((final, ground.matrix_world.copy()))
+    for name in TERRAIN_BACKDROP:
+        obj = terrain_object(name)
+        backdrop.append((decimated_terrain(obj, report, "backdrop", centre),
+                         obj.matrix_world.copy()))
 
     water = bpy.data.objects["water"]
     mesh = baked_mesh(water)
-    report["water"] = (tri_count(mesh), None, None, None)
+    water_before = tri_count(mesh)
     flat = flat_water(mesh)
     bpy.data.meshes.remove(mesh)
     clip_to_radius(flat, water.matrix_world, centre, BACKDROP_RADIUS)
-    report["water"] = (report["water"][0], 0, 0, tri_count(flat))
+    report["terrain"].append(
+        ("water", "backdrop", (water_before, 0, 0, tri_count(flat))))
     backdrop.append((flat, water.matrix_world.copy()))
 
     mountains = bpy.data.objects["mountains"]
@@ -694,10 +1245,12 @@ def build_terrain(report, centre):
         bpy.data.objects.remove(temp, do_unlink=True)
         bpy.data.meshes.remove(final)
         final = decimated
-    report["mountains"] = (before, dropped, after_cull, tri_count(final))
+    report["terrain"].append(
+        ("mountains", "backdrop", (before, dropped, after_cull,
+                                   tri_count(final))))
     backdrop.append((final, mountains.matrix_world.copy()))
 
-    for curve in ("path1", "path2"):
+    for curve in PATHS:
         obj = bpy.data.objects.get(curve)
         if obj is None:
             continue
@@ -736,29 +1289,73 @@ def flat_water(source):
     return mesh
 
 
-def build_props(report):
-    """Buildings and rocks, as (mesh, matrix) entries."""
-    entries = []
-    decimated = 0
+def placed_in_library():
+    """Structures standing on the map inside a nominally-library collection.
 
-    for collection_name in (BUILDINGS, ROCKS):
-        for obj in sorted(source_collection(collection_name).objects,
-                          key=lambda o: o.name):
+    See LIBRARY_PARKED_MAX_Z. Returned sorted by name so the merge order is
+    stable across runs.
+    """
+    rescued = []
+    for collection_name in LIBRARY:
+        collection = bpy.data.collections.get(collection_name)
+        if collection is None:
+            continue
+        for obj in collection.objects:
             if obj.type != "MESH":
                 continue
-            mesh = baked_mesh(obj)
-            before = tri_count(mesh)
-            if before >= BUILDING_DECIMATE_MIN_TRIS:
-                bpy.data.meshes.remove(mesh)
-                mesh = baked_mesh(
-                    obj, [decimate_setup(planar=BUILDING_PLANAR_ANGLE)])
-                decimated += 1
-            report["props_before"] += before
-            report["props_after"] += tri_count(mesh)
-            entries.append((mesh, obj.matrix_world.copy()))
+            top = max((obj.matrix_world @ Vector(c)).z for c in obj.bound_box)
+            if top > LIBRARY_PARKED_MAX_Z:
+                rescued.append(obj)
+    return sorted(rescued, key=lambda o: o.name)
+
+
+def build_props(report, centre):
+    """Buildings and rocks, as (drawn entries, the subset that is also solid)."""
+    entries = []
+    solid = []
+    decimated = 0
+    dropped = 0
+
+    rescued = placed_in_library()
+    report["props_rescued"] = [o.name for o in rescued]
+
+    sources = []
+    for collection_name in (BUILDINGS, ROCKS):
+        sources.extend(sorted(source_collection(collection_name).objects,
+                              key=lambda o: o.name))
+    sources.extend(rescued)
+
+    for obj in sources:
+        if obj.type != "MESH":
+            continue
+        # Nearest corner, not the centre: a wall run 30 m long that reaches
+        # into the play area should not be judged by where its midpoint is.
+        corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+        near = min(math.hypot(c.x - centre[0], c.y - centre[1])
+                   for c in corners)
+        if PROPS_RADIUS is not None and near > PROPS_RADIUS:
+            dropped += 1
+            continue
+        mesh = baked_mesh(obj)
+        before = tri_count(mesh)
+        if before >= BUILDING_DECIMATE_MIN_TRIS:
+            bpy.data.meshes.remove(mesh)
+            mesh = baked_mesh(
+                obj, [decimate_setup(planar=BUILDING_PLANAR_ANGLE)])
+            decimated += 1
+        report["props_before"] += before
+        report["props_after"] += tri_count(mesh)
+        entry = (mesh, obj.matrix_world.copy())
+        entries.append(entry)
+        if PROPS_COLLIDE_RADIUS is None or near <= PROPS_COLLIDE_RADIUS:
+            solid.append(entry)
+            report["props_solid_tris"] += tri_count(mesh)
 
     report["props_decimated"] = decimated
-    return entries
+    report["props_dropped"] = dropped
+    report["props_kept"] = len(entries)
+    report["props_solid"] = len(solid)
+    return entries, solid
 
 
 def build_scatter(report, island_centre):
@@ -919,17 +1516,129 @@ def build_tree_proxies(collision, trees):
     return {"boxes": made}
 
 
-def build_boundary(collision, terrain, centre):
+def terrain_height_any(terrains, x, y):
+    """Highest play-terrain surface under (x, y), or None if all of them miss.
+
+    Highest rather than first: phase 2's terrain is the island *and* the
+    mountain path, and the path's east end runs out over the island it climbs
+    off. Taking the first hit would seat a marker or a boundary segment on
+    whichever mesh happened to be listed first, which around the path's foot is
+    several metres below the surface the player is standing on.
+    """
+    best = None
+    for terrain in terrains:
+        z = terrain_height(terrain, x, y)
+        if z is not None and (best is None or z > best):
+            best = z
+    return best
+
+
+def build_boundary_poly(collision, terrains, poly):
+    """Walls along a closed polyline, in authored XY.
+
+    The general case the ring and the rect are both special cases of, and phase
+    2 needs it: its play area is the island plus the ribbon climbing off the
+    island's northwest shoulder, which is an L and fits neither. A ring sized
+    to contain both walls off two thirds of the island; a ring sized to the
+    island alone cuts the climb in half, at about x = -44 in authored units,
+    with an invisible wall partway up the mountain.
+    """
+    boxes = 0
+    count_points = len(poly)
+    for index in range(count_points):
+        ax, ay = poly[index]
+        bx, by = poly[(index + 1) % count_points]
+        dx, dy = bx - ax, by - ay
+        length = math.hypot(dx, dy)
+        if length < 1e-6:
+            continue
+        segments = max(1, int(math.ceil(length / BOUNDARY_SEGMENT_LENGTH)))
+        step = length / segments
+        # add_box's unyawed long axis is +y, so a wall running along a heading
+        # of theta is that box turned by theta - 90. This is the same relation
+        # the ring uses (its segment at ring angle a has tangent a + 90 and is
+        # emitted with yaw a); written out here because the polyline gives the
+        # heading directly rather than implying it.
+        yaw = math.degrees(math.atan2(dy, dx)) - 90.0
+        for j in range(segments):
+            t = (j + 0.5) / segments
+            cx, cy = ax + dx * t, ay + dy * t
+            ground = terrain_height_any(terrains, cx, cy)
+            if ground is None:
+                ground = 0.0
+            add_box(collision, "BOX_Boundary_%02d_%02d" % (index, j),
+                    centre=(cx, cy, ground + BOUNDARY_HEIGHT * 0.5 - 1.0),
+                    # 15% overlap, as the ring and the rect both use, so the
+                    # joint at a corner cannot open a gap to squeeze through.
+                    size=(BOUNDARY_THICKNESS, step * 1.15, BOUNDARY_HEIGHT),
+                    yaw_deg=yaw, colour=COLOR_BOUNDARY)
+            boxes += 1
+    return {"boxes": boxes}
+
+
+def build_boundary_rect(collision, terrains, rect):
+    """Four walls of boxes around an axis-aligned region, in authored XY.
+
+    Each wall is laid down as overlapping segments that follow the terrain
+    height rather than one long box, for the same reason the ring does it: the
+    ground under a phase boundary is not level, and a single box either floats
+    at one end or buries itself at the other.
+    """
+    (min_x, min_y), (max_x, max_y) = rect
+    seg = BOUNDARY_SEGMENT_LENGTH
+    boxes = 0
+
+    # (label, fixed axis value, varying from, varying to, runs along y)
+    edges = (
+        ("W", min_x, min_y, max_y, True),
+        ("E", max_x, min_y, max_y, True),
+        ("S", min_y, min_x, max_x, False),
+        ("N", max_y, min_x, max_x, False),
+    )
+
+    for label, fixed, start, end, vertical in edges:
+        span = end - start
+        count = max(1, int(math.ceil(span / seg)))
+        step = span / count
+        # 15% overlap, exactly as the ring does, so the joints cannot open a
+        # gap the player squeezes through.
+        length = step * 1.15
+        for i in range(count):
+            centre_along = start + step * (i + 0.5)
+            cx, cy = ((fixed, centre_along) if vertical
+                      else (centre_along, fixed))
+            ground = terrain_height_any(terrains, cx, cy)
+            if ground is None:
+                ground = 0.0
+            # A wall running along y is a box whose long axis is y: that is the
+            # unyawed orientation of add_box's (thickness, length) size, so the
+            # north/south walls are the ones that need turning.
+            add_box(collision, "BOX_Boundary_%s_%02d" % (label, i),
+                    centre=(cx, cy, ground + BOUNDARY_HEIGHT * 0.5 - 1.0),
+                    size=(BOUNDARY_THICKNESS, length, BOUNDARY_HEIGHT),
+                    yaw_deg=0.0 if vertical else 90.0,
+                    colour=COLOR_BOUNDARY)
+            boxes += 1
+
+    return {"boxes": boxes}
+
+
+def build_boundary(collision, terrains, centre):
     """A closed ring of yawed boxes at the edge of the ground proxies.
 
     Without it the player walks off the last ground box and falls: the island's
     outer slope has no collision at all, by design.
     """
+    if BOUNDARY_SHAPE == "rect":
+        return build_boundary_rect(collision, terrains, BOUNDARY_RECT)
+    if BOUNDARY_SHAPE == "poly":
+        return build_boundary_poly(collision, terrains, BOUNDARY_POLY)
+
     for index in range(BOUNDARY_SEGMENTS):
         angle = math.tau * index / BOUNDARY_SEGMENTS
         cx = centre[0] + math.cos(angle) * BOUNDARY_RADIUS
         cy = centre[1] + math.sin(angle) * BOUNDARY_RADIUS
-        ground = terrain_height(terrain, cx, cy)
+        ground = terrain_height_any(terrains, cx, cy)
         if ground is None:
             ground = 0.0
         # Overlapped by 15% so the corners between segments cannot open a gap.
@@ -941,9 +1650,9 @@ def build_boundary(collision, terrain, centre):
     return {"boxes": BOUNDARY_SEGMENTS}
 
 
-def build_markers(markers, terrain):
+def build_markers(markers, terrains):
     x, y = PLAYER_SPAWN_XY
-    z = terrain_height(terrain, x, y)
+    z = terrain_height_any(terrains, x, y)
     if z is None:
         raise SystemExit("player spawn (%.1f, %.1f) is off the terrain"
                          % (x, y))
@@ -952,7 +1661,7 @@ def build_markers(markers, terrain):
 
     placed = []
     for suffix, ex, ey in ENEMY_SPAWNS_XY:
-        ez = terrain_height(terrain, ex, ey)
+        ez = terrain_height_any(terrains, ex, ey)
         if ez is None:
             raise SystemExit("enemy spawn (%.1f, %.1f) is off the terrain"
                              % (ex, ey))
@@ -1041,23 +1750,57 @@ def check_walkability(mesh_obj, collision, start_xy, start_z, landmarks):
     down = (inverse.to_3x3() @ Vector((0.0, 0.0, -1.0))).normalized()
     rotation = mesh_obj.matrix_world.to_3x3()
 
-    # Object-space ray length. mesh_obj carries the WORLD_SCALE, and ray_cast
-    # measures `distance` in the object's own space, so a world-metre budget
-    # handed straight to it would reach WORLD_SCALE times too far and report
-    # floors the player could never step down to.
-    reach_local = (MAX_STEP + WALK_MAX_RISE) / WORLD_SCALE
+    # The most a legal surface may rise across one probe *because it is
+    # sloped*, as opposed to because there is a step in it.
+    #
+    # Keeping these apart is the whole point. MAX_STEP is a ledge allowance --
+    # how far the character can be lifted onto something discontinuous -- and
+    # applying it to a continuous slope silently caps the walkable gradient at
+    # atan(MAX_STEP / WALK_PROBE) = 31 degrees, well under the 60 the engine
+    # actually enforces through COS_MAX_SLOPE. The mountain path is a 38 degree
+    # ramp, so it read as unreachable: not a defect in the terrain, an artefact
+    # of sampling a ramp every 0.5 m and then judging each sample as if it were
+    # a step. The engine never sees that ramp in 0.5 m pieces; it moves ~0.08 m
+    # per frame, where the same gradient is a 0.065 m rise.
+    #
+    # So the budget is derived from the destination's own normal: on flat
+    # ground tan is 0 and the rule is exactly MAX_STEP, which is what catches a
+    # real ledge; on a legal slope it grows to match the gradient that slope is
+    # allowed to have. Nothing about the flat case is loosened.
+    max_slope_tan = math.sqrt(1.0 - COS_MAX_SLOPE ** 2) / COS_MAX_SLOPE
+    probe_span = WALK_PROBE * max_slope_tan
 
     def floor_from(x, y, from_z):
-        """Surface under (x, y) entered from `from_z`, or None. World units."""
-        hit, location, normal, _ = mesh_obj.ray_cast(
-            inverse @ Vector((x, y, from_z + MAX_STEP)), down,
-            distance=reach_local)
-        if not hit:
-            return None
-        if (rotation @ normal).normalized().z < COS_MAX_SLOPE:
-            return None
-        z = (mesh_obj.matrix_world @ location).z
-        return None if blocked(x, y, z) else z
+        """Surface under (x, y) entered from `from_z`, or None. World units.
+
+        Starting the ray above `from_z` means the first thing it meets can be
+        something the character is standing *under* -- a gatehouse arch, a
+        wall top -- so a rejected hit is not an answer, it is a reason to keep
+        looking further down. Returning None on the first rejection is how the
+        earlier version of this lost ground it should have kept: it reported
+        the arch's roof, decided it was out of reach, and never saw the floor.
+        """
+        top = from_z + MAX_STEP + probe_span
+        bottom = from_z - WALK_MAX_RISE - probe_span
+        for _ in range(6):
+            if top <= bottom:
+                return None
+            hit, location, normal, _ = mesh_obj.ray_cast(
+                inverse @ Vector((x, y, top)), down,
+                distance=(top - bottom) / WORLD_SCALE)
+            if not hit:
+                return None
+            z = (mesh_obj.matrix_world @ location).z
+            normal_z = (rotation @ normal).normalized().z
+            if normal_z >= COS_MAX_SLOPE:
+                slack = WALK_PROBE * math.sqrt(
+                    max(0.0, 1.0 - normal_z ** 2)) / normal_z
+                if from_z - WALK_MAX_RISE - slack <= z <= from_z + MAX_STEP + slack:
+                    return None if blocked(x, y, z) else z
+            # Too steep to stand on, or out of reach from here. Drop just below
+            # it and look for the next surface down.
+            top = z - 1e-3
+        return None
 
     # Final units: the world is WORLD_SCALE times bigger but the probe spacing
     # is not, because the character is not.
@@ -1132,11 +1875,16 @@ def parse_args(argv):
                         help="where to save (defaults to the input .blend)")
     parser.add_argument("--no-save", action="store_true",
                         help="build but do not write the .blend back")
+    parser.add_argument("--profile", default="castle_approach",
+                        choices=sorted(PROFILES),
+                        help="which slice of the art to build (default: the "
+                             "whole map, phases 1 and 2 together)")
     return parser.parse_args(argv)
 
 
 def main():
     args = parse_args(sys.argv)
+    apply_profile(args.profile)
 
     for name in SOURCE_COLLECTIONS:
         source_collection(name)
@@ -1148,8 +1896,13 @@ def main():
     if ground is None:
         raise SystemExit("no object named 'ground' -- this is not the castle "
                          "approach .blend.")
-    centre = island_centre_of(ground)
-    check_recentre(centre)
+    check_recentre(island_centre_of(ground))
+
+    # From here on "centre" means the centre of the play area being built, not
+    # the centre of the art. For the whole-map profile they are the same point;
+    # for a phase the play area is a stretch of the island and the terrain
+    # detail, scatter and boundary all need to follow it there.
+    centre = PLAY_CENTRE if PLAY_CENTRE is not None else island_centre_of(ground)
 
     visual = get_collection(VISUAL)
     collision = get_collection(COLLISION)
@@ -1158,15 +1911,22 @@ def main():
     for generated in (visual, collision, collision_mesh, markers):
         clear_collection(generated)
 
-    report = {"props_before": 0, "props_after": 0, "scatter_after": 0}
+    # The meshes this phase is actually played on. Markers, the boundary and
+    # the walkability probe all measure against these rather than against
+    # `ground`, which for phases 1 and 3 is not even in the level.
+    play_terrains = [terrain_object(name) for name in TERRAIN_PLAY]
+
+    report = {"props_before": 0, "props_after": 0, "scatter_after": 0,
+              "props_solid_tris": 0, "terrain": []}
 
     entries, backdrop = build_terrain(report, centre)
-    props = build_props(report)
+    props, props_solid = build_props(report, centre)
 
     # The solid set is named here rather than filtered back out of `entries`
-    # later: terrain and props are what the player stands on and walks into,
-    # and the scatter that follows is explicitly not.
-    solid = list(entries) + list(props)
+    # later: the play terrain and the props near enough to touch are what the
+    # player stands on and walks into. The scatter that follows is explicitly
+    # not, and neither is a prop across a ravine -- see PROPS_COLLIDE_RADIUS.
+    solid = list(entries) + list(props_solid)
 
     entries.extend(props)
     scatter, island_trees = build_scatter(report, centre)
@@ -1197,9 +1957,9 @@ def main():
     # evaluated mesh.
     proxies = {
         "trees": build_tree_proxies(collision, island_trees),
-        "boundary": build_boundary(collision, ground, centre),
+        "boundary": build_boundary(collision, play_terrains, centre),
     }
-    spawns = build_markers(markers, ground)
+    spawns = build_markers(markers, play_terrains)
 
     place_collection(collision, RECENTRE, WORLD_SCALE)
     place_collection(markers, RECENTRE, WORLD_SCALE)
@@ -1211,13 +1971,8 @@ def main():
         # The marker's own z, scaled the same way place_collection scaled it.
         # Seeding from the authored height instead puts the first probe a third
         # of the way up the terrain and the flood fill finds nothing at all.
-        spawns["player"][2] * WORLD_SCALE, {
-        "player spawn": placed(PLAYER_SPAWN_XY),
-        "bridge middle": placed((-134.0, GATE_AXIS_Y)),
-        "gate": placed((-141.2, GATE_AXIS_Y)),
-        "courtyard": placed((-147.0, -16.0)),
-        "keep approach": placed((-152.0, -16.0)),
-    })
+        spawns["player"][2] * WORLD_SCALE,
+        {name: placed(xy) for name, xy in WALK_LANDMARKS.items()})
 
     set_sources_hidden(True)
 
@@ -1253,20 +2008,37 @@ def main():
         if span > CHUNK_SIZE * WORLD_SCALE * 2.0:
             uncullable += tri_count(obj.data)
 
-    print("\n[make_castle_level] island centre %.1f, %.1f -> recentred by %s, "
+    print("\n[make_castle_level] profile   %s (%s boundary)"
+          % (args.profile, BOUNDARY_SHAPE))
+    print("[make_castle_level] play centre %.1f, %.1f -> recentred by %s, "
           "scaled %.1fx" % (centre[0], centre[1],
                             tuple(round(c, 1) for c in RECENTRE), WORLD_SCALE))
     print("[make_castle_level] terrain")
-    for key in ("ground", "water", "mountains"):
-        before, dropped, culled, after = report[key]
+    for key, kind, (before, dropped, culled, after) in report["terrain"]:
+        tag = "%s/%s" % (key, kind)
         if dropped:
-            print("    %-10s %7d -> %7d tris  (underside %d faces, then "
-                  "decimate)" % (key, before, after, dropped))
+            print("    %-22s %7d -> %7d tris  (underside %d faces, then "
+                  "decimate)" % (tag, before, after, dropped))
         else:
-            print("    %-10s %7d -> %7d tris" % (key, before, after))
-    print("[make_castle_level] props     %7d -> %7d tris  (%d decimated)"
+            print("    %-22s %7d -> %7d tris" % (tag, before, after))
+    print("[make_castle_level] props     %7d -> %7d tris  (%d kept, "
+          "%d decimated, %d dropped past PROPS_RADIUS)"
           % (report["props_before"], report["props_after"],
-             report["props_decimated"]))
+             report["props_kept"], report["props_decimated"],
+             report["props_dropped"]))
+    print("[make_castle_level]           %d of them solid = %d tris in the "
+          "collision mesh (PROPS_COLLIDE_RADIUS %s)"
+          % (report["props_solid"], report["props_solid_tris"],
+             PROPS_COLLIDE_RADIUS))
+    rescued = report["props_rescued"]
+    if rescued:
+        # Named, not counted. These are structures standing on the map inside a
+        # collection this script used to write off wholesale, and the whole
+        # point of the rule is that it is auditable rather than silent.
+        print("[make_castle_level]           %d placed structures recovered "
+              "from the library collections:" % len(rescued))
+        for i in range(0, len(rescued), 4):
+            print("             %s" % ", ".join(rescued[i:i + 4]))
     trees, rocks, mountain = report["scatter_kept"]
     print("[make_castle_level] scatter   realised %d trees, %d rocks, %d "
           "backdrop = %d tris" % (trees, rocks, mountain,
