@@ -536,6 +536,13 @@ void GameplayState::draw() {
   // World + entities, drawn into the 3D scope opened above.
   renderer->renderGameplay(*camera_controller, renderList);
   
+  // Draw Sword Slash Trails
+  player->drawTrail();
+  for (const auto &enemy : enemies) {
+    if (enemy->isModelUnloaded()) continue;
+    enemy->drawTrail();
+  }
+
   particle_manager.draw();
 
   // Draw Money Drops

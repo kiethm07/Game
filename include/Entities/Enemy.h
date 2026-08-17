@@ -5,6 +5,7 @@
 #include <Components/CombatComponent.h>
 #include <Core/InputManager.h>
 #include <Entities/Character.h>
+#include <Rendering/SwordTrail.h>
 #include <raylib.h>
 
 class Enemy : public Character {
@@ -15,6 +16,7 @@ public:
   virtual void update(const UpdateContext &ctx) override = 0;
   virtual CharacterRenderData getRenderData() const override = 0;
   void drawHPBar(const Camera3D &camera) const;
+  void drawTrail() const override { sword_trail.draw(); }
 
   bool isBeingExecuted() const override {
     return combat_component.getCurrentState() == CombatState::BeingExecuted;
@@ -68,6 +70,7 @@ protected:
   CombatComponent combat_component;
   AIComponent ai_component;
   StealthComponent stealth_component;
+  SwordTrail sword_trail;
   int moveState = 0;
   bool dropped_loot = false;
   
