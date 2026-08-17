@@ -8,6 +8,7 @@
 #include <AI/NavMeshQuery.h>
 #include <Stealth/CombatSenseSensor.h>
 #include <GameManager/SmokeCloud.h>
+#include <Rendering/BoneSocketHelper.h>
 
 namespace {
 /// Walk.glb carries a single clip, whose name is the armature's rather than
@@ -25,6 +26,8 @@ Swordman::Swordman(Vector3 start_position) : Enemy(start_position) {
   stealth_component.addSensor(std::make_shared<ProximitySensor>(1.2f));
   stealth_component.addSensor(std::make_shared<CombatSenseSensor>(10.0f));
   
+  sword_trail.setColors({255, 230, 200, 240}, {255, 70, 40, 200});
+
   spawn_position = start_position;
   spawn_yaw = 0.0f; // Could be randomized or passed in
   
@@ -39,6 +42,7 @@ void Swordman::update(const UpdateContext &ctx) {
   current_ctx = &ctx;
 
   stats.update(dt);
+  sword_trail.update(dt);
 
   if (ctx.assets)
     animator.resolveClips(*ctx.assets);
@@ -47,6 +51,7 @@ void Swordman::update(const UpdateContext &ctx) {
   if (!dead) {
     if (combat_component.getCurrentState() == CombatState::BeingExecuted) {
         setHorizontalVelocity({0.0f, 0.0f, 0.0f});
+        sword_trail.clear();
     } else {
         bool in_smoke = false;
         if (ctx.smoke_clouds) {
@@ -62,6 +67,7 @@ void Swordman::update(const UpdateContext &ctx) {
         if (in_smoke) {
             stealth_component.blind();
             combat_component.interrupt();
+            sword_trail.clear();
             setHorizontalVelocity({0.0f, 0.0f, 0.0f});
             if (!animator.isFlinching()) {
                 animator.queueReaction(false);
@@ -73,6 +79,7 @@ void Swordman::update(const UpdateContext &ctx) {
         combat_component.update(dt);
         
         if (combat_component.getCurrentState() == CombatState::PostureBroken) {
+            sword_trail.clear();
             if (!animator.isFlinching()) {
                 animator.queueReaction(false);
             }
@@ -112,9 +119,31 @@ void Swordman::update(const UpdateContext &ctx) {
   frame.localMoveDir = getLocalMoveDir();
 
   animator.update(frame, dt);
+
+  if (combat_component.getCurrentState() == CombatState::AttackActive && ctx.assets != nullptr) {
+    const AttackData *attack = combat_component.getActiveAttack();
+    if (attack != nullptr && attack->hasTrail()) {
+      Vector3 world_base = {0.0f, 0.0f, 0.0f};
+      Vector3 world_tip = {0.0f, 0.0f, 0.0f};
+      CharacterRenderData render_data = getRenderData();
+
+      bool sampled = BoneSocketHelper::sampleSwordPoints(
+          *const_cast<AssetManager *>(ctx.assets),
+          render_data,
+          world_base,
+          world_tip,
+          attack->getBladeVector(),
+          attack->getHiltVector());
+
+      if (sampled) {
+        sword_trail.addSegment(world_base, world_tip, attack->getTrailDuration());
+      }
+    }
+  }
 }
 
 void Swordman::onDamaged(bool blocked, bool parried) {
+  sword_trail.clear();
   if (parried) {
     attack_cooldown_timer = std::max(attack_cooldown_timer, 0.8f);
     move_cooldown_timer = std::max(move_cooldown_timer, 0.5f);

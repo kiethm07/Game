@@ -59,6 +59,7 @@ public:
   virtual void update(const UpdateContext &ctx) = 0;
   virtual CharacterRenderData getRenderData() const = 0;
   virtual void draw() const;
+  virtual void drawTrail() const {}
 
   Vector3 getPosition() const { return position; }
 
