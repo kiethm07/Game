@@ -43,6 +43,19 @@ struct Level {
     /// be parsed and inspected without a window.
     std::string collisionMeshPath;
 
+    /// Absolute path to the level's detail mesh — scenery that is only ever
+    /// drawn — or empty when the level ships none. Grass, at the time of
+    /// writing.
+    ///
+    /// Separate from `visualModelPath` for a reason that is not filing. It is
+    /// drawn in the scene pass and skipped in the depth pass, so nothing in it
+    /// casts a shadow and none of its triangles reach either cascade — and
+    /// that separation is only expressible as a second model, because raylib's
+    /// glTF loader discards mesh and material names and leaves nothing to
+    /// identify the grass by inside a combined one. Nothing here collides, and
+    /// nothing here contributes to `bounds`.
+    std::string detailModelPath;
+
     /// Everything the player can stand on or walk into. These feed physics,
     /// the navmesh bake, and stealth line-of-sight alike — the engine has one
     /// world-geometry primitive and this is it.

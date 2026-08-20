@@ -48,7 +48,7 @@ from collections import defaultdict
 
 import bpy
 import bmesh
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 # Blender does not put a --python script's own directory on sys.path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -226,10 +226,31 @@ BACKDROP_RADIUS = 68.0
 TERRAIN_PLAY = ("ground",)
 TERRAIN_BACKDROP = ()
 
-# The authored trail meshes, laid over the terrain and collided with it. They
-# are per-phase for the same reason the terrain is: `path1` is the forest trail
-# running east across ground_east, `path2` is the short run inside the compound.
+# The authored trails. They are per-phase for the same reason the terrain is:
+# `path1` is the forest trail running east across ground_east, `path2` is the
+# short run inside the compound.
+#
+# These are used as *routes*, not as geometry. A path laid over the ground as
+# its own ribbon has to chase the terrain underneath it, and never quite wins:
+# the curve only approximates its control points, so it floats on the crowns
+# and sinks in the hollows however finely it is sampled. Painting the terrain's
+# own faces instead makes the path part of the surface -- it cannot float,
+# cannot sink, cannot z-fight, and costs no triangles at all.
 PATHS = ("path1", "path2")
+
+# Half-widths come from the authored ribbons: path1 measured 2.0 units across,
+# path2 0.6. The painted band is wider than that, and has to be. The terrain
+# ships at GROUND_TARGET_TRIS, which over the island is a triangle about 1.2
+# units across, so a 0.6-unit band falls between triangles and paints as a
+# dotted line. These are the narrowest widths that still read as a continuous
+# road at that resolution.
+PATH_PAINT_MATERIAL = "path"
+PATH_PAINT_WIDTH = {"path1": 3.0, "path2": 2.4}
+PATH_PAINT_DEFAULT_WIDTH = 2.6
+
+# How finely the route is sampled before measuring distance to it. Well under
+# the terrain's triangle size, so the band cannot skip a face on a tight bend.
+PATH_SAMPLE_STEP = 0.35
 
 # Props (buildings and rocks) further than this from the play centre are left
 # out entirely. None keeps every one of them, which is the whole-map behaviour
@@ -508,6 +529,119 @@ MOUNTAIN_CORRIDOR_POLY = (MOUNTAIN_CORRIDOR_EAST_NORTH
                           + MOUNTAIN_CORRIDOR_SOUTH
                           + MOUNTAIN_CORRIDOR_EAST_SOUTH)
 
+# --- Fences -----------------------------------------------------------------
+#
+# A kit fence panel lining the walkable lane, so the forest reads as somewhere
+# you are kept out of rather than somewhere you merely should not go.
+#
+# The asset ships as a .blend plus a loose PNG, and its material points at
+# "//Gate Wood.png" while the file on disk is "textures/Gate_Wood.png" -- a
+# different name in a different folder. Blender resolves that to nothing, the
+# image loads at 0x0, and the panel would export untextured with no error. The
+# loader below repoints it and packs it into the file so the glTF exporter
+# embeds it.
+FENCE_BLEND = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                           "assets", "low-poly-wooden-fence", "source",
+                           "Gate.blend")
+FENCE_TEXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                             "assets", "low-poly-wooden-fence", "textures",
+                             "Gate_Wood.png")
+FENCE_OBJECT = "Cube"
+
+# The panel is authored 1.875 tall, which at WORLD_SCALE would be a 5.6 m fence
+# next to a 1.8 m player. 0.24 brings it to 0.45 authored -- 1.35 m, chest
+# height -- and the panel to 1.51 long, 4.5 m.
+# How tall the fence *looks*, in authored units. 0.45 is 1.35 m at
+# WORLD_SCALE -- chest height on a 1.8 m player, which is what a fence should
+# read as.
+FENCE_TARGET_HEIGHT = 0.45
+
+# How tall the fence *is* to the physics, which is a different question.
+#
+# The player jumps at JUMP_SPEED 5.0 against 9.81 gravity, so their feet apex
+# at v^2/2g = 1.274 m. A proxy matching the visible 1.35 m panel is cleared by
+# 7.6 cm and they hop straight over it. Building the panel itself tall enough
+# to stop that works, but a 3 m stockade is not the look -- so the wood stays
+# short and an invisible box carries the blocking. 1.0 is 3.0 m, 2.4x the apex,
+# with enough margin to survive a jump taken from a rock beside the fence.
+#
+# Collision-only means invisible for free: proxies never reach the .glb, only
+# the VISUAL collection does.
+FENCE_BLOCK_HEIGHT = 1.0
+
+# Panel length is held at what it was, and that is deliberate rather than
+# incidental: the fence contour uses the panel length as its grid cell, so
+# scaling the panel uniformly would change the grid and the fence would follow
+# the treeline in different steps. Held equal to the height scale here, so the
+# wood keeps its authored proportions and the texture does not stretch.
+FENCE_TARGET_LENGTH = 1.51
+
+# The fence rings the woods, it does not line the path at a fixed offset.
+#
+# Offsetting from the path was the obvious reading of "fences along the path"
+# and it is wrong here: measured, the enemies stand 6.3, 14.0 and 11.9 units
+# off the route and the westernmost landmark is 18.8 out, so any lane narrow
+# enough to be a lane seals the fight out of the level. What the forest
+# actually needs is the trees enclosed and everything else left open, which is
+# the same contour trick the shoreline uses.
+#
+# A cell is woods when scatter sits within this of it.
+FENCE_ROUTE = None
+FENCE_WOODS_RADIUS = 3.2
+
+# ...then the path and the fighting are carved back out, so the corridor runs
+# through the trees rather than stopping at them, and nobody spawns inside a
+# thicket. Without the path carve the western end of the level -- the ravine
+# edge the phase walks toward -- ends up behind the fence.
+FENCE_PATH_CLEAR = 4.5
+FENCE_SPAWN_CLEAR = 7.0
+
+# Holes in the woods smaller than this many cells are filled before fencing, so
+# a gap between two trees does not become its own little fenced paddock.
+FENCE_FILL_HOLES = 3
+
+# The fence grid covers the boundary rect exactly, with no inset. An inset
+# looks harmless and is not: it leaves an unfenced strip all the way round the
+# level between the last fence and the boundary wall, and the player walks that
+# ring straight into the back of the woods. Cells at the grid edge get no fence
+# on their outward side because the boundary wall is already standing there.
+FENCE_EDGE_MARGIN = 0.0
+
+COLOR_FENCE = (0.52, 0.36, 0.20, 1.0)
+
+# --- Railings ---------------------------------------------------------------
+#
+# Invisible walls along the sides of a causeway, so the player cannot walk off
+# it into the channel.
+#
+# These cannot come from the contour boundary. That system walls the edge of
+# the walkable region with BOUNDARY_THICKNESS 2.0 boxes on a CONTOUR_CELL 1.5
+# grid, and the bridge deck is only 1.878 units wide -- railings built that way
+# meet in the middle and seal the crossing shut, which is exactly why
+# CONTOUR_OPEN_BOXES suppresses them there. So the deck gets its own pair,
+# measured off the bridge geometry and made thin enough to leave the crossing
+# usable.
+#
+# Named by prefix and derived from the built art rather than hardcoded, so they
+# follow the bridge if it is ever moved or rescaled by hand.
+RAILINGS = ()
+
+# 0.3 is 0.9 m shipped. Thin enough to leave 5.6 m of the 5.6 m deck walkable
+# -- the boxes sit *outside* the deck edge, inner face flush -- and thick
+# enough that the walkability probe cannot step through it: the fill samples
+# every 0.5 m, and the fence panels taught us that anything thinner than that
+# slips between two probes unnoticed.
+RAILING_THICKNESS = 0.3
+
+# Well over the 0.6-unit player, and deliberately not the boundary's 6.0: an
+# invisible wall taller than it needs to be is a wall the camera can catch on.
+RAILING_HEIGHT = 1.5
+
+# Started slightly below the deck so there is no seam to slip under.
+RAILING_DROP = 0.2
+
+COLOR_RAILING = (0.85, 0.45, 0.10, 1.0)
+
 # --- Phase profiles ---------------------------------------------------------
 #
 # The campaign's exterior is four narrative phases, and phases 1 and 2 are both
@@ -595,19 +729,28 @@ PROFILES = {
         # when the forest shrank, so this came down with the rest. The castle
         # is still drawn in full; none of it is collided.
         "PROPS_COLLIDE_RADIUS": 36.0,
+        # Fence the lane where it borders the woods, so the forest is somewhere
+        # the player is kept out of rather than somewhere they wander into.
+        "FENCE_ROUTE": "path1",
         "PLAYER_SPAWN_XY": (-69.41, -16.25),
         "PLAYER_FACES_XY": (-109.01, -16.25),
+        # On the path corridor, not in the trees. Measured against the route,
+        # the previous placements stood 6.3, 14.0 and 11.9 units off it -- deep
+        # inside what is now fenced woodland, which would have sealed two of
+        # the three fights away from the player entirely.
         "ENEMY_SPAWNS_XY": [
-            ("01", -82.14, -10.59),
-            ("02", -88.15, -16.89),
-            ("03", -100.53, -20.49),
+            ("01", -76.82, -6.70),
+            ("02", -84.02, 5.97),
+            ("03", -96.74, 5.26),
         ],
+        # Likewise on the corridor. "mid forest" and "south woods" used to sit
+        # 14.0 and 18.8 off the route, which is now behind the fence.
         "WALK_LANDMARKS": {
             "spawn clearing": (-69.41, -16.25),
-            "mid forest": (-88.15, -16.89),
-            "north woods": (-87.80, 0.72),
-            "south woods": (-89.21, -33.22),
-            "ravine edge": (-107.60, -16.25),
+            "path south": (-72.56, -20.75),
+            "path middle": (-84.02, 5.97),
+            "path west": (-96.74, 5.26),
+            "ravine edge": (-104.31, -4.71),
         },
     },
 
@@ -650,6 +793,9 @@ PROFILES = {
         # The bridge deck spans x -140.6..-127.2 at y -17.4..-15.4, top at
         # z -0.47. Held to within a unit of that on every side.
         "CONTOUR_OPEN_BOXES": (((-141.5, -18.2), (-126.8, -14.6), -0.47),),
+        # ...and since the contour cannot rail a deck that narrow, the bridge
+        # gets its own invisible sides instead.
+        "RAILINGS": ("bridge",),
         # Keep the island's trees off the climb, including the stretch of it
         # that lies on the island.
         "SCATTER_EXCLUDE_POLY": MOUNTAIN_CORRIDOR_POLY,
@@ -1246,6 +1392,340 @@ def decimated_terrain(obj, report, kind, clip_centre=None):
     return final
 
 
+def path_centreline(obj):
+    """The route a path curve follows, as a world-space polyline.
+
+    Taken with the profile temporarily flattened, so what comes back is the
+    spline itself rather than the outline of the ribbon built around it.
+    """
+    curve = obj.data
+    extrude, bevel = curve.extrude, curve.bevel_depth
+    curve.extrude = 0.0
+    curve.bevel_depth = 0.0
+    try:
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        evaluated = obj.evaluated_get(depsgraph)
+        mesh = evaluated.to_mesh()
+        if mesh is None:
+            return []
+        try:
+            # to_mesh on a flattened curve gives an edge chain; walk it in
+            # order so the segments below are the route, not chords across it.
+            points = [obj.matrix_world @ v.co for v in mesh.vertices]
+            links = defaultdict(list)
+            for edge in mesh.edges:
+                links[edge.vertices[0]].append(edge.vertices[1])
+                links[edge.vertices[1]].append(edge.vertices[0])
+            if not links:
+                return points
+            start = next((v for v in links if len(links[v]) == 1), 0)
+            order, seen, current, previous = [], set(), start, None
+            while current is not None and current not in seen:
+                order.append(current)
+                seen.add(current)
+                nxt = None
+                for candidate in links[current]:
+                    if candidate != previous and candidate not in seen:
+                        nxt = candidate
+                        break
+                previous, current = current, nxt
+            return [points[i] for i in order]
+        finally:
+            evaluated.to_mesh_clear()
+    finally:
+        curve.extrude = extrude
+        curve.bevel_depth = bevel
+
+
+def path_routes():
+    """[(sample points, half width)] for every path this phase carries."""
+    routes = []
+    for name in PATHS:
+        obj = bpy.data.objects.get(name)
+        if obj is None or obj.type != "CURVE":
+            continue
+        line = path_centreline(obj)
+        if len(line) < 2:
+            continue
+        # Resample evenly; the raw chain can be sparse on straights.
+        samples = []
+        for i in range(len(line) - 1):
+            a, b = line[i], line[i + 1]
+            span = (b - a).length
+            steps = max(1, int(math.ceil(span / PATH_SAMPLE_STEP)))
+            for s in range(steps):
+                samples.append(a.lerp(b, s / steps))
+        samples.append(line[-1])
+        half = PATH_PAINT_WIDTH.get(name, PATH_PAINT_DEFAULT_WIDTH) * 0.5
+        routes.append((samples, half))
+    return routes
+
+
+def paint_paths(mesh, matrix, routes):
+    """Recolour terrain faces lying under a route, in place."""
+    if not routes:
+        return 0
+
+    index = mesh.materials.find(PATH_PAINT_MATERIAL)
+    if index < 0:
+        material = bpy.data.materials.get(PATH_PAINT_MATERIAL)
+        if material is None:
+            raise SystemExit(
+                "no material named %r to paint paths with" % PATH_PAINT_MATERIAL)
+        mesh.materials.append(material)
+        index = len(mesh.materials) - 1
+
+    # Bucket the route samples so each face tests a handful, not thousands.
+    reach = max(half for _, half in routes)
+    cell = max(reach, 1.0)
+    grid = defaultdict(list)
+    for samples, half in routes:
+        for point in samples:
+            grid[(int(point.x // cell), int(point.y // cell))].append(
+                (point, half))
+
+    painted = 0
+    for poly in mesh.polygons:
+        centre = matrix @ poly.center
+        gi, gj = int(centre.x // cell), int(centre.y // cell)
+        hit = False
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                for point, half in grid.get((gi + di, gj + dj), ()):
+                    if (math.hypot(point.x - centre.x, point.y - centre.y)
+                            <= half):
+                        hit = True
+                        break
+                if hit:
+                    break
+            if hit:
+                break
+        if hit:
+            poly.material_index = index
+            painted += 1
+    return painted
+
+
+def load_fence():
+    """Append the fence panel and make its texture actually resolve."""
+    path = os.path.normpath(FENCE_BLEND)
+    if not os.path.exists(path):
+        raise SystemExit("fence kit not found at %s" % path)
+    before = set(bpy.data.objects.keys())
+    bpy.ops.wm.append(filepath=os.path.join(path, "Object", FENCE_OBJECT),
+                      directory=os.path.join(path, "Object") + os.sep,
+                      filename=FENCE_OBJECT)
+    new = [n for n in bpy.data.objects.keys() if n not in before]
+    if not new:
+        raise SystemExit("appending %s from %s produced no object"
+                         % (FENCE_OBJECT, path))
+    obj = bpy.data.objects[new[0]]
+
+    texture = os.path.normpath(FENCE_TEXTURE)
+    fixed = []
+    for slot in obj.data.materials:
+        if slot is None or not slot.use_nodes:
+            continue
+        for node in slot.node_tree.nodes:
+            if node.type != "TEX_IMAGE" or node.image is None:
+                continue
+            if tuple(node.image.size) == (0, 0):
+                if not os.path.exists(texture):
+                    raise SystemExit("fence texture missing at %s" % texture)
+                node.image.filepath = texture
+                node.image.reload()
+            # Packed so the .glb carries the pixels rather than a path that
+            # only resolves on this machine.
+            if node.image.packed_file is None:
+                node.image.pack()
+            fixed.append((node.image.name, tuple(node.image.size)))
+    if not obj.data.uv_layers:
+        raise SystemExit("the fence panel has no UV map; it cannot be textured")
+    return obj, fixed
+
+
+def build_fences(entries, collision, routes, scatter, terrains, report):
+    """Fence the edge of the ground the player is meant to have.
+
+    The obvious construction -- find the woods, ring them -- does not close.
+    Carving the path through the trees splits them into blobs whose outer sides
+    run off to the boundary, and the player simply walks around the end of a
+    fence; measured, it barely moved the reachable area at all.
+
+    So the fence is built from the *open* side instead. Cells are open when
+    they carry no scatter, or when the path or a fight needs them; that set is
+    flood-filled from the player's spawn, and every edge between the filled
+    region and anything else gets a panel. Enclosure is then guaranteed by
+    construction rather than hoped for: there is no route out of a region whose
+    entire border is fenced, and nothing inside it is unreachable because it
+    was reached by the fill that defined it.
+    """
+    report["fences"] = 0
+    if not FENCE_ROUTE or not BOUNDARY_RECT:
+        return
+
+    fence, textures = load_fence()
+    report["fence_texture"] = textures
+
+    corners = [fence.matrix_world @ Vector(c) for c in fence.bound_box]
+    native_height = max(c.z for c in corners) - min(c.z for c in corners)
+    native_length = max(c.y for c in corners) - min(c.y for c in corners)
+    # Plan and height scale separately -- see FENCE_TARGET_LENGTH.
+    plan = FENCE_TARGET_LENGTH / native_length
+    rise = FENCE_TARGET_HEIGHT / native_height
+    height = FENCE_TARGET_HEIGHT
+    panel = FENCE_TARGET_LENGTH
+    thickness = (max(c.x for c in corners) - min(c.x for c in corners)) * plan
+    foot = -min(c.z for c in corners) * rise
+
+    cell = panel
+    (rx0, ry0), (rx1, ry1) = BOUNDARY_RECT
+    rx0 += FENCE_EDGE_MARGIN
+    ry0 += FENCE_EDGE_MARGIN
+    rx1 -= FENCE_EDGE_MARGIN
+    ry1 -= FENCE_EDGE_MARGIN
+    nx = max(1, int(math.ceil((rx1 - rx0) / cell)))
+    ny = max(1, int(math.ceil((ry1 - ry0) / cell)))
+
+    def centre_of(i, j):
+        return (rx0 + (i + 0.5) * cell, ry0 + (j + 0.5) * cell)
+
+    def cell_of(x, y):
+        return (int((x - rx0) / cell), int((y - ry0) / cell))
+
+    def near(points, x, y, radius):
+        return any(math.hypot(p.x - x, p.y - y) <= radius for p in points)
+
+    route_points = [p for samples, _ in routes for p in samples]
+    spawns = [Vector((PLAYER_SPAWN_XY[0], PLAYER_SPAWN_XY[1], 0.0))]
+    spawns += [Vector((x, y, 0.0)) for _, x, y in ENEMY_SPAWNS_XY]
+
+    open_cells = set()
+    for i in range(nx):
+        for j in range(ny):
+            x, y = centre_of(i, j)
+            if (not near(scatter, x, y, FENCE_WOODS_RADIUS)
+                    or near(route_points, x, y, FENCE_PATH_CLEAR)
+                    or near(spawns, x, y, FENCE_SPAWN_CLEAR)):
+                open_cells.add((i, j))
+
+    start = cell_of(*PLAYER_SPAWN_XY)
+    if start not in open_cells:
+        raise SystemExit("the player spawn is not on open ground; the fence "
+                         "would enclose the level without them in it")
+    reachable, stack = {start}, [start]
+    while stack:
+        i, j = stack.pop()
+        for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            n = (i + di, j + dj)
+            if n in open_cells and n not in reachable:
+                reachable.add(n)
+                stack.append(n)
+
+    stranded = [tag for tag, x, y in ENEMY_SPAWNS_XY
+                if cell_of(x, y) not in reachable]
+    if stranded:
+        print("[make_castle_level] WARNING enemy spawns %s are outside the "
+              "fenced area and cannot be reached" % ", ".join(stranded))
+
+    placed = 0
+    for (i, j) in sorted(reachable):
+        for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            if (i + di, j + dj) in reachable:
+                continue
+            # Off the grid is the boundary wall's job, not the fence's.
+            if not (0 <= i + di < nx and 0 <= j + dj < ny):
+                continue
+            x, y = centre_of(i, j)
+            if di:
+                px, py, yaw = x + di * cell * 0.5, y, 0.0
+            else:
+                px, py, yaw = x, y + dj * cell * 0.5, math.pi * 0.5
+            ground = terrain_height_any(terrains, px, py)
+            if ground is None:
+                continue
+            matrix = (Matrix.Translation((px, py, ground + foot))
+                      @ Matrix.Rotation(yaw, 4, "Z")
+                      @ Matrix.Diagonal((plan, plan, rise, 1.0)))
+            entries.append((baked_mesh(fence), matrix))
+            # Taller than the wood: see FENCE_BLOCK_HEIGHT.
+            add_box(collision, "BOX_Fence_%03d" % placed,
+                    centre=(px, py, ground + FENCE_BLOCK_HEIGHT * 0.5),
+                    size=(thickness, panel, FENCE_BLOCK_HEIGHT),
+                    yaw_deg=math.degrees(yaw), colour=COLOR_FENCE)
+            placed += 1
+
+    report["fences"] = placed
+    report["fence_panel"] = (round(panel, 2), round(height, 2))
+    report["fence_stats"] = {"grid": "%dx%d @ %.2f" % (nx, ny, cell),
+                             "open": len(open_cells),
+                             "player_area": len(reachable),
+                             "of_cells": nx * ny}
+    bpy.data.objects.remove(fence, do_unlink=True)
+
+
+def build_railings(collision, report):
+    """Invisible side walls along each named causeway."""
+    report["railings"] = 0
+    if not RAILINGS:
+        return
+
+    made = 0
+    for prefix in RAILINGS:
+        group = []
+        for coll in (BUILDINGS, ROCKS):
+            group += [o for o in source_collection(coll).objects
+                      if o.type == "MESH" and o.name.startswith(prefix)]
+        group += [o for o in placed_in_library() if o.name.startswith(prefix)]
+        if not group:
+            print("[make_castle_level] WARNING RAILINGS names %r but no placed "
+                  "structure starts with it" % prefix)
+            continue
+
+        points = []
+        for obj in group:
+            mesh = baked_mesh(obj)
+            points += [obj.matrix_world @ v.co for v in mesh.vertices]
+            bpy.data.meshes.remove(mesh)
+        if not points:
+            continue
+
+        lo = [min(p[a] for p in points) for a in range(3)]
+        hi = [max(p[a] for p in points) for a in range(3)]
+        deck = hi[2]
+        # The walking surface's own extent, not the whole structure's: a bridge
+        # is far wider at its piers than at its deck.
+        band = [p for p in points if p.z > deck - 0.05]
+        span_axis = 0 if (hi[0] - lo[0]) >= (hi[1] - lo[1]) else 1
+        side_axis = 1 - span_axis
+        span = (min(p[span_axis] for p in band), max(p[span_axis] for p in band))
+        side = (min(p[side_axis] for p in band), max(p[side_axis] for p in band))
+        length = span[1] - span[0]
+        centre_span = (span[0] + span[1]) * 0.5
+
+        for index, edge in enumerate(side):
+            # Outside the deck edge, inner face flush with it, so the crossing
+            # keeps its full width.
+            offset = -RAILING_THICKNESS * 0.5 if index == 0 else RAILING_THICKNESS * 0.5
+            at = edge + offset
+            if span_axis == 0:
+                cx, cy, yaw = centre_span, at, 90.0
+            else:
+                cx, cy, yaw = at, centre_span, 0.0
+            add_box(collision, "BOX_Railing_%s_%d" % (prefix, index),
+                    centre=(cx, cy,
+                            deck - RAILING_DROP + RAILING_HEIGHT * 0.5),
+                    size=(RAILING_THICKNESS, length, RAILING_HEIGHT),
+                    yaw_deg=yaw, colour=COLOR_RAILING)
+            made += 1
+
+        report.setdefault("railing_detail", []).append(
+            (prefix, len(group), round(length, 2),
+             round(side[1] - side[0], 2), round(deck, 2)))
+
+    report["railings"] = made
+
+
 def build_terrain(report, centre):
     """The landscape, as (chunked entries, backdrop entries).
 
@@ -1266,10 +1746,13 @@ def build_terrain(report, centre):
     entries = []
     backdrop = []
 
+    routes = path_routes()
+    report["path_faces"] = 0
     for name in TERRAIN_PLAY:
         obj = terrain_object(name)
-        entries.append((decimated_terrain(obj, report, "play"),
-                        obj.matrix_world.copy()))
+        mesh = decimated_terrain(obj, report, "play")
+        report["path_faces"] += paint_paths(mesh, obj.matrix_world, routes)
+        entries.append((mesh, obj.matrix_world.copy()))
 
     for name in TERRAIN_BACKDROP:
         obj = terrain_object(name)
@@ -1305,16 +1788,8 @@ def build_terrain(report, centre):
                                    tri_count(final))))
     backdrop.append((final, mountains.matrix_world.copy()))
 
-    for curve in PATHS:
-        obj = bpy.data.objects.get(curve)
-        if obj is None:
-            continue
-        mesh = baked_mesh(obj)
-        if mesh.polygons:
-            entries.append((mesh, obj.matrix_world.copy()))
-        else:
-            bpy.data.meshes.remove(mesh)
-
+    # No path geometry is emitted: PATHS are routes now, painted onto the
+    # terrain above.
     return entries, backdrop
 
 
@@ -1434,6 +1909,7 @@ def build_scatter(report, island_centre):
         entries.append((mesh, matrix))
 
     report["scatter_kept"] = (len(trees), len(rocks), len(mountain))
+    report["scatter_points"] = [m.translation.copy() for _, m in trees + rocks]
     # The island trees are handed back so their trunks can be collided. The
     # backdrop ones are not: they are on a mountain the player cannot reach.
     return entries, trees
@@ -1988,6 +2464,15 @@ def check_walkability(mesh_obj, collision, start_xy, start_z, landmarks):
             z = floor_from(x, y, here)
             if z is None:
                 continue
+            # Also test halfway. Only the cell centres are sampled otherwise,
+            # so any proxy thinner than WALK_PROBE sits *between* two probes
+            # and the fill walks straight through it -- which is exactly what
+            # the 0.39 m fence panels did, reporting no effect on a level they
+            # very much enclose. Tree trunks are ~5 m across and never showed
+            # the bug.
+            hx, hy = centre_of(j, i)
+            if blocked((x + hx) * 0.5, (y + hy) * 0.5, max(here, z)):
+                continue
             reached[(nj, ni)] = z
             stack.append((nj, ni))
 
@@ -2089,6 +2574,11 @@ def main():
     scatter, island_trees = build_scatter(report, centre)
     entries.extend(scatter)
 
+    # After the scatter, because a fence only goes up where there is scatter
+    # behind it, and that is only known once the instances are realised.
+    build_fences(entries, collision, path_routes(),
+                 report.get("scatter_points", []), play_terrains, report)
+
     # Built before assemble(), which frees every entry mesh whose user count has
     # dropped to zero. merge_entries copies, so the collision object does not
     # keep those datablocks alive -- taking this after the merge would hand it
@@ -2116,6 +2606,7 @@ def main():
         "trees": build_tree_proxies(collision, island_trees),
         "boundary": build_boundary(collision, play_terrains, centre),
     }
+    build_railings(collision, report)
     spawns = build_markers(markers, play_terrains)
 
     place_collection(collision, RECENTRE, WORLD_SCALE)
@@ -2178,6 +2669,17 @@ def main():
                   "decimate)" % (tag, before, after, dropped))
         else:
             print("    %-22s %7d -> %7d tris" % (tag, before, after))
+    print("[make_castle_level] paths     %d terrain faces recoloured as path "
+          "(no path geometry emitted)" % report["path_faces"])
+    if report.get("fences"):
+        panel = report["fence_panel"]
+        print("[make_castle_level] fences    %d panels of %.2f x %.2f ringing "
+              "the woods, blocking to %.2f (%.1f m, jump apex %.2f m); "
+              "texture %s"
+              % (report["fences"], panel[0], panel[1], FENCE_BLOCK_HEIGHT,
+                 FENCE_BLOCK_HEIGHT * WORLD_SCALE, 5.0 ** 2 / (2 * 9.81),
+                 report.get("fence_texture")))
+        print("[make_castle_level]           %s" % (report.get("fence_stats"),))
     print("[make_castle_level] props     %7d -> %7d tris  (%d kept, "
           "%d decimated, %d dropped past PROPS_RADIUS)"
           % (report["props_before"], report["props_after"],
@@ -2206,8 +2708,9 @@ def main():
           "%d tris" % (len(visual.objects), total_prims, total_tris))
     backdrop_obj = visual.objects.get(BACKDROP_NAME)
     backdrop_tris = tri_count(backdrop_obj.data) if backdrop_obj else 0
-    print("[make_castle_level] collmesh  %d tris (ground + paths + buildings "
-          "+ placed rocks; water, mountains and the tree scatter excluded)"
+    print("[make_castle_level] collmesh  %d tris (ground + buildings + placed "
+          "rocks; water, mountains, the tree scatter and the paths excluded -- "
+          "paths are painted onto the terrain, not laid over it)"
           % report["collision_mesh_tris"])
     print("[make_castle_level] cull      widest cullable chunk %.1f m (%s); "
           "backdrop %d tris always drawn"
@@ -2224,6 +2727,11 @@ def main():
         lo, hi = proxies["boundary"]["shore_radius"]
         print("[make_castle_level]           shore measured at radius %.1f to "
               "%.1f about the island centre (was a flat ring)" % (lo, hi))
+    if report.get("railings"):
+        for prefix, n, length, width, deck in report["railing_detail"]:
+            print("[make_castle_level] railings  %d invisible walls along %s "
+                  "(%d pieces, %.2f long, deck %.2f wide at z %.2f)"
+                  % (report["railings"], prefix, n, length, width, deck))
     print("[make_castle_level] walkable  %.0f m2 reachable from the spawn"
           % walk_area)
     for name, ok in reach.items():

@@ -51,6 +51,27 @@ constexpr float kGridSpacing = 5.0f;
 /// physics floor and belongs on it.
 constexpr float kGroundSink = 0.01f;
 
+/// How far out the detail mesh is still drawn, in metres.
+///
+/// Safe to cut here only because grass.fs fades a blade's vertex shading to
+/// nothing between 30 and 70 m: past that fade every blade is already exactly
+/// the terrain colour it stands on, so a chunk dropping out at 85 m removes
+/// overdraw and nothing visible. Raise it if a distant ridge silhouetted
+/// against the sky ever reads as bald.
+constexpr float kGrassDrawDistance = 85.0f;
+
+/// Is any part of `box` inside kGrassDrawDistance of `eye`?
+///
+/// Measured to the box rather than to its centre, so a 36 m chunk the camera is
+/// standing at the near edge of is not cut for having a far centre.
+bool withinGrassDistance(const BoundingBox &box, const Vector3 &eye) {
+  const float dx = fmaxf(fmaxf(box.min.x - eye.x, 0.0f), eye.x - box.max.x);
+  const float dy = fmaxf(fmaxf(box.min.y - eye.y, 0.0f), eye.y - box.max.y);
+  const float dz = fmaxf(fmaxf(box.min.z - eye.z, 0.0f), eye.z - box.max.z);
+  return dx * dx + dy * dy + dz * dz <=
+         kGrassDrawDistance * kGrassDrawDistance;
+}
+
 /// raylib's built-in 1x1 white texture, as a Texture2D.
 ///
 /// A glTF material with no baseColorTexture arrives with texture.id == 0, and
@@ -89,12 +110,22 @@ GameRenderer::GameRenderer(AssetManager &assets, const Level &level)
     : assetManager(assets) {
   initializeAssets();
   loadLevelModel(level);
+  loadDetailModel(level);
   shadowMap.setBounds(level.bounds);
 }
 
 GameRenderer::~GameRenderer() {
   if (worldShader.id != 0) UnloadShader(worldShader);
   if (levelShader.id != 0) UnloadShader(levelShader);
+  if (grassShader.id != 0) UnloadShader(grassShader);
+  if (hasDetailModel) {
+    // Same reason as the level model below: UnloadModel would free grassShader
+    // a second time through the material that points at it.
+    for (int i = 0; i < detailModel.materialCount; i++) {
+      detailModel.materials[i].shader = Shader{};
+    }
+    UnloadModel(detailModel);
+  }
   if (hasLevelModel) {
     // The materials point at levelShader, which is unloaded just above.
     // UnloadModel would try to unload it a second time through the material,
@@ -153,6 +184,44 @@ void GameRenderer::loadLevelModel(const Level &level) {
            levelModel.materialCount, totalTriangles);
 }
 
+void GameRenderer::loadDetailModel(const Level &level) {
+  if (level.detailModelPath.empty()) return;
+
+  detailModel = LoadModel(level.detailModelPath.c_str());
+  if (detailModel.meshCount == 0) {
+    TraceLog(LOG_WARNING,
+             "GameRenderer: could not load detail mesh '%s'; the level will "
+             "draw without its scenery.",
+             level.detailModelPath.c_str());
+    UnloadModel(detailModel);
+    detailModel = Model{};
+    return;
+  }
+
+  for (int i = 0; i < detailModel.materialCount; i++) {
+    detailModel.materials[i].shader = grassShader;
+    // No white-texture substitution, unlike loadLevelModel. grass.fs samples no
+    // texture at all, so SHADER_LOC_MAP_DIFFUSE resolves to -1 and DrawMesh has
+    // nothing to bind — the colour rides entirely on baseColorFactor.
+  }
+
+  detailMeshTriangles.reserve(static_cast<size_t>(detailModel.meshCount));
+  detailMeshBounds.reserve(static_cast<size_t>(detailModel.meshCount));
+  int totalTriangles = 0;
+  for (int i = 0; i < detailModel.meshCount; i++) {
+    detailMeshTriangles.push_back(detailModel.meshes[i].triangleCount);
+    detailMeshBounds.push_back(GetMeshBoundingBox(detailModel.meshes[i]));
+    totalTriangles += detailModel.meshes[i].triangleCount;
+  }
+
+  hasDetailModel = true;
+  TraceLog(LOG_INFO,
+           "GameRenderer: detail mesh '%s' — %d meshes, %d triangles, no "
+           "shadow casting",
+           level.detailModelPath.c_str(), detailModel.meshCount,
+           totalTriangles);
+}
+
 void GameRenderer::initializeAssets() {
   // Models, animations and aliases are loaded by LoadingState before this
   // object exists — see the manifest walk there. Repeating those passes here
@@ -180,6 +249,17 @@ void GameRenderer::initializeAssets() {
   if (levelShader.id == 0) {
     TraceLog(LOG_ERROR, "GameRenderer: failed to load level shader; the level "
                         "mesh will draw unlit.");
+  }
+
+  grassShader = ShaderLibrary::load(ASSET_DIR "/shaders/glsl330/grass.vs",
+                                    ASSET_DIR "/shaders/glsl330/grass.fs");
+  if (grassShader.id == 0) {
+    // Deliberately no fallback to levelShader: its vertex stage declares
+    // vertexTexCoord and vertexNormal, which the detail meshes do not carry, so
+    // substituting it would draw the grass from undefined attributes rather
+    // than not at all.
+    TraceLog(LOG_ERROR, "GameRenderer: failed to load the grass shader; the "
+                        "detail mesh will draw unlit.");
   }
 }
 
@@ -252,6 +332,11 @@ void GameRenderer::renderShadowPass(
     // a Model, so it goes through DrawMesh, which reads material.shader and
     // ignores whatever rlgl has bound. The depth shader has to go onto the
     // materials instead — same reason the characters below do it.
+    //
+    // `detailModel` is absent from this function on purpose, and its absence is
+    // the whole implementation of "the grass casts no shadow". It also keeps
+    // ~148k blade triangles out of both cascades, which is why the depth pass
+    // costs less than it would if the meadow lived in levelModel.
     if (hasLevelModel) {
       ScopedMaterialShader depthPass(levelModel,
                                      shadowMap.getStaticDepthShader());
@@ -315,9 +400,12 @@ void GameRenderer::drawWorld(
   // shader. Once per frame, before anything is drawn with them.
   shadowMap.applyTo(worldShader);
   shadowMap.applyTo(levelShader);
+  // The grass casts nothing but still receives, so a tree's shadow falls across
+  // the meadow. Miss this line and it draws uniformly lit under every canopy.
+  shadowMap.applyTo(grassShader);
   shadowMap.applyTo(assetManager.getSkinningShader());
 
-  drawEnvironment(obstacles);
+  drawEnvironment(camera, obstacles);
 
   for (const auto &renderData : entitiesToDraw) {
     auto it = entityRenderers.find(renderData.assetId);
@@ -419,6 +507,7 @@ void GameRenderer::drawShadowMapDebug() {
 }
 
 void GameRenderer::drawEnvironment(
+    const CameraController &camera,
     const std::vector<PhysicsObstacle> &obstacles) {
   // The level mesh. Its materials already carry levelShader, so no
   // BeginShaderMode — that would not reach DrawMesh anyway.
@@ -439,6 +528,30 @@ void GameRenderer::drawEnvironment(
       if (!frustum.intersects(levelMeshBounds[i])) continue;
       DrawMesh(levelModel.meshes[i],
                levelModel.materials[levelModel.meshMaterial[i]], identity);
+    }
+
+    // The detail mesh, over the same frustum.
+    //
+    // Culling off because a blade is a single-sided triangle: with it on, half
+    // of every blade in the meadow would vanish, and a different half as the
+    // camera came round. Only lighting would suffer from that in level.fs's
+    // scheme — grass.fs lights from a constant up normal instead, so both faces
+    // of a blade already shade identically and there is no normal flip to go
+    // with this.
+    //
+    // Opaque, and it writes depth, so draw order is not a correctness question
+    // here the way it would be for cut-out foliage. The only cost of getting it
+    // wrong is overdraw.
+    if (hasDetailModel) {
+      const Vector3 eye = camera.getCamera().position;
+      rlDisableBackfaceCulling();
+      for (int i = 0; i < detailModel.meshCount; i++) {
+        if (!frustum.intersects(detailMeshBounds[i])) continue;
+        if (!withinGrassDistance(detailMeshBounds[i], eye)) continue;
+        DrawMesh(detailModel.meshes[i],
+                 detailModel.materials[detailModel.meshMaterial[i]], identity);
+      }
+      rlEnableBackfaceCulling();
     }
   }
 

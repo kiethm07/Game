@@ -15,7 +15,7 @@ the game draws the level at identity).
 Usage:
     python3 tools/verify_level.py assets/levels/<name>
 
-Three checks, in increasing strength:
+Four checks, the first three in increasing strength:
 
   1. Bounds. The GLB's overall AABB against the `bounds` field in the JSON.
      Applies to every level. A mirrored layout or a swapped axis shows up here
@@ -44,6 +44,12 @@ Three checks, in increasing strength:
      ceiling by the sign of normal.y, so an inverted soup is a world with no
      floors, and checks 1 and 2 cannot see it.
 
+  4. Detail mesh. Levels that ship a `detailModel` -- drawn-only scenery, grass
+     today -- have it checked for the three faults that produce no runtime
+     error at all: a primitive too big for raylib's 16-bit indices, a missing
+     COLOR_0, and geometry outside the declared bounds. See check_detail_mesh
+     for why each of those is silent.
+
 A kitbashed map will usually only satisfy checks 1 and 3, since its art is not
 built one-mesh-per-proxy. That is expected; check 2 reports what it could pair
 up.
@@ -63,6 +69,19 @@ COUNT = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}
 # so agreement is exact to well within a millimetre when it is right; anything
 # above this is a real disagreement, not accumulated error.
 TOLERANCE = 0.002
+
+# The detail mesh is checked against the level's declared bounds rather than
+# against the exporter's own arithmetic, so it gets a looser margin: a blade
+# leaning off the terrain's outer edge is fine, a chunk of meadow floating a
+# hundred metres away is not.
+BOUNDS_TOLERANCE = 1.0
+
+# Blender writes u16 indices only while the largest index is under 65535
+# (io_scene_gltf2/blender/exp/primitives.py:218), and raylib cannot read
+# anything wider -- Mesh.indices is `unsigned short *` and the draw call
+# hardcodes GL_UNSIGNED_SHORT.
+MAX_VERTS_PER_PRIMITIVE = 65534
+COMPONENT_USHORT = 5123
 
 
 def load_glb(path):
@@ -367,6 +386,101 @@ def ground_under(verts, idx, x, z, from_y=1000.0):
     return from_y - best[0], best[1]
 
 
+def check_detail_mesh(level, level_dir, declared, failures):
+    """Verify the detail mesh is something raylib will actually draw.
+
+    Every failure here is one that produces no error at runtime, which is why
+    it is worth a check rather than a comment.
+
+    A primitive over 65,534 vertices makes Blender emit u32 indices
+    (io_scene_gltf2/blender/exp/primitives.py:218), and raylib's Mesh.indices is
+    `unsigned short *` -- LoadGLTF narrows the accessor mod 65536 with a
+    LOG_WARNING and the level arrives with its triangles wired to the wrong
+    vertices. The index type is checked as well as the count, because they are
+    the same fault seen from two directions and neither is visible in Blender.
+
+    A missing COLOR_0 is the export_vertex_color trap: under Blender's default
+    'MATERIAL' the attribute is dropped unless the material's node tree
+    references it, and export_all_vertex_colors then substitutes one filled with
+    literal 255. The grass would ship flat -- no contact shading, no per-blade
+    variation -- and look merely disappointing rather than broken.
+
+    And the AABB is checked against the declared bounds because the exporter
+    deliberately leaves detail geometry out of the bounds union: that is only
+    sound while the detail actually stays inside them.
+    """
+    name = level.get("detailModel")
+    if not name:
+        print("  (no detailModel — this level ships no drawn-only scenery)")
+        return
+
+    path = os.path.join(level_dir, name)
+    if not os.path.exists(path):
+        failures.append("detail mesh")
+        print("  FAIL  %s is named in level.json but not on disk" % name)
+        return
+
+    gltf, buffer = load_glb(path)
+    accessors = gltf["accessors"]
+    widest, triangles, primitives = 0, 0, 0
+    bad_index, no_colour = [], []
+
+    for mesh in gltf.get("meshes", []):
+        for prim in mesh.get("primitives", []):
+            primitives += 1
+            label = mesh.get("name", "?")
+            position = prim.get("attributes", {}).get("POSITION")
+            if position is None:
+                continue
+            widest = max(widest, accessors[position]["count"])
+            if accessors[position]["count"] > MAX_VERTS_PER_PRIMITIVE:
+                bad_index.append("%s (%d verts)"
+                                 % (label, accessors[position]["count"]))
+            index = prim.get("indices")
+            if index is not None:
+                triangles += accessors[index]["count"] // 3
+                if accessors[index]["componentType"] != COMPONENT_USHORT:
+                    bad_index.append("%s (u32 indices)" % label)
+            if "COLOR_0" not in prim.get("attributes", {}):
+                no_colour.append(label)
+
+    if bad_index:
+        failures.append("detail indices")
+        print("  FAIL  %d primitive(s) raylib will truncate to 16-bit "
+              "indices: %s" % (len(bad_index), ", ".join(bad_index[:4])))
+    else:
+        print("  OK    indices: %d primitives, widest %d verts (%.0f%% of the "
+              "%d cap), all u16"
+              % (primitives, widest, 100.0 * widest / MAX_VERTS_PER_PRIMITIVE,
+                 MAX_VERTS_PER_PRIMITIVE))
+
+    if no_colour:
+        failures.append("detail vertex colours")
+        print("  FAIL  %d primitive(s) carry no COLOR_0: %s\n"
+              "        export_level.py must pass vertex_colors=True, or "
+              "Blender drops the attribute." % (len(no_colour),
+                                                ", ".join(no_colour[:4])))
+    else:
+        print("  OK    every primitive carries COLOR_0")
+
+    _, overall = mesh_bounds(gltf, buffer)
+    if overall is None:
+        failures.append("detail geometry")
+        print("  FAIL  %s contains no mesh geometry" % name)
+        return
+    outside = [i for i in range(3)
+               if overall[0][i] < declared[0][i] - BOUNDS_TOLERANCE
+               or overall[1][i] > declared[1][i] + BOUNDS_TOLERANCE]
+    if outside:
+        failures.append("detail bounds")
+        print("  FAIL  detail reaches outside the declared bounds on %s: %s\n"
+              "        the exporter leaves detail out of the bounds union, "
+              "which only holds while it stays inside them"
+              % ("/".join("xyz"[i] for i in outside), format_box(overall)))
+    else:
+        print("  OK    inside the declared bounds, %d triangles" % triangles)
+
+
 def check_collision_mesh(level, level_dir, failures):
     """Verify the mesh is where the level says it is, and the right way up.
 
@@ -493,6 +607,9 @@ def main():
 
     print("\n3. Collision mesh")
     check_collision_mesh(level, level_dir, failures)
+
+    print("\n4. Detail mesh")
+    check_detail_mesh(level, level_dir, declared, failures)
 
     print()
     if failures:

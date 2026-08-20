@@ -2,7 +2,8 @@
 #include <Rendering/AssetManifest.h>
 #include <raylib.h>
 
-LoadingState::LoadingState(AssetManager& asset_manager) : asset_manager(asset_manager) {}
+LoadingState::LoadingState(AssetManager& asset_manager, const Campaign& campaign)
+    : asset_manager(asset_manager), campaign(campaign) {}
 
 void LoadingState::enter() {}
 
@@ -103,6 +104,18 @@ void LoadingState::draw() {
     DrawRectangle(bar_x, bar_y, bar_width, bar_height, DARKGRAY);
     DrawRectangle(bar_x, bar_y, (int)(bar_width * display_progress), bar_height, GREEN);
     DrawRectangleLines(bar_x, bar_y, bar_width, bar_height, LIGHTGRAY);
+
+    // Which phase is coming. This screen is now reached twice for different
+    // reasons -- starting a run, and crossing a phase seam -- and without a
+    // name the two are indistinguishable, as are the three phases from each
+    // other.
+    const char* phase_text = TextFormat("%s  —  Phase %d of %d",
+                                        campaign.currentName(),
+                                        (int)campaign.index() + 1,
+                                        (int)campaign.count());
+    int phase_width = MeasureText(phase_text, 20);
+    DrawText(phase_text, (screen_width - phase_width) / 2, bar_y + bar_height + 16,
+             20, GRAY);
 }
 
 void LoadingState::exit() {}

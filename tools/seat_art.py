@@ -144,6 +144,29 @@ def terrain_height_any(objs, x, y):
     return max(zs) if zs else None
 
 
+# --- Buried structures ------------------------------------------------------
+
+# A structure whose base sits at least this far under the terrain is not merely
+# bedded in, it is sunk. `warehouse.001` was at -1.07 -- a 4.38-tall house with
+# a quarter of it underground and its doorway arch half-swallowed.
+BURIED_LIMIT = -0.5
+
+# ...but only lift one if nothing is attached to it. Raising a piece by the gap
+# under its own footprint is exactly the move that once pulled `castle.001` and
+# `castle tower.001` 3.29 apart, and a wall run is a chain of pieces with
+# authored relative heights. A structure whose nearest neighbour is further
+# than this is standing on its own and can be moved without dragging an
+# assembly out of alignment. Measured: the buried house is 4.84 from anything
+# else, while every buried wall is 1.5-3.0 from its neighbours and the bridge
+# spans are 3.35 apart -- so this separates them with room to spare, and the
+# bridges (buried 4.6 over their channel, and correctly so) are never touched.
+ISOLATION_MIN = 4.0
+
+# Lift to just-embedded rather than flush, and let bed_terrain close whatever
+# gap is left at the shallow end.
+BURIED_TARGET = -0.05
+
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -288,6 +311,61 @@ def base_points(structures):
     return points
 
 
+def lift_buried_structures(structures, terrains, dry_run):
+    """Raise isolated structures that are sunk into the ground.
+
+    Deliberately narrow. The rule elsewhere in this script is that buildings do
+    not move and the terrain comes up to meet them, because the fortress is an
+    assembly. That rule holds for anything joined to anything else; it does not
+    help a standalone house sunk a metre into the hillside, where bedding the
+    terrain up would only bury it further. So a piece is lifted only when it is
+    both badly sunk and demonstrably on its own -- see ISOLATION_MIN.
+    """
+    centres = {}
+    for obj in structures:
+        pts = evaluated_points(obj)
+        if pts:
+            centres[obj.name] = Vector((
+                (min(p.x for p in pts) + max(p.x for p in pts)) * 0.5,
+                (min(p.y for p in pts) + max(p.y for p in pts)) * 0.5, 0.0))
+
+    moved = []
+    for obj in structures:
+        pts = evaluated_points(obj)
+        if not pts:
+            continue
+        floor = min(p.z for p in pts)
+        gaps = []
+        for p in pts:
+            if p.z > floor + BASE_BAND:
+                continue
+            z = terrain_height_any(terrains, p.x, p.y)
+            if z is not None:
+                gaps.append(p.z - z)
+        if not gaps:
+            continue
+        median = statistics.median(gaps)
+        if median >= BURIED_LIMIT:
+            continue
+
+        neighbour = min(((centres[obj.name] - c).length, n)
+                        for n, c in centres.items() if n != obj.name)
+        if neighbour[0] <= ISOLATION_MIN:
+            print("[seat_art] left buried %-20s median %+.2f -- %s is only "
+                  "%.2f away, moving it would break the run"
+                  % (obj.name, median, neighbour[1], neighbour[0]))
+            continue
+
+        lift = BURIED_TARGET - median
+        if not dry_run:
+            obj.location.z += lift
+        moved.append((obj.name, median, lift, neighbour[0]))
+
+    if not dry_run and moved:
+        bpy.context.view_layer.update()
+    return moved
+
+
 def bed_terrain(structures, terrains, dry_run):
     """Raise terrain under the structures' base geometry."""
     required = []
@@ -397,6 +475,7 @@ def main():
 
     before = structure_gaps(structures, terrains)
     paths = seat_paths(terrains, args.dry_run)
+    lifted = lift_buried_structures(structures, terrains, args.dry_run)
     bed = bed_terrain(structures, terrains, args.dry_run)
     after = structure_gaps(structures, terrains)
 
@@ -408,6 +487,10 @@ def main():
         print("           gap before %s" % (row["gap_before"],))
         print("           gap after  %s" % (row["gap_after"],))
 
+    for name, median, lift, near in lifted:
+        print("[seat_art] lifted %-20s out of the ground by %.2f "
+              "(was %+.2f under; nearest structure %.2f away)"
+              % (name, lift, median, near))
     print("[seat_art] structures: %d placed, %d base points sat above terrain"
           % (len(structures), bed["gap_points"]))
     print("           terrain vertices raised %d (max %.2f, %d hit the cap)"

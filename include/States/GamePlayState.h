@@ -15,6 +15,7 @@
 #include <GameManager/PhysicsManager.h>
 #include <AI/NavMeshBuilder.h>
 #include <AI/NavMeshQuery.h>
+#include <Level/Campaign.h>
 #include <Level/Level.h>
 #include <Physics/CollisionMesh.h>
 #include <States/GameState.h>
@@ -36,7 +37,8 @@ struct MoneyDrop {
 
 class GameplayState : public GameState {
 public:
-  GameplayState(const InputManager &input_manager, AssetManager &asset_manager, SoundController &sound_controller);
+  GameplayState(const InputManager &input_manager, AssetManager &asset_manager,
+                SoundController &sound_controller, Campaign &campaign);
   ~GameplayState() override = default;
 
   void enter() override;
@@ -72,6 +74,16 @@ private:
 
   const InputManager &input_manager;
   SoundController &sound_controller;
+
+  /// Which phase this is, and the run's carry. Read in the constructor to
+  /// choose the level and restore the player, written when the phase is left.
+  /// A reference to a Game member, like the three above it -- states are
+  /// destroyed before the services they point at.
+  Campaign &campaign;
+
+  /// The money and item charges this phase would hand to the next one.
+  /// Read off the live Player, so only meaningful while one exists.
+  PhaseCarry snapshotCarry() const;
   
   float takedown_text_timer = 0.0f;
   std::string takedown_type_str = "";

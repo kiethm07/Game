@@ -23,17 +23,40 @@ void Game::update() {
             // Handle quit request, e.g., exit the game loop
         }
         if (action == StateAction::ChangeToMenu) {
-            // ChangeState(std::make_unique<MainMenuState>());
             popState();
+            // Leaving a phase for the menu abandons the run: the cursor goes
+            // back to the first phase and the carry is dropped. After
+            // popState(), so that a carry written on the way out cannot
+            // survive the reset.
+            campaign.restart();
             pushState(std::make_unique<MainMenuState>());
         }
         if (action == StateAction::ChangeToLoading) {
             popState();
-            pushState(std::make_unique<LoadingState>(asset_manager));
+            pushState(std::make_unique<LoadingState>(asset_manager, campaign));
         }
         if (action == StateAction::ChangeToGameplay) {
             popState();
-            pushState(std::make_unique<GameplayState>(input_manager, asset_manager, sound_controller));
+            pushState(std::make_unique<GameplayState>(input_manager, asset_manager, sound_controller, campaign));
+        }
+        if (action == StateAction::RequestNextPhase) {
+            // The destination is not in the action -- it is in `campaign`.
+            // That is what keeps StateAction payload-free, and keeping it
+            // payload-free is what lets a state request its own replacement
+            // without a Game back-pointer to route the request through.
+            //
+            // advance() both moves the cursor and answers whether there was
+            // anywhere to move to, so the run ending is the same branch as the
+            // run continuing rather than a separate query that could disagree.
+            if (campaign.advance()) {
+                popState();
+                pushState(std::make_unique<LoadingState>(asset_manager, campaign));
+            } else {
+                // That was the last phase. The run is over.
+                popState();
+                campaign.restart();
+                pushState(std::make_unique<MainMenuState>());
+            }
         }
     }
 }

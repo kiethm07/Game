@@ -67,6 +67,22 @@ public:
   bool isExecuting() const override;
 
   const std::vector<std::unique_ptr<Item>>& getInventory() const { return inventory; }
+
+  /// Restore per-slot charge counts taken from an earlier phase.
+  ///
+  /// Positional: the constructor builds the inventory unconditionally and in a
+  /// fixed order, so slot i is the same item it was when the snapshot was
+  /// taken. Bounded by both sizes, so a snapshot taken before a third item
+  /// existed still applies cleanly to the two that do.
+  ///
+  /// A method rather than a mutable getInventory() because this is the only
+  /// reason anything outside Player needs to write to an Item, and keeping it
+  /// here keeps the unique_ptrs private.
+  void restoreItemCounts(const std::vector<int> &counts) {
+    for (size_t i = 0; i < inventory.size() && i < counts.size(); ++i) {
+      inventory[i]->add(counts[i] - inventory[i]->getCount());
+    }
+  }
   int getActiveItemIndex() const { return active_item_index; }
   float getItemUseTimer() const { return item_use_timer; }
   

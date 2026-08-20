@@ -64,6 +64,22 @@ MARKERS_COLLECTION = "MARKERS"
 # BVH (include/Physics/CollisionMesh.h).
 COLLISION_MESH_COLLECTION = "COLLISION_MESH"
 
+# Also optional: scenery that is drawn and nothing else. Grass, at the time of
+# writing. It leaves as its own detail.glb rather than joining VISUAL for three
+# reasons, none of them tidiness.
+#
+# It is what makes "casts no shadow" expressible at all. raylib's glTF loader
+# discards mesh and material names, so there is no way to pick the grass out of
+# a combined model at runtime -- but a second Model is a handle GameRenderer can
+# simply decline to mention in the depth pass.
+#
+# It needs different export settings. Detail ships vertex colours and no
+# normals; VISUAL is the other way round, and one call cannot be both.
+#
+# And it keeps level.glb byte-identical to a detail-free build, which is what
+# leaves verify_level.py's bounds check measuring exactly what it always did.
+DETAIL_COLLECTION = "DETAIL"
+
 # Bumped only for levels that actually ship a collision mesh. A build that
 # predates the mesh would read one of those as a level whose ground is simply
 # missing -- collision that loads *wrongly* rather than incompletely, which is
@@ -442,6 +458,10 @@ def flatten_procedural_colours(collection):
         if base is None or not base.links:
             continue
         link = base.links[0]
+        if link.from_node.type == "TEX_IMAGE":
+            # glTF carries image textures natively as baseColorTexture; this
+            # is the one linked case that needs no help.
+            continue
         colour = representative_colour(link.from_node)
         if colour is None:
             skipped.append("%s (%s)" % (name, link.from_node.type))
@@ -460,8 +480,8 @@ def flatten_procedural_colours(collection):
     return len(flattened)
 
 
-def export_glb(collection, path):
-    """Write the VISUAL collection to a .glb raylib can actually load.
+def export_glb(collection, path, vertex_colors=False, normals=True):
+    """Write a collection to a .glb raylib can actually load.
 
     Draco and KTX2/basisu are both left off deliberately: raylib's loader is
     cgltf, which supports neither, and a model using either arrives with no
@@ -472,6 +492,21 @@ def export_glb(collection, path):
     build defines SUPPORT_FILEFORMAT_JPG (CMakeLists.txt) -- its config.h
     defaults that off, and without it a textured level loads untextured with
     only an "IMAGE: Data format not supported" warning to say why.
+
+    `vertex_colors` selects ACTIVE over Blender's default MATERIAL, and that
+    default is a trap rather than a preference. Under MATERIAL the exporter
+    drops any colour attribute the material's *node tree* does not reference
+    (primitive_extract.py:574) -- and the grass material deliberately does not
+    reference it, because a Color Attribute node feeding Base Color would force
+    baseColorFactor to white and lose the terrain colour match. Worse,
+    export_all_vertex_colors then substitutes a forced COLOR_0 filled with
+    literal 255 (:1207), so the level would ship an attribute that exists,
+    passes every check, and carries nothing. ACTIVE reads
+    mesh.color_attributes.render_color_index regardless of the node tree.
+
+    `normals` is off for detail geometry, which lights from a constant up
+    vector in its own shader rather than from the geometry -- see grass.fs. It
+    is 12 of the 32 bytes a vertex would otherwise cost.
     """
     flatten_procedural_colours(collection)
 
@@ -485,6 +520,8 @@ def export_glb(collection, path):
         use_selection=True,
         export_yup=True,
         export_apply=True,          # resolve modifiers
+        export_normals=normals,
+        export_vertex_color="ACTIVE" if vertex_colors else "MATERIAL",
         export_draco_mesh_compression_enable=False,
         export_image_format="AUTO", # embedded PNG/JPEG, never KTX2
         export_cameras=False,
@@ -607,6 +644,12 @@ def main():
     # Shadow framing is driven off these bounds, so they cover what is drawn as
     # well as what is collided against -- a roof that casts but has no proxy
     # still has to sit inside the far cascade.
+    #
+    # DETAIL is deliberately NOT in this union, and the omission is the point
+    # rather than an oversight: it casts into neither cascade, it never leaves
+    # the terrain's own footprint, and leaving it out is what keeps `bounds` --
+    # and with it ShadowMap::setBounds and verify_level.py's first check --
+    # measuring exactly what they measured before detail geometry existed.
     corners = list(collision_corners)
     for obj in visual.all_objects:
         if obj.type == "MESH":
@@ -634,6 +677,36 @@ def main():
         mesh_stats = export_collision_mesh(collision_mesh,
                                            os.path.join(out_dir, mesh_name))
 
+    detail = bpy.data.collections.get(DETAIL_COLLECTION)
+    if detail is not None:
+        # Nested inside VISUAL it would export twice -- once here and once in
+        # level.glb, because the VISUAL export selects all_objects, which
+        # recurses. The level would look right and carry the whole meadow
+        # through both shadow cascades.
+        for parent in bpy.data.collections:
+            if DETAIL_COLLECTION in {c.name for c in parent.children} \
+                    and parent.name != bpy.context.scene.collection.name:
+                raise ExportError(
+                    "%s is nested inside %s. It must sit directly under the "
+                    "scene collection, or it exports into level.glb as well."
+                    % (DETAIL_COLLECTION, parent.name))
+        if not any(o.type == "MESH" for o in detail.all_objects):
+            raise ExportError(
+                "%s exists but holds no mesh. Delete the collection to export "
+                "a level without detail geometry, or put the scenery in it."
+                % DETAIL_COLLECTION)
+
+    detail_name = None
+    detail_tris = 0
+    if detail is not None:
+        detail_name = "detail.glb"
+        detail_tris = sum(len(p.vertices) - 2
+                          for o in detail.all_objects if o.type == "MESH"
+                          for p in o.data.polygons)
+        if not args.no_glb:
+            export_glb(detail, os.path.join(out_dir, detail_name),
+                       vertex_colors=True, normals=False)
+
     level = {
         "format": FORMAT_WITH_MESH if mesh_name else FORMAT_WITHOUT_MESH,
         "name": name,
@@ -649,6 +722,13 @@ def main():
     # the forest byte-comparison a usable regression test.
     if mesh_name:
         level["collisionMesh"] = mesh_name
+    # Likewise last, and likewise optional: a level with no DETAIL collection
+    # writes the JSON it wrote before this key existed, and a build that
+    # predates the key ignores it and renders a level without its scenery --
+    # incompletely rather than wrongly, which is the test LevelLoader's format
+    # number exists for. So no format bump.
+    if detail_name:
+        level["detailModel"] = detail_name
 
     json_path = os.path.join(out_dir, "level.json")
     with open(json_path, "w") as f:
@@ -664,6 +744,12 @@ def main():
         print("[export_level]   collision mesh -> %s (%d verts, %d tris), "
               "format %d" % (mesh_name, mesh_stats[0], mesh_stats[1],
                              FORMAT_WITH_MESH))
+    if detail_name:
+        print("[export_level]   detail -> %s (%d meshes, %d tris), drawn but "
+              "never a shadow caster"
+              % (detail_name,
+                 sum(1 for o in detail.all_objects if o.type == "MESH"),
+                 detail_tris))
     print("[export_level]   bounds min=%s max=%s"
           % (["%.1f" % c for c in bounds_min], ["%.1f" % c for c in bounds_max]))
 
