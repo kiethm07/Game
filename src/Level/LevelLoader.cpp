@@ -143,6 +143,14 @@ Level LevelLoader::load(const std::string &jsonPath) {
             parsed.collisionMeshPath = directoryOf(jsonPath) + "/" + mesh;
         }
 
+        // Optional, and read with value() rather than at() for the reason the
+        // header states: a level that predates the key loads without scenery,
+        // which is incomplete rather than wrong, so it needs no format bump.
+        const std::string detail = root.value("detailModel", std::string());
+        if (!detail.empty()) {
+            parsed.detailModelPath = directoryOf(jsonPath) + "/" + detail;
+        }
+
         const json &bounds = root.at("bounds");
         parsed.bounds.min = toVector3(bounds.at("min"));
         parsed.bounds.max = toVector3(bounds.at("max"));

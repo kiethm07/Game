@@ -1,5 +1,6 @@
 #pragma once
 #include <States/GameState.h>
+#include <Level/Campaign.h>
 #include <Rendering/AssetManager.h>
 #include <string>
 #include <future>
@@ -7,7 +8,7 @@
 
 class LoadingState : public GameState {
 public:
-    LoadingState(AssetManager& asset_manager);
+    LoadingState(AssetManager& asset_manager, const Campaign& campaign);
     ~LoadingState() override = default;
 
     void enter() override;
@@ -17,6 +18,11 @@ public:
 
 private:
     AssetManager& asset_manager;
+
+    /// Read only, and only to say which phase is coming. Without it every
+    /// phase change shows an identical anonymous bar, and a phase whose
+    /// level.json failed to load is invisible until the empty world appears.
+    const Campaign& campaign;
     size_t current_asset_index = 0;
     
     enum class LoadPhase {

@@ -95,6 +95,12 @@ private:
   /// two cannot share a vertex stage.
   Shader levelShader{};
 
+  /// Lit, shadow-receiving shader for the detail mesh. Same lighting constants
+  /// as level.fs, deliberately, so a blade and the ground under it come out the
+  /// same colour — but no texture, no alpha test, and a constant up normal
+  /// rather than the geometry's. See grass.fs.
+  Shader grassShader{};
+
   /// The level's visual mesh. Owned here rather than by AssetManager, whose
   /// cache is keyed on the AssetID enum — one entry per level would mean an
   /// enum edit and a rebuild per map, which is exactly what moving levels into
@@ -119,16 +125,33 @@ private:
   /// transforms into the vertex data and the model is drawn at identity.
   std::vector<BoundingBox> levelMeshBounds;
 
+  /// The level's detail mesh: drawn, never collided, never a shadow caster.
+  ///
+  /// Its own Model rather than meshes inside levelModel because raylib's glTF
+  /// loader discards mesh and material names, so there would be nothing to tell
+  /// grass from terrain by at runtime — and because "casts no shadow" is
+  /// implemented by renderShadowPass simply never naming this model.
+  Model detailModel{};
+  bool hasDetailModel = false;
+  std::vector<BoundingBox> detailMeshBounds;
+  std::vector<int> detailMeshTriangles;
+
   /// 3D world pass: environment + every entity's skinned/proxy geometry.
   void drawWorld(const CameraController &camera,
                  const std::vector<PhysicsObstacle> &obstacles,
                  const std::vector<CharacterRenderData> &entitiesToDraw);
-  void drawEnvironment(const std::vector<PhysicsObstacle> &obstacles);
+  void drawEnvironment(const CameraController &camera,
+                       const std::vector<PhysicsObstacle> &obstacles);
 
   /// Load the level's mesh and point its materials at levelShader. Also
   /// substitutes raylib's default white texture for any material that arrived
   /// without an albedo map, so level.fs samples white instead of whatever
   /// happened to be bound.
   void loadLevelModel(const Level &level);
+
+  /// Load the level's detail mesh and point its materials at grassShader.
+  /// Unlike loadLevelModel this substitutes no white texture, because nothing
+  /// in grass.fs samples one.
+  void loadDetailModel(const Level &level);
 };
 

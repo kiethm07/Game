@@ -7,38 +7,37 @@
 #include <cassert>
 #include <cmath>
 
-namespace {
-/// The level this state loads. One map for now — StateAction carries no
-/// payload, so there is nowhere for a level choice to come from until there is
-/// a map-select screen to make it.
-///
-/// phase2_approach: the bridge, the gate, the courtyard and the keep, plus the
-/// mountain pass that leads out to phase 3. It is the phase with the fortress
-/// on it, so it is the one worth having up by default.
-///
-/// The other two exist and export (phase1_forest, phase3_battlefield); there is
-/// still no checkpoint hand-off, so switching between them means editing this
-/// line.
-constexpr const char *kLevelPath = ASSET_DIR "/levels/phase2_approach/level.json";
-} // namespace
+// The level this state loads comes from Campaign, which Game owns and hands in
+// by reference. It used to be a constant here, because StateAction carries no
+// payload and there was nowhere for a level choice to come from; the answer was
+// to give the choice a home of its own rather than a seat on the action.
+//
+// See include/Level/CampaignManifest.h for the phase table.
 
-GameplayState::GameplayState(const InputManager &input_manager, AssetManager &asset_manager, SoundController &sound_controller)
-    : input_manager(input_manager), asset_manager(asset_manager), sound_controller(sound_controller) {
+GameplayState::GameplayState(const InputManager &input_manager, AssetManager &asset_manager,
+                             SoundController &sound_controller, Campaign &campaign)
+    : input_manager(input_manager), asset_manager(asset_manager),
+      sound_controller(sound_controller), campaign(campaign) {
   camera_controller = std::make_unique<CameraController>();
 
   // The world, authored in Blender and exported by tools/export_level.py.
   // Everything below reads from `level` rather than from literals: geometry,
   // spawns, and the extent the shadow cascades are framed against.
-  level = LevelLoader::load(kLevelPath);
+  level = LevelLoader::load(campaign.currentLevelPath());
   if (!level.valid) {
     // Deliberately not fatal. The player still lands on PhysicsManager's y=0
     // floor clamp, so the game comes up empty and obviously broken with the
     // reason already logged, rather than crashing on startup and taking the
     // reason with it.
+    // Named by phase, not just by path. With three phases in a run this is
+    // something a player can now walk into mid-run rather than something a
+    // developer sees seconds after editing a constant, so the message has to
+    // say which phase broke.
     TraceLog(LOG_ERROR,
-             "GameplayState: level '%s' failed to load; starting with an "
-             "empty world.",
-             kLevelPath);
+             "GameplayState: phase %d/%d ('%s') failed to load from '%s'; "
+             "starting with an empty world.",
+             (int)campaign.index() + 1, (int)campaign.count(),
+             campaign.currentName(), campaign.currentLevelPath());
   }
 
   // Loaded here rather than in LevelLoader so a Level stays parseable without a
@@ -65,6 +64,16 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
   asset_manager.loadSound(AssetID::SFX_DEATHBLOW, ASSET_DIR "/audio/deflect_end.mp3");
   player->setPosition(level.playerSpawn.position);
   player->setRotation({0.0f, level.playerSpawn.yaw, 0.0f});
+
+  // What the previous phase handed over. addMoney rather than a setter because
+  // a freshly built Player's money is already 0, so adding IS restoring — and
+  // health is absent from the carry on purpose: the Stats(1000, 100, 15) this
+  // Player was constructed with a few lines up is what "restored at a seam"
+  // means. On the first phase of a run the carry is empty and all of this is a
+  // no-op.
+  const PhaseCarry &carry = campaign.getCarry();
+  player->addMoney(carry.money);
+  player->restoreItemCounts(carry.itemCounts);
 
   for (const EnemySpawn &spawn : level.enemySpawns) {
     auto enemy = EnemyFactory::createEnemy(spawn.type, spawn.at.position);
@@ -106,6 +115,22 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
   nav_query.init(nav_builder.getNavMesh());
 
   renderer = std::make_unique<GameRenderer>(asset_manager, level);
+}
+
+PhaseCarry GameplayState::snapshotCarry() const {
+  PhaseCarry carry;
+  carry.money = player->getMoney();
+
+  const auto &inventory = player->getInventory();
+  carry.itemCounts.reserve(inventory.size());
+  for (const auto &item : inventory) {
+    carry.itemCounts.push_back(item->getCount());
+  }
+
+  // Uncollected MoneyDrops still lying on the ground are deliberately not
+  // swept up into this. Walking out of a phase and leaving coins behind is
+  // what makes leaving a decision rather than a formality.
+  return carry;
 }
 
 void GameplayState::enter() {
@@ -300,6 +325,23 @@ StateAction GameplayState::update(float dt) {
 
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
     return StateAction::ChangeToMenu;
+  }
+
+  // L: leave this phase for the next one.
+  //
+  // A debug affordance in the same sense F1-F3 are, so it stays off
+  // InputManager's GameAction enum for the reason given at the top of that
+  // block -- and for one more: it is standing in for a trigger that will not
+  // be a keypress at all. Once phases carry an exit marker this same body
+  // fires from a proximity test, and a GameAction binding would be dead weight.
+  //
+  // The carry is snapshotted here rather than in exit() so that taking it and
+  // deciding to leave are one statement. exit() also runs on quit-to-menu and
+  // on shutdown, where writing a carry would be wrong, and the ordering
+  // against Campaign::restart() would then have to be reasoned about.
+  if (IsKeyPressed(KEY_L)) {
+    campaign.setCarry(snapshotCarry());
+    return StateAction::RequestNextPhase;
   }
 
   if (smoke_cooldown_timer > 0.0f) {

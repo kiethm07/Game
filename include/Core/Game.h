@@ -1,6 +1,7 @@
 #pragma once
 #include <CombatData/AttackRegistry.h>
 #include <Core/InputManager.h>
+#include <Level/Campaign.h>
 #include <Core/TimeManager.h>
 #include <GameManager/SoundController.h>
 #include <Rendering/AssetManager.h>
@@ -35,5 +36,11 @@ private:
   AssetManager asset_manager;
   SoundController sound_controller;
   AttackRegistry &attack_registry;
+
+  /// Where the run is and what it is carrying. Declared with the other
+  /// services and before `states` for the same reason they are: states hold
+  /// references to it and must be destroyed first.
+  Campaign campaign;
+
   std::vector<std::unique_ptr<GameState>> states;
 };
