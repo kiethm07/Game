@@ -67,6 +67,37 @@ std::vector<Vector3> NavMeshQuery::findPath(Vector3 start, Vector3 end) const {
     return path;
 }
 
+bool NavMeshQuery::raycast(Vector3 start, Vector3 end, float* hit_t, Vector3* hit_normal) const {
+    if (!m_navQuery) return false;
+
+    float extents[3] = { 2.0f, 4.0f, 2.0f };
+    float startPos[3] = { start.x, start.y, start.z };
+    float endPos[3] = { end.x, end.y, end.z };
+
+    dtPolyRef startRef;
+    float nearestStart[3];
+    m_navQuery->findNearestPoly(startPos, extents, m_filter, &startRef, nearestStart);
+
+    if (!startRef) return false;
+
+    float t = 0.0f;
+    float hitNormal[3] = {0.0f, 0.0f, 0.0f};
+    dtPolyRef path[16];
+    int pathCount = 0;
+
+    // Raycast along the NavMesh. t will be >= 1.0f if the ray reached endPos without hitting an edge.
+    m_navQuery->raycast(startRef, nearestStart, endPos, m_filter, &t, hitNormal, path, &pathCount, 16);
+
+    if (hit_t != nullptr) {
+        *hit_t = t;
+    }
+    if (hit_normal != nullptr) {
+        *hit_normal = { hitNormal[0], hitNormal[1], hitNormal[2] };
+    }
+
+    return (t >= 1.0f);
+}
+
 Vector3 NavMeshQuery::getConstrainedPosition(Vector3 start, Vector3 intendedEnd) const {
     if (!m_navQuery) return intendedEnd;
 
@@ -86,5 +117,14 @@ Vector3 NavMeshQuery::getConstrainedPosition(Vector3 start, Vector3 intendedEnd)
 
     m_navQuery->moveAlongSurface(startRef, nearestStart, endPos, m_filter, resultPos, visited, &visitedCount, 16);
 
-    return { resultPos[0], resultPos[1], resultPos[2] };
+    // Calculate the valid movement delta on the NavMesh
+    Vector3 delta;
+    delta.x = resultPos[0] - nearestStart[0];
+    delta.y = resultPos[1] - nearestStart[1];
+    delta.z = resultPos[2] - nearestStart[2];
+
+    // Apply the pure movement delta to the original start position.
+    // This prevents the character from being violently snapped to 'nearestStart'
+    // if they are slightly off the NavMesh (e.g. pushed by PhysicsManager).
+    return { start.x + delta.x, start.y + delta.y, start.z + delta.z };
 }

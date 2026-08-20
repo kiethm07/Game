@@ -10,6 +10,7 @@
 #include <Entities/Items/Item.h>
 #include <GameManager/SmokeCloud.h>
 #include <Rendering/RootMotion.h>
+#include <Rendering/SwordTrail.h>
 #include <memory>
 #include <vector>
 
@@ -22,6 +23,7 @@ public:
   CharacterRenderData getRenderData() const override;
 
   void drawHPBar2D() const;
+  void drawTrail() const override { sword_trail.draw(); }
 
   float getColliderRadius() const override;
   float getColliderHeight() const override;
@@ -156,9 +158,10 @@ private:
   int active_item_index = 0;
   float item_use_timer = 0.0f;
   std::vector<SmokeCloud> pending_smoke_clouds;
+  SwordTrail sword_trail;
 
   void updateLocomotionVelocity(const UpdateContext &ctx, Vector3 moveDirection,
-                                float speedScale);
+                                float speedScale, Gait gait);
   void applyRootMotion(const RootMotion::Track &track, float dt);
 
   Vector3 calculateCameraRelativeDirection(Vector3 camForward,

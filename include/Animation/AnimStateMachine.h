@@ -145,8 +145,8 @@ public:
       // play() is a no-op on the current clip, so those need an explicit rewind
       // to read as separate actions rather than one held pose — cross-fading
       // out of the pose being held, so the rewind eases rather than snaps.
-      const bool reentered = (selection.state != prev.state ||
-                              selection.variant != prev.variant);
+      // Looping locomotion cycles sharing the same clip must not be rewound.
+      const bool reentered = (selection.variant != prev.variant) || (!d.loop && selection.state != prev.state);
       if (!switched && reentered)
         animation.restart(d.fadeIn, selection.startAt);
     }

@@ -9,6 +9,10 @@ const PlayerAnimator::Machine::Desc *PlayerAnimator::descTable() {
       /* Idle        */ {"Idle", true, 1.0f, false, 0.15f},
       /* Walk        */ {"Walk", true, 1.0f, false, 0.15f},
       /* Run         */ {"Run", true, 1.0f, false, 0.15f},
+      /* StrafeFwd   */ {"Walk", true, 1.0f, false, 0.15f},
+      /* StrafeBack  */ {"Walk_2", true, 1.0f, false, 0.15f},
+      /* StrafeLeft  */ {"Strafe_2", true, 1.0f, false, 0.15f},
+      /* StrafeRight */ {"Strafe", true, 1.0f, false, 0.15f},
       /* Jump        */ {"Jump", false, 1.0f, false, 0.08f},
       // Loops, because a fall lasts as long as the drop does rather than as
       // long as the clip. The fade in is the longest in the table: it runs at
@@ -320,6 +324,32 @@ PlayerAnimator::resolve(const Frame &frame) const {
     PlayerAnimState cycle = (frame.gait == Gait::Sprinting)
                                 ? PlayerAnimState::Run
                                 : PlayerAnimState::Walk;
+                                
+    if (frame.lockedOn && frame.gait != Gait::Sprinting) {
+      float z_weight = std::abs(frame.localMoveDir.z);
+      float x_weight = std::abs(frame.localMoveDir.x);
+      
+      float z_dir = frame.localMoveDir.z;
+      float x_dir = frame.localMoveDir.x;
+      
+      PlayerAnimState current = anim.activeState();
+      if (current == PlayerAnimState::StrafeForward) {
+          z_weight += 0.35f; z_dir += 0.35f;
+      } else if (current == PlayerAnimState::StrafeBack) {
+          z_weight += 0.35f; z_dir -= 0.35f;
+      } else if (current == PlayerAnimState::StrafeLeft) {
+          x_weight += 0.35f; x_dir += 0.35f;
+      } else if (current == PlayerAnimState::StrafeRight) {
+          x_weight += 0.35f; x_dir -= 0.35f;
+      }
+      
+      if (z_weight >= x_weight) {
+        cycle = z_dir > 0.0f ? PlayerAnimState::StrafeForward : PlayerAnimState::StrafeBack;
+      } else {
+        cycle = x_dir > 0.0f ? PlayerAnimState::StrafeLeft : PlayerAnimState::StrafeRight;
+      }
+    }
+
     if (anim.clipFor(cycle) < 0)
       cycle = (cycle == PlayerAnimState::Run) ? PlayerAnimState::Walk
                                               : PlayerAnimState::Run;

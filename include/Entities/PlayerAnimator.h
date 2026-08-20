@@ -24,6 +24,11 @@ enum class PlayerAnimState {
   Walk,
   Run,
 
+  StrafeForward,
+  StrafeBack,
+  StrafeLeft,
+  StrafeRight,
+
   /// The two halves of being airborne. Jump is the launch and the rise; Fall
   /// takes over past the apex, and is also what a step off a ledge shows
   /// straight away since it never rises at all.
@@ -99,6 +104,9 @@ public:
     /// decisions that have to be kept in agreement.
     Gait gait = Gait::Walking;
     float speedScale = 1.0f;
+
+    bool lockedOn = false;
+    Vector3 localMoveDir = {0.0f, 0.0f, 0.0f};
   };
 
   /// What the frame's animation implies for movement. The track is never null;

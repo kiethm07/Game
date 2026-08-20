@@ -8,6 +8,7 @@
 #include <AI/NavMeshQuery.h>
 #include <Stealth/CombatSenseSensor.h>
 #include <GameManager/SmokeCloud.h>
+#include <Rendering/BoneSocketHelper.h>
 
 namespace {
 /// Walk.glb carries a single clip, whose name is the armature's rather than
@@ -25,8 +26,13 @@ Swordman::Swordman(Vector3 start_position) : Enemy(start_position) {
   stealth_component.addSensor(std::make_shared<ProximitySensor>(1.2f));
   stealth_component.addSensor(std::make_shared<CombatSenseSensor>(10.0f));
   
+  sword_trail.setColors({255, 230, 200, 240}, {255, 70, 40, 200});
+
   spawn_position = start_position;
   spawn_yaw = 0.0f; // Could be randomized or passed in
+  
+  // Stagger initial waiting time so they don't all attack at the exact same moment
+  attack_cooldown_timer = (getId() % 4) * 0.8f + ((rand() % 100) / 100.0f);
   
   setupBehaviorTree();
 }
@@ -36,6 +42,7 @@ void Swordman::update(const UpdateContext &ctx) {
   current_ctx = &ctx;
 
   stats.update(dt);
+  sword_trail.update(dt);
 
   if (ctx.assets)
     animator.resolveClips(*ctx.assets);
@@ -44,6 +51,7 @@ void Swordman::update(const UpdateContext &ctx) {
   if (!dead) {
     if (combat_component.getCurrentState() == CombatState::BeingExecuted) {
         setHorizontalVelocity({0.0f, 0.0f, 0.0f});
+        sword_trail.clear();
     } else {
         bool in_smoke = false;
         if (ctx.smoke_clouds) {
@@ -59,6 +67,7 @@ void Swordman::update(const UpdateContext &ctx) {
         if (in_smoke) {
             stealth_component.blind();
             combat_component.interrupt();
+            sword_trail.clear();
             setHorizontalVelocity({0.0f, 0.0f, 0.0f});
             if (!animator.isFlinching()) {
                 animator.queueReaction(false);
@@ -70,6 +79,7 @@ void Swordman::update(const UpdateContext &ctx) {
         combat_component.update(dt);
         
         if (combat_component.getCurrentState() == CombatState::PostureBroken) {
+            sword_trail.clear();
             if (!animator.isFlinching()) {
                 animator.queueReaction(false);
             }
@@ -101,12 +111,39 @@ void Swordman::update(const UpdateContext &ctx) {
   // the travel exactly.
   const Vector3 velocity = getHorizontalVelocity();
   frame.moving = (velocity.x != 0.0f || velocity.z != 0.0f);
+  frame.speed = Vector3Length(velocity);
   frame.dead = dead;
 
+  updateStrafing(velocity, in_direct_combat);
+  frame.strafing = isStrafing();
+  frame.localMoveDir = getLocalMoveDir();
+
   animator.update(frame, dt);
+
+  if (combat_component.getCurrentState() == CombatState::AttackActive && ctx.assets != nullptr) {
+    const AttackData *attack = combat_component.getActiveAttack();
+    if (attack != nullptr && attack->hasTrail()) {
+      Vector3 world_base = {0.0f, 0.0f, 0.0f};
+      Vector3 world_tip = {0.0f, 0.0f, 0.0f};
+      CharacterRenderData render_data = getRenderData();
+
+      bool sampled = BoneSocketHelper::sampleSwordPoints(
+          *const_cast<AssetManager *>(ctx.assets),
+          render_data,
+          world_base,
+          world_tip,
+          attack->getBladeVector(),
+          attack->getHiltVector());
+
+      if (sampled) {
+        sword_trail.addSegment(world_base, world_tip, attack->getTrailDuration());
+      }
+    }
+  }
 }
 
 void Swordman::onDamaged(bool blocked, bool parried) {
+  sword_trail.clear();
   if (parried) {
     attack_cooldown_timer = std::max(attack_cooldown_timer, 0.8f);
     move_cooldown_timer = std::max(move_cooldown_timer, 0.5f);
@@ -131,7 +168,7 @@ void Swordman::setupBehaviorTree() {
     Vector3 dir = Vector3Subtract(target, position);
     float dist = Vector2Distance({position.x, position.z}, {target.x, target.z});
     
-    if (dist < 0.15f) {
+    if (dist < 0.5f) {
       current_path.erase(current_path.begin());
       if (current_path.empty()) {
         this->setHorizontalVelocity({0, 0, 0});
@@ -142,7 +179,8 @@ void Swordman::setupBehaviorTree() {
     }
     
     Vector3 normalized_dir = Vector3Normalize({dir.x, 0.0f, dir.z});
-    this->setHorizontalVelocity({normalized_dir.x * speed, 0.0f, normalized_dir.z * speed});
+    Vector3 target_vel = {normalized_dir.x * speed, 0.0f, normalized_dir.z * speed};
+    this->setHorizontalVelocity(target_vel);
     
     float target_yaw = std::atan2(normalized_dir.x, normalized_dir.z) * RAD2DEG;
     float angle_diff = target_yaw - rotation.y;
@@ -226,13 +264,15 @@ void Swordman::setupBehaviorTree() {
       
       // Allow smooth tracking during the wind-up/startup phase of an attack, or while in move cooldown
       if (combat_component.getCurrentState() == CombatState::AttackStartup || move_cooldown_timer > 0.0f) {
-          Vector3 target_pos = stealth_component.getLastKnownPlayerPos();
-          Vector3 to_player = Vector3Subtract(target_pos, position);
-          float target_yaw = std::atan2(to_player.x, to_player.z) * RAD2DEG;
-          float angle_diff = target_yaw - rotation.y;
-          while (angle_diff < -180.0f) angle_diff += 360.0f;
-          while (angle_diff > 180.0f) angle_diff -= 360.0f;
-          rotation.y += angle_diff * (15.0f * current_ctx->dt);
+        Vector3 target_pos = stealth_component.getLastKnownPlayerPos();
+        Vector3 to_player = Vector3Subtract(target_pos, position);
+        float target_yaw = std::atan2(to_player.x, to_player.z) * RAD2DEG;
+        float angle_diff = target_yaw - rotation.y;
+        while (angle_diff < -180.0f) angle_diff += 360.0f;
+        while (angle_diff > 180.0f) angle_diff -= 360.0f;
+        rotation.y += angle_diff * (15.0f * current_ctx->dt);
+        while (rotation.y < 0.0f) rotation.y += 360.0f;
+        while (rotation.y >= 360.0f) rotation.y -= 360.0f;
       }
       
       return NodeState::RUNNING; // Currently attacking or staggered
@@ -249,88 +289,60 @@ void Swordman::setupBehaviorTree() {
     if (distance < 1.8f && attack_cooldown_timer <= 0.0f) {
       this->setHorizontalVelocity({0, 0, 0});
       
-      // We removed the instant snap here! 
-      // It will now smoothly track the player during the AttackStartup phase (handled above)
-      
       combat_component.initiateCombo(combo);
       
-      // Randomize cooldown and preferred distance for the next cycle
-      attack_cooldown_timer = 1.5f + (rand() % 150) / 100.0f; // 1.5s to 3.0s
-      float base_dist = 3.0f + (rand() % 200) / 100.0f; // 3.0m to 5.0m
+      // Randomize cooldown completely for each turn (1.5s to 3.5s)
+      attack_cooldown_timer = 1.5f + (rand() % 200) / 100.0f;
+      float base_dist = 3.0f + (rand() % 150) / 100.0f; // 3.0m to 4.5m
       preferred_distance_min = base_dist;
-      preferred_distance_max = base_dist + 0.5f;
+      preferred_distance_max = base_dist + 1.0f;
       
       return NodeState::SUCCESS;
     }
     
     // 2. If close and on similar elevation, don't use NavMesh (prevents jitter), use direct movement
-    if (distance < 5.0f && std::abs(position.y - target_pos.y) < 1.0f) {
-      Vector3 move_dir = {0, 0, 0};
-      float current_speed = MOVEMENT_SPEED * 0.8f;
-      
+    // Threshold must be larger than preferred_distance_max (which can be up to 8.0m) to prevent boundary vibration
+    // Vertical threshold increased to 3.0f to allow smooth direct combat on ramps without flip-flopping to NavMesh
+    bool has_nav_los = false;
+    if (current_ctx->nav_query != nullptr) {
+      has_nav_los = current_ctx->nav_query->raycast(position, target_pos);
+    }
+    
+    // Only use direct movement if there are NO gaps or walls between enemy and player
+    if (distance < 10.0f && std::abs(position.y - target_pos.y) < 3.0f && has_nav_los) {
       if (attack_cooldown_timer > 0.0f) {
-        // Randomize strafe direction occasionally
-        if (circle_timer <= 0.0f) {
-            circle_direction = (rand() % 2 == 0) ? -1.0f : 1.0f;
-            circle_timer = (rand() % 200 + 200) / 100.0f; // 2.0s to 4.0s
-        }
-        
-        // Calculate tangent vector (perpendicular to player direction)
-        Vector3 tangent = {-to_player_norm.z, 0.0f, to_player_norm.x};
-        Vector3 strafe_dir = Vector3Scale(tangent, circle_direction);
+        updateCombatCircling(*current_ctx, target_pos, MOVEMENT_SPEED * 0.8f);
+      } else {
+        // Attack is ready: move directly towards player to get into attack reach
+        in_direct_combat = true;
+        Vector3 move_dir = to_player_norm;
+        Vector3 target_vel = {move_dir.x * MOVEMENT_SPEED, 0.0f, move_dir.z * MOVEMENT_SPEED};
+        float lerp_alpha = 1.0f - std::exp(-15.0f * current_ctx->dt);
+        Vector3 old_vel = this->getHorizontalVelocity();
+        Vector3 smoothed_vel = Vector3Lerp(old_vel, target_vel, lerp_alpha);
+        this->setHorizontalVelocity(smoothed_vel);
 
-        // On Cooldown: Maintain a randomized preferred distance while circling
-        if (distance < preferred_distance_min) {
-            // Too close, back away aggressively while strafing
-            Vector3 back_dir = Vector3Scale(to_player_norm, -1.0f);
-            move_dir = Vector3Normalize(Vector3Add(back_dir, Vector3Scale(strafe_dir, 0.5f)));
-            current_speed = MOVEMENT_SPEED * 1.2f; 
-        } else if (distance > preferred_distance_max) {
-            // Too far, close in slightly while strafing
-            move_dir = Vector3Normalize(Vector3Add(to_player_norm, Vector3Scale(strafe_dir, 0.5f)));
-            current_speed = MOVEMENT_SPEED * 0.8f;
-        } else {
-            // Sweet spot, purely circle the player
-            move_dir = strafe_dir;
-            current_speed = MOVEMENT_SPEED * 0.7f;
-        }
-      } else {
-        // Attack is ready but out of reach: move directly towards player
-        move_dir = to_player_norm;
-        current_speed = MOVEMENT_SPEED; // Full speed when going in for the kill
+        float target_yaw = std::atan2(to_player_norm.x, to_player_norm.z) * RAD2DEG;
+        float angle_diff = target_yaw - rotation.y;
+        while (angle_diff < -180.0f) angle_diff += 360.0f;
+        while (angle_diff > 180.0f) angle_diff -= 360.0f;
+        float rot_alpha = 1.0f - std::exp(-18.0f * current_ctx->dt);
+        rotation.y += angle_diff * rot_alpha;
+        while (rotation.y < 0.0f) rotation.y += 360.0f;
+        while (rotation.y >= 360.0f) rotation.y -= 360.0f;
       }
-      
-      Vector3 current_velocity = {move_dir.x * current_speed, 0.0f, move_dir.z * current_speed};
-      
-      // Constrain direct movement to the NavMesh to prevent falling off cliffs
-      if (current_ctx->nav_query) {
-          Vector3 intended_pos = Vector3Add(position, Vector3Scale(current_velocity, current_ctx->dt));
-          Vector3 constrained_pos = current_ctx->nav_query->getConstrainedPosition(position, intended_pos);
-          Vector3 constrained_vel = Vector3Scale(Vector3Subtract(constrained_pos, position), 1.0f / current_ctx->dt);
-          this->setHorizontalVelocity(constrained_vel);
-      } else {
-          this->setHorizontalVelocity(current_velocity);
-      }
-      
-      // ALWAYS keep eye contact with the player during close combat
-      float target_yaw = std::atan2(to_player_norm.x, to_player_norm.z) * RAD2DEG;
-      float angle_diff = target_yaw - rotation.y;
-      while (angle_diff < -180.0f) angle_diff += 360.0f;
-      while (angle_diff > 180.0f) angle_diff -= 360.0f;
-      rotation.y += angle_diff * (10.0f * current_ctx->dt);
-      
       return NodeState::RUNNING;
     }
+    
+    in_direct_combat = false;
     
     // 3. If far, use NavMesh to chase
     path_recalc_timer -= current_ctx->dt;
     if (path_recalc_timer <= 0.0f) {
       if (current_ctx->nav_query) {
-          // Add a small deterministic offset based on enemy ID to prevent them from all aligning in a single straight line
-          Vector3 target_pos = stealth_component.getLastKnownPlayerPos();
-          Vector3 offset = { std::sin(getId() * 1.5f) * 1.5f, 0.0f, std::cos(getId() * 1.5f) * 1.5f };
-          current_path = current_ctx->nav_query->findPath(position, Vector3Add(target_pos, offset));
-          truncatePathBySmoke(current_path);
+        Vector3 target_pos = stealth_component.getLastKnownPlayerPos();
+        current_path = current_ctx->nav_query->findPath(position, target_pos);
+        truncatePathBySmoke(current_path);
       }
       path_recalc_timer = 0.25f;
     }

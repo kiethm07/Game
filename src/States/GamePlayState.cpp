@@ -141,9 +141,6 @@ StateAction GameplayState::update(float dt) {
   // 1. Tick entities through the shared polymorphic update path. Each reads
   // input/AI internally and shifts its own position safely.
   Vector3 player_pos = player->getPosition();
-  const UpdateContext ctx{dt, camera_controller->getCameraForward(),
-                          camera_controller->getCameraRight(), player_pos,
-                          &asset_manager, &nav_query, &level.obstacles, &smoke_clouds};
 
   std::vector<Character *> active_characters;
   active_characters.reserve(1 + enemies.size());
@@ -153,6 +150,11 @@ StateAction GameplayState::update(float dt) {
     if (enemy->isModelUnloaded()) continue;
     active_characters.push_back(enemy.get());
   }
+
+  const UpdateContext ctx{dt, camera_controller->getCameraForward(),
+                          camera_controller->getCameraRight(), player_pos,
+                          &asset_manager, &nav_query, &level.obstacles,
+                          &smoke_clouds, locked_target, &active_characters};
 
   // 1.5. Evaluate Stealth before AI update so AI can react in the same frame
   stealth_manager.update(active_characters, player.get(), level.obstacles,
@@ -613,6 +615,13 @@ void GameplayState::draw() {
 
   // Level mesh, obstacles and entities, drawn into the 3D scope opened above.
   renderer->renderGameplay(*camera_controller, level.obstacles, renderList);
+
+  // Draw Sword Slash Trails
+  player->drawTrail();
+  for (const auto &enemy : enemies) {
+    if (enemy->isModelUnloaded()) continue;
+    enemy->drawTrail();
+  }
 
   particle_manager.draw();
 
