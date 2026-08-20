@@ -20,6 +20,8 @@ enum class DamageResult {
     PARRIED
 };
 
+class Character;
+
 /// Everything an entity needs to advance one tick. Passed through the virtual
 /// update() so subclasses share a single polymorphic entry point.
 struct UpdateContext {
@@ -41,6 +43,12 @@ struct UpdateContext {
   
   /// Read-only access to current active smoke clouds.
   const std::vector<SmokeCloud> *smoke_clouds = nullptr;
+
+  /// The character the player is currently locked onto, if any.
+  Character *lockedTarget = nullptr;
+
+  /// Read-only access to all active characters for separation steering.
+  const std::vector<Character*> *activeCharacters = nullptr;
 };
 
 class Character {
@@ -51,6 +59,7 @@ public:
   virtual void update(const UpdateContext &ctx) = 0;
   virtual CharacterRenderData getRenderData() const = 0;
   virtual void draw() const;
+  virtual void drawTrail() const {}
 
   Vector3 getPosition() const { return position; }
 

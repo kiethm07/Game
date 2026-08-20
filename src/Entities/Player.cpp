@@ -6,6 +6,7 @@
 #include <CombatData/AttackRegistry.h>
 #include <Entities/Items/HealingGourd.h>
 #include <Entities/Items/SmokeBomb.h>
+#include <Rendering/BoneSocketHelper.h>
 
 Player::Player(const InputManager &input_manager)
     : Character(Faction::Player), input_manager(input_manager) {
@@ -14,6 +15,8 @@ Player::Player(const InputManager &input_manager)
   execution_combo = {AttackID::PlayerExecution};
   position = {0, 0, 0};
   rotation = {0, 180.0f, 0};
+
+  sword_trail.setColors({255, 255, 255, 240}, {100, 210, 255, 200});
 
   inventory.push_back(std::make_unique<HealingGourd>());
   inventory.push_back(std::make_unique<SmokeBomb>());
@@ -27,6 +30,7 @@ void Player::update(const UpdateContext &ctx) {
 
   combat_component.update(dt);
   stats.update(dt);
+  sword_trail.update(dt);
 
   // Before the inputs, which are what take the character off the ground: a jump
   // pressed this frame must not be mistaken for a landing on it, and must not
@@ -36,8 +40,10 @@ void Player::update(const UpdateContext &ctx) {
   // the player off a ledge would otherwise keep a live hitbox through a landing
   // they no longer control.
   if (locomotion.update(dt, isGrounded(), getVerticalVelocity(),
-                        animator.landPlayDuration(ctx.assets)))
+                        animator.landPlayDuration(ctx.assets))) {
     combat_component.interrupt();
+    sword_trail.clear();
+  }
 
   animator.updateFlinch(dt, ctx.assets);
 
@@ -90,7 +96,7 @@ void Player::update(const UpdateContext &ctx) {
   if (move_gate.canMove)
     updateLocomotionVelocity(
         ctx, calculateCameraRelativeDirection(ctx.camForward, ctx.camRight),
-        move_gate.moveSpeedScale);
+        move_gate.moveSpeedScale, move_gate.gait);
 
   const Vector3 velocity = getHorizontalVelocity();
 
@@ -106,6 +112,20 @@ void Player::update(const UpdateContext &ctx) {
   frame.stance = locomotion.getStance();
   frame.gait = move_gate.gait;
   frame.speedScale = move_gate.moveSpeedScale;
+  frame.lockedOn = (ctx.lockedTarget != nullptr && move_gate.gait != Gait::Sprinting);
+  
+  if (frame.lockedOn && move_gate.canMove) {
+    // Determine local move direction for strafing
+    Vector3 worldDir = calculateCameraRelativeDirection(ctx.camForward, ctx.camRight);
+    float yawRad = rotation.y * DEG2RAD;
+    float sinYaw = std::sin(yawRad);
+    float cosYaw = std::cos(yawRad);
+    // +Z is forward, +X is left in this engine's animation local space
+    frame.localMoveDir.z = worldDir.x * sinYaw + worldDir.z * cosYaw;
+    frame.localMoveDir.x = worldDir.x * cosYaw - worldDir.z * sinYaw;
+  } else {
+    frame.localMoveDir = {0.0f, 0.0f, 0.0f};
+  }
 
   const PlayerAnimator::Result anim = animator.update(frame, dt);
 
@@ -116,6 +136,27 @@ void Player::update(const UpdateContext &ctx) {
       // No authored travel for this state: pin in place. Physics still applies
       // gravity and collisions this frame.
       setHorizontalVelocity({0.0f, 0.0f, 0.0f});
+    }
+  }
+
+  if (combat_component.getCurrentState() == CombatState::AttackActive && ctx.assets != nullptr) {
+    const AttackData *attack = combat_component.getActiveAttack();
+    if (attack != nullptr && attack->hasTrail()) {
+      Vector3 world_base = {0.0f, 0.0f, 0.0f};
+      Vector3 world_tip = {0.0f, 0.0f, 0.0f};
+      CharacterRenderData render_data = getRenderData();
+
+      bool sampled = BoneSocketHelper::sampleSwordPoints(
+          *const_cast<AssetManager *>(ctx.assets),
+          render_data,
+          world_base,
+          world_tip,
+          attack->getBladeVector(),
+          attack->getHiltVector());
+
+      if (sampled) {
+        sword_trail.addSegment(world_base, world_tip, attack->getTrailDuration());
+      }
     }
   }
 }
@@ -135,14 +176,41 @@ bool Player::isExecuting() const {
 }
 
 void Player::updateLocomotionVelocity(const UpdateContext &ctx,
-                                      Vector3 moveDirection, float speedScale) {
+                                      Vector3 moveDirection, float speedScale, Gait gait) {
   const float dt = ctx.dt;
 
   // Produce desired velocity + ease facing; PhysicsManager integrates position.
   // The gate's scale is applied to the resolved velocity rather than to the
   // component's speed, which is bound to the run clip's authored speed and set
   // once at clip resolution — writing it per frame would fight that.
-  Vector3 velocity = movement_component.resolve(moveDirection, rotation.y, dt);
+  
+  Vector3 velocity = {0.0f, 0.0f, 0.0f};
+  if (ctx.lockedTarget && gait != Gait::Sprinting) {
+    // If locked on, always face the target
+    Vector3 to_target = Vector3Subtract(ctx.lockedTarget->getPosition(), position);
+    to_target.y = 0.0f;
+    if (Vector3LengthSqr(to_target) > 0.001f) {
+      to_target = Vector3Normalize(to_target);
+      float target_yaw = std::atan2(to_target.x, to_target.z) * RAD2DEG;
+      
+      // Shortest angular distance
+      float angle_diff = target_yaw - rotation.y;
+      while (angle_diff < -180.0f) angle_diff += 360.0f;
+      while (angle_diff > 180.0f) angle_diff -= 360.0f;
+      
+      float alpha = 10.0f * dt; // Same as ROTATION_SPEED in MovementComponent
+      if (alpha > 1.0f) alpha = 1.0f;
+      rotation.y += angle_diff * alpha;
+      
+      while (rotation.y < 0.0f) rotation.y += 360.0f;
+      while (rotation.y >= 360.0f) rotation.y -= 360.0f;
+    }
+    // Set velocity without altering facing again
+    velocity = {moveDirection.x * movement_component.getSpeed(), 0.0f, moveDirection.z * movement_component.getSpeed()};
+  } else {
+    velocity = movement_component.resolve(moveDirection, rotation.y, dt);
+  }
+  
   velocity = Vector3Scale(velocity, speedScale);
 
   const bool airborne = !isGrounded();
@@ -329,6 +397,7 @@ DamageResult Player::takeDamage(float health_damage, float posture_damage,
   if (hit_applied) {
     // Cancel item usage on flinch
     cancelItemUse();
+    sword_trail.clear();
 
     // Queued, not played here: this runs from CombatManager's pass, and the
     // reaction needs a frame's assets to find the clip's length. Gated on the
@@ -439,8 +508,7 @@ void Player::handleCombatAndUtilityInputs(const UpdateContext &ctx,
       locomotion.setStance(Stance::Crouching);
     }
   }
-  if (input_manager.isActionPressed(GameAction::LockOn)) {
-  }
+  // LockOn is handled globally in GameplayState
 }
 
 CharacterRenderData Player::getRenderData() const {

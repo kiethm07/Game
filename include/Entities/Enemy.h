@@ -5,6 +5,7 @@
 #include <Components/CombatComponent.h>
 #include <Core/InputManager.h>
 #include <Entities/Character.h>
+#include <Rendering/SwordTrail.h>
 #include <raylib.h>
 
 class Enemy : public Character {
@@ -15,6 +16,7 @@ public:
   virtual void update(const UpdateContext &ctx) override = 0;
   virtual CharacterRenderData getRenderData() const override = 0;
   void drawHPBar(const Camera3D &camera) const;
+  void drawTrail() const override { sword_trail.draw(); }
 
   bool isBeingExecuted() const override {
     return combat_component.getCurrentState() == CombatState::BeingExecuted;
@@ -46,6 +48,9 @@ public:
   int getDecayType() const { return static_cast<int>(decay_type); }
   void setDecayType(DecayType type) { decay_type = type; }
 
+  bool isStrafing() const { return is_strafing; }
+  Vector3 getLocalMoveDir() const { return localMoveDir; }
+
 protected:
   /// Called once per hit that actually landed, with whether the guard caught
   /// it. The hook exists so a subclass can react — a flinch is the whole of it
@@ -53,11 +58,24 @@ protected:
   /// posture-break rules, which are the same for every enemy.
   virtual void onDamaged(bool /*blocked*/, bool /*parried*/) {}
 
+  void updateStrafing(const Vector3& velocity, bool enable_strafing = true);
+  void updateCombatCircling(const UpdateContext& ctx, Vector3 target_pos, float move_speed, float rot_speed = 18.0f);
+
+  float circle_direction = 1.0f;
+  float circle_timer = 0.0f;
+  float preferred_distance_min = 3.0f;
+  float preferred_distance_max = 4.0f;
+  bool in_direct_combat = false;
+
   CombatComponent combat_component;
   AIComponent ai_component;
   StealthComponent stealth_component;
+  SwordTrail sword_trail;
   int moveState = 0;
   bool dropped_loot = false;
+  
+  bool is_strafing = false;
+  Vector3 localMoveDir = {0.0f, 0.0f, 0.0f};
   
   bool killed_by_stealth = false;
   float dissolve_timer = 0.0f;

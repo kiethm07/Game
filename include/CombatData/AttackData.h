@@ -83,6 +83,18 @@ public:
     const std::vector<HitBoxDefinition>& getHitBoxDefs() const { return hitbox_defs; }
     void addHitBoxDef(const HitBoxDefinition& def) { hitbox_defs.push_back(def); }
 
+    bool hasTrail() const { return has_trail; }
+    float getTrailDuration() const { return trail_duration; }
+    Vector3 getBladeVector() const { return blade_vector; }
+    Vector3 getHiltVector() const { return hilt_vector; }
+
+    void setTrail(bool enable, float duration = 0.20f, Vector3 blade = {0.0f, 1.2f, 0.0f}, Vector3 hilt = {0.0f, 0.1f, 0.0f}) {
+        has_trail = enable;
+        trail_duration = duration;
+        blade_vector = blade;
+        hilt_vector = hilt;
+    }
+
 private:
     std::vector<HitBoxDefinition> hitbox_defs;
 
@@ -95,4 +107,9 @@ private:
 
     const char* clip_name = nullptr;
     bool use_root_motion = false;
+
+    bool has_trail = false;
+    float trail_duration = 0.20f;
+    Vector3 blade_vector = {0.0f, 1.2f, 0.0f};
+    Vector3 hilt_vector = {0.0f, 0.1f, 0.0f};
 };

@@ -7,8 +7,11 @@ const SwordmanAnimator::Machine::Desc *SwordmanAnimator::descTable() {
       //                clip          loop   rate   root   fadeIn
       /* Idle        */ {"Idle", true, 1.0f, false, 0.15f},
       // Rate overridden per frame once something moves an enemy, the same way
-      // the player's run is; the 1.0 here is the clip's authored pace.
       /* Walk        */ {"Walk", true, 1.0f, false, 0.15f},
+      /* StrafeFwd   */ {"Walk", true, 1.0f, false, 0.15f},
+      /* StrafeBack  */ {"Walk_2", true, 1.0f, false, 0.15f},
+      /* StrafeLeft  */ {"Strafe_2", true, 1.0f, false, 0.15f},
+      /* StrafeRight */ {"Strafe", true, 1.0f, false, 0.15f},
       /* GuardImpact */ {"Impact", false, 1.0f, false, 0.05f},
       /* HitReact    */ {"Impact_2", false, 1.0f, false, 0.05f},
       // Fallback swing, used when an attack names no clip or names one the
@@ -41,8 +44,11 @@ bool SwordmanAnimator::resolveClips(const AssetManager &assets) {
 }
 
 void SwordmanAnimator::queueReaction(bool blocked) {
-  queued_reaction =
-      blocked ? SwordmanAnimState::GuardImpact : SwordmanAnimState::HitReact;
+  if (blocked) {
+    queued_reaction = SwordmanAnimState::GuardImpact;
+  } else {
+    queued_reaction = SwordmanAnimState::HitReact;
+  }
 }
 
 void SwordmanAnimator::updateFlinch(float dt, const AssetManager *assets) {
@@ -120,8 +126,50 @@ SwordmanAnimator::resolve(const Frame &frame) const {
   if (combat.isGuarding() && anim.clipFor(SwordmanAnimState::Parry) >= 0)
     return anim.select(SwordmanAnimState::Parry, combat.getActionId());
 
-  if (frame.moving && anim.clipFor(SwordmanAnimState::Walk) >= 0)
-    return anim.select(SwordmanAnimState::Walk);
+  if (frame.moving) {
+    SwordmanAnimState cycle = SwordmanAnimState::Walk;
+    if (frame.strafing) {
+      float z_weight = std::abs(frame.localMoveDir.z);
+      float x_weight = std::abs(frame.localMoveDir.x);
+
+      SwordmanAnimState current = anim.activeState();
+      // Hysteresis: only add bias to the axis comparison, never distorting direction signs
+      if (current == SwordmanAnimState::StrafeForward || current == SwordmanAnimState::StrafeBack) {
+        z_weight += 0.35f;
+      } else if (current == SwordmanAnimState::StrafeLeft || current == SwordmanAnimState::StrafeRight) {
+        x_weight += 0.35f;
+      }
+
+      if (z_weight >= x_weight) {
+        if (frame.localMoveDir.z >= 0.0f) {
+          cycle = SwordmanAnimState::StrafeForward;
+        } else {
+          cycle = SwordmanAnimState::StrafeBack;
+        }
+      } else {
+        if (frame.localMoveDir.x >= 0.0f) {
+          cycle = SwordmanAnimState::StrafeLeft;
+        } else {
+          cycle = SwordmanAnimState::StrafeRight;
+        }
+      }
+    }
+
+    if (anim.clipFor(cycle) < 0) {
+      cycle = SwordmanAnimState::Walk;
+    }
+
+    if (anim.clipFor(cycle) >= 0) {
+      Machine::Selection selection = anim.select(cycle);
+      if (frame.assets != nullptr && frame.speed > 0.0f) {
+        const RootMotion::Track& track = anim.track(*frame.assets, cycle);
+        if (track.hasMotion && track.authoredSpeed > 0.0f) {
+          selection.rate = frame.speed / track.authoredSpeed;
+        }
+      }
+      return selection;
+    }
+  }
 
   return anim.select(SwordmanAnimState::Idle);
 }
