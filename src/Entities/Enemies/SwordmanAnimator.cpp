@@ -26,8 +26,8 @@ const SwordmanAnimator::Machine::Desc *SwordmanAnimator::descTable() {
   return table;
 }
 
-SwordmanAnimator::SwordmanAnimator()
-    : anim(AssetID::ENEMY_ASHIGARU, descTable()) {}
+SwordmanAnimator::SwordmanAnimator(AssetID asset)
+    : asset_id(asset), anim(asset, descTable()) {}
 
 bool SwordmanAnimator::resolveClips(const AssetManager &assets) {
   if (!anim.resolveClips(assets))
@@ -108,7 +108,7 @@ SwordmanAnimator::resolve(const Frame &frame) const {
     // position, so claiming the clip drives movement would only leave the mesh
     // sliding off its capsule.
     if (attack->getClipName() && frame.assets) {
-      const int named = frame.assets->findAnimation(AssetID::ENEMY_ASHIGARU,
+      const int named = frame.assets->findAnimation(asset_id,
                                                     attack->getClipName());
       if (named >= 0)
         selection.clip = named;

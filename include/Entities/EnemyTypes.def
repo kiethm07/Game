@@ -1,0 +1,17 @@
+// The enemy-type table. One row per type, and the only place a type is named.
+//
+// Not a header: it has no include guard and is meant to be included more than
+// once, each time with ENEMY_TYPE defined to mean something different. The enum
+// and the name table in EnemyTypes.h are both generated from these rows, and
+// tools/enemy_types.py parses them for the Python side -- so the three lists
+// that LevelLoader.cpp and export_level.py used to warn about keeping in step
+// are now one list that cannot drift.
+//
+// One column, not two. A separate identifier and JSON string would let the two
+// be renamed independently, which is the drift being removed; #Name gives the
+// string for free.
+//
+// Adding a type is one row here. EnemyFactory's switch then warns about the
+// missing case at the point you build, which is the intended and only
+// remaining cost.
+ENEMY_TYPE(Swordman)

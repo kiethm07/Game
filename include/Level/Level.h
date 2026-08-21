@@ -1,23 +1,10 @@
 #pragma once
 
 #include <Components/PhysicsObstacle.h>
-#include <Entities/EnemyFactory.h>
+#include <Level/EnemySpawn.h>
 #include <raylib.h>
 #include <string>
 #include <vector>
-
-/// Where something starts the level, and which way it is facing.
-struct SpawnPoint {
-    Vector3 position{0.0f, 0.0f, 0.0f};
-
-    /// Degrees about Y, same convention as PhysicsObstacle's yaw.
-    float yaw = 0.0f;
-};
-
-struct EnemySpawn {
-    EnemyType type = EnemyType::Swordman;
-    SpawnPoint at{};
-};
 
 /// One map, as authored in Blender and exported by tools/export_level.py.
 ///
@@ -63,6 +50,19 @@ struct Level {
 
     SpawnPoint playerSpawn{};
     std::vector<EnemySpawn> enemySpawns;
+
+    /// True when assets/levels/<dir>/enemies.json supplied `enemySpawns` and
+    /// the Blender markers in level.json were ignored.
+    bool enemiesFromOverlay = false;
+
+    /// Non-empty when an enemies.json was present but could not be used at all.
+    ///
+    /// The level is still `valid` — the all-or-nothing rule that governs
+    /// collision does not govern this, because a missing wall is undetectable
+    /// while a missing enemy is something the author is standing there looking
+    /// for. It ships no enemies at all, and GameplayState puts this text on
+    /// screen so "loud" means something in a windowed game.
+    std::string enemyOverlayError;
 
     /// World extent of the level, covering visual geometry as well as
     /// collision. Drives the shadow map's far cascade, which is why it has to

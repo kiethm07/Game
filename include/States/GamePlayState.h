@@ -84,6 +84,15 @@ private:
   /// The money and item charges this phase would hand to the next one.
   /// Read off the live Player, so only meaningful while one exists.
   PhaseCarry snapshotCarry() const;
+
+  /// The F4 readout: a paste-ready enemies.json line, shown for a few seconds.
+  /// Latched rather than drawn while a key is held, because the whole point is
+  /// to press it and then go and read it somewhere else.
+  std::string spawn_line;
+  float spawn_line_timer = 0.0f;
+
+  /// Which type F4 writes into that line. SHIFT+F4 cycles it.
+  EnemyType debug_spawn_type = EnemyType::Swordman;
   
   float takedown_text_timer = 0.0f;
   std::string takedown_type_str = "";

@@ -1,0 +1,41 @@
+{
+  "format": 1,
+  "spawns": [
+    {
+      "type": "Swordman",
+      "x": 139.5,
+      "z": -7.5,
+      "yaw": 27.3
+    },
+    {
+      "type": "Swordman",
+      "x": 139.5,
+      "z": 10.5,
+      "yaw": 154.2
+    },
+    {
+      "type": "Swordman",
+      "x": 82.5,
+      "z": -7.5,
+      "yaw": 81.9
+    },
+    {
+      "type": "Swordman",
+      "x": 79.5,
+      "z": 10.5,
+      "yaw": 98.2
+    },
+    {
+      "type": "Swordman",
+      "x": -42.6,
+      "z": -45.0,
+      "yaw": 76.1
+    },
+    {
+      "type": "Swordman",
+      "x": -96.6,
+      "z": -72.0,
+      "yaw": 73.1
+    }
+  ]
+}

@@ -4,9 +4,149 @@
 #include <raymath.h>
 #include <rlgl.h>
 
-Enemy::Enemy(Vector3 start_position, Faction faction) : Character(faction) {
-  position = start_position;
-  rotation = {0.0f, 0.0f, 0.0f};
+Enemy::Enemy(const EnemySpawn &spawn, Faction faction) : Character(faction) {
+  position = spawn.at.position;
+  // Live rotation and the post it returns to, from one field. Setting these in
+  // two places is what let an authored facing survive spawn and then be lost
+  // on the first de-aggro.
+  rotation = {0.0f, spawn.at.yaw, 0.0f};
+  spawn_position = spawn.at.position;
+  spawn_yaw = spawn.at.yaw;
+
+  // Applied before any subclass adds its sensors, which is safe: forceAwareness
+  // touches only the awareness level and the derived state, and no sensor reads
+  // either of them.
+  if (spawn.overrides.startAwareness) {
+    stealth_component.forceAwareness(*spawn.overrides.startAwareness);
+  }
+}
+
+
+// Hoisted out of Swordman, where they were `this`-capturing lambdas inside
+// setupBehaviorTree(). Nothing in either is swordman-shaped -- they are pure
+// path geometry -- and between them they were the largest block a second enemy
+// type would have had to copy. truncatePathBySmoke in particular carries a
+// non-obvious unsigned-underflow fix that is not worth anyone re-deriving.
+
+bool Enemy::moveAlongPath(float speed) {
+  if (current_path.empty()) {
+    this->setHorizontalVelocity({0, 0, 0});
+    return true;
+  }
+  
+  Vector3 target = current_path.front();
+  Vector3 dir = Vector3Subtract(target, position);
+  float dist = Vector2Distance({position.x, position.z}, {target.x, target.z});
+  
+  if (dist < 0.5f) {
+    current_path.erase(current_path.begin());
+    if (current_path.empty()) {
+      this->setHorizontalVelocity({0, 0, 0});
+      return true;
+    }
+    target = current_path.front();
+    dir = Vector3Subtract(target, position);
+  }
+  
+  Vector3 normalized_dir = Vector3Normalize({dir.x, 0.0f, dir.z});
+  Vector3 target_vel = {normalized_dir.x * speed, 0.0f, normalized_dir.z * speed};
+  this->setHorizontalVelocity(target_vel);
+  
+  float target_yaw = std::atan2(normalized_dir.x, normalized_dir.z) * RAD2DEG;
+  float angle_diff = target_yaw - rotation.y;
+  while (angle_diff < -180.0f) angle_diff += 360.0f;
+  while (angle_diff > 180.0f) angle_diff -= 360.0f;
+  
+  float alpha = 10.0f * current_ctx->dt;
+  if (alpha > 1.0f) alpha = 1.0f;
+  
+  rotation.y += angle_diff * alpha;
+  while (rotation.y < 0.0f) rotation.y += 360.0f;
+  while (rotation.y >= 360.0f) rotation.y -= 360.0f;
+  
+  return false;
+}
+
+void Enemy::truncatePathBySmoke(std::vector<Vector3> &path) {
+    if (!current_ctx || !current_ctx->smoke_clouds) return;
+    // i + 1 < size(), not i < size() - 1. size() is unsigned, so on an empty
+    // path the subtraction wraps to SIZE_MAX, the loop runs, and path[0]
+    // dereferences the null data pointer of an empty vector.
+    // NavMeshQuery::findPath returns an empty path whenever findNearestPoly
+    // fails for either end (NavMeshQuery.cpp:18) — which is what happens the
+    // moment the player stands somewhere off the navmesh, such as on top of
+    // a castle wall.
+    for (size_t i = 0; i + 1 < path.size(); ++i) {
+        Vector3 A = path[i];
+        Vector3 B = path[i + 1];
+        Vector3 dir = Vector3Subtract(B, A);
+        float len = Vector3Length(dir);
+        if (len == 0.0f) continue;
+        Vector3 norm_dir = Vector3Scale(dir, 1.0f / len);
+        
+        for (const auto& smoke : *current_ctx->smoke_clouds) {
+            if (smoke.owner == this) continue;
+            
+            Vector3 L = Vector3Subtract(smoke.position, A);
+            float tca = Vector3DotProduct(L, norm_dir);
+            if (tca < 0.0f) continue; // going away
+            float d2 = Vector3DotProduct(L, L) - tca * tca;
+            float r2 = smoke.radius * smoke.radius;
+            if (d2 > r2) continue; // misses sphere
+            float thc = std::sqrt(r2 - d2);
+            float t0 = tca - thc;
+            
+            if (t0 > 0.0f && t0 < len) {
+                Vector3 hit_pos = Vector3Add(A, Vector3Scale(norm_dir, t0));
+                path.resize(i + 1);
+                path.push_back(hit_pos);
+                return; // Path truncated
+            }
+        }
+    }
+}
+
+std::vector<HitBox> Enemy::getActiveHitBoxes() const {
+  if (stats.isDead())
+    return {};
+
+  std::vector<HitBox> active_hitboxes;
+
+  if (combat_component.getCurrentState() == CombatState::AttackActive) {
+    const AttackData* active_attack = combat_component.getActiveAttack();
+    if (!active_attack) return active_hitboxes;
+
+    float yaw_rad = rotation.y * DEG2RAD;
+    Vector3 forward = {std::sin(yaw_rad), 0.0f, std::cos(yaw_rad)};
+    Vector3 right = {-std::cos(yaw_rad), 0.0f, std::sin(yaw_rad)};
+    Vector3 up = {0.0f, 1.0f, 0.0f};
+
+    for (const auto& def : active_attack->getHitBoxDefs()) {
+        if (def.type == HitBoxShapeType::Sphere) {
+            Vector3 center = position;
+            center = Vector3Add(center, Vector3Scale(forward, def.forward_offset));
+            center = Vector3Add(center, Vector3Scale(up, def.vertical_offset));
+            
+            Sphere sphere(center, def.radius);
+            active_hitboxes.emplace_back(sphere, def.health_damage, def.posture_damage, getFaction(), getId());
+        } else if (def.type == HitBoxShapeType::Capsule) {
+            Vector3 start = position;
+            start = Vector3Add(start, Vector3Scale(right, def.start_offset.x));
+            start = Vector3Add(start, Vector3Scale(up, def.start_offset.y));
+            start = Vector3Add(start, Vector3Scale(forward, def.start_offset.z));
+
+            Vector3 end = position;
+            end = Vector3Add(end, Vector3Scale(right, def.end_offset.x));
+            end = Vector3Add(end, Vector3Scale(up, def.end_offset.y));
+            end = Vector3Add(end, Vector3Scale(forward, def.end_offset.z));
+
+            Capsule capsule(start, end, def.capsule_radius);
+            active_hitboxes.emplace_back(capsule, def.health_damage, def.posture_damage, getFaction(), getId());
+        }
+    }
+  }
+
+  return active_hitboxes;
 }
 
 void Enemy::updateStrafing(const Vector3& velocity, bool enable_strafing) {

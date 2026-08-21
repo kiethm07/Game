@@ -5,12 +5,21 @@
 #include <Components/CombatComponent.h>
 #include <Core/InputManager.h>
 #include <Entities/Character.h>
+#include <Level/EnemySpawn.h>
 #include <Rendering/SwordTrail.h>
 #include <raylib.h>
 
 class Enemy : public Character {
 public:
-  Enemy(Vector3 start_position, Faction faction = Faction::Enemy);
+  /// Build from an authored spawn.
+  ///
+  /// Takes the spawn rather than a bare position because position, facing and
+  /// the post this enemy returns to all come from it and must agree. They used
+  /// to be set in two places -- the caller wrote `rotation` after construction
+  /// while Swordman's constructor hardcoded `spawn_yaw` to 0 -- so an enemy
+  /// authored facing 180 started right and then turned permanently to
+  /// world-north the first time it lost the player.
+  Enemy(const EnemySpawn &spawn, Faction faction = Faction::Enemy);
   virtual ~Enemy() = default;
 
   virtual void update(const UpdateContext &ctx) override = 0;
@@ -25,9 +34,22 @@ public:
   float getColliderRadius() const override;
   float getColliderHeight() const override;
   std::vector<HurtBox> getHurtBoxes() const override;
+
+  /// Every hitbox this enemy's current attack has live.
+  ///
+  /// Implemented here rather than per type: it reads nothing but the combat
+  /// state, the transform and the AttackData's own hitbox definitions, so
+  /// every subclass's copy was the same forty lines. Left pure on Character
+  /// because a non-attacking Character need not have one.
+  std::vector<HitBox> getActiveHitBoxes() const override;
   DamageResult takeDamage(float health_damage, float posture_damage, Character* attacker) override;
 
   CombatComponent &getCombatComponent() { return combat_component; }
+
+  /// Where this enemy was authored, and facing where. Its post: the
+  /// unaware behaviour walks back here and settles on this yaw.
+  Vector3 getSpawnPosition() const { return spawn_position; }
+  float getSpawnYaw() const { return spawn_yaw; }
   const CombatComponent &getCombatComponent() const { return combat_component; }
   StealthComponent &getStealthComponent() { return stealth_component; }
   const StealthComponent &getStealthComponent() const { return stealth_component; }
@@ -52,6 +74,35 @@ public:
   Vector3 getLocalMoveDir() const { return localMoveDir; }
 
 protected:
+  /// Follow `current_path`, one waypoint at a time, turning to face the way.
+  ///
+  /// Returns true on arrival (the path is spent), false while still walking --
+  /// deliberately a bool rather than a BT::NodeState, so that AI/BehaviorTree.h
+  /// does not become a dependency of this base for the sake of one enum. Each
+  /// subclass's tree maps it in its own action.
+  bool moveAlongPath(float speed);
+
+  /// Cut `path` short where it would walk into a smoke cloud.
+  void truncatePathBySmoke(std::vector<Vector3> &path);
+
+  /// The route this enemy is currently walking, and how long until it is
+  /// recomputed. Here rather than in a subclass because moveAlongPath is.
+  std::vector<Vector3> current_path;
+  float path_recalc_timer = 0.0f;
+
+  /// This frame's context, latched at the top of update() so the behaviour
+  /// tree's nodes -- which take no arguments -- can reach it. Only ever valid
+  /// inside an update() call.
+  const UpdateContext *current_ctx = nullptr;
+
+  /// Where this enemy was authored, and the facing it returns to.
+  ///
+  /// Lives here rather than in a subclass because "walk back to your post" is
+  /// an Enemy-level idea and because setting it anywhere but the constructor is
+  /// how it came adrift from `rotation` in the first place.
+  Vector3 spawn_position{0.0f, 0.0f, 0.0f};
+  float spawn_yaw = 0.0f;
+
   /// Called once per hit that actually landed, with whether the guard caught
   /// it. The hook exists so a subclass can react — a flinch is the whole of it
   /// today — without having to restate takeDamage's parry, block and

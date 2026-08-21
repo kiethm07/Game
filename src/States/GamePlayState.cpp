@@ -2,6 +2,7 @@
 #include "raylib.h"
 #include "raymath.h"
 #include <Core/Game.h>
+#include <Level/SpawnGround.h>
 #include <Physics/CollisionMeshLoader.h>
 #include <Stealth/Sensor.h>
 #include <cassert>
@@ -75,10 +76,45 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
   player->addMoney(carry.money);
   player->restoreItemCounts(carry.itemCounts);
 
+  // Enemies. `collision_mesh` is fully built above, which is what lets a spawn
+  // that omitted its height be resolved here rather than guessed at.
+  //
+  // No setRotation after construction any more: Enemy's constructor takes the
+  // whole spawn and sets position, rotation and the post it returns to together.
+  // Setting rotation from out here is what let an authored facing be forgotten
+  // the first time an enemy de-aggroed.
+  int dropped = 0;
   for (const EnemySpawn &spawn : level.enemySpawns) {
-    auto enemy = EnemyFactory::createEnemy(spawn.type, spawn.at.position);
-    enemy->setRotation({0.0f, spawn.at.yaw, 0.0f});
-    enemies.push_back(std::move(enemy));
+    EnemySpawn placed = spawn;
+    if (!placed.hasExplicitY) {
+      float ground = 0.0f;
+      if (!SpawnGround::highestUnder(collision_mesh, level.obstacles,
+                                     level.bounds, placed.at.position.x,
+                                     placed.at.position.z, ground)) {
+        // Dropped rather than kept, because there is no authored height to
+        // keep -- only a default-constructed 0. An enemy at y=0 in a level
+        // whose terrain sits at -30 either falls forever or stands in mid-air,
+        // which is the "looks playable while silently wrong" failure
+        // manufactured out of nothing.
+        TraceLog(LOG_WARNING,
+                 "GameplayState: spawn %d (%s at x=%.1f z=%.1f) has no ground "
+                 "under it and was dropped. It is over a hole or outside the "
+                 "map; give it an explicit \"y\" if it is meant to be in the "
+                 "air.",
+                 dropped + (int)enemies.size(), enemyTypeName(placed.type),
+                 placed.at.position.x, placed.at.position.z);
+        ++dropped;
+        continue;
+      }
+      placed.at.position.y = ground;
+    }
+    enemies.push_back(EnemyFactory::createEnemy(placed));
+  }
+  if (dropped > 0) {
+    TraceLog(LOG_WARNING,
+             "GameplayState: %d spawn(s) dropped for having no ground; %d "
+             "enemies placed.",
+             dropped, (int)enemies.size());
   }
 
   // --- NAVMESH SETUP ---
@@ -345,6 +381,51 @@ StateAction GameplayState::update(float dt) {
     campaign.setCarry(snapshotCarry());
     return StateAction::RequestNextPhase;
   }
+
+  // F4: the player's position as a line to paste into
+  // assets/levels/<phase>/enemies.json. Same debug-affordance convention as
+  // F1-F3 above -- off InputManager's GameAction enum.
+  //
+  // Two decimals rather than the five the exporter writes: those exist for a
+  // machine round-trip, and this number gets retyped by a person for whom a
+  // centimetre of spawn placement has never mattered. The trailing comma is
+  // there because the overwhelmingly common paste target is the middle of a
+  // list, and deleting a comma beats remembering to add one.
+  //
+  // `y` goes on a second line rather than into the paste, because leaving it
+  // out is the normal case -- the loader snaps to the ground under (x, z) --
+  // and JSON has nowhere to put a commented-out field.
+  if (IsKeyPressed(KEY_F4)) {
+    const Vector3 p = player->getPosition();
+    float yaw = player->getRotation().y;
+    while (yaw <= -180.0f) yaw += 360.0f;
+    while (yaw > 180.0f) yaw -= 360.0f;
+
+    spawn_line = TextFormat(
+        "{ \"type\": \"%s\", \"x\": %.2f, \"z\": %.2f, \"yaw\": %.1f },",
+        enemyTypeName(debug_spawn_type), p.x, p.z, yaw);
+    spawn_line_timer = 8.0f;
+    TraceLog(LOG_INFO, "%s", spawn_line.c_str());
+    TraceLog(LOG_INFO,
+             "  (you are at y=%.2f -- add \"y\": %.2f to pin the height "
+             "instead of snapping to the ground)",
+             p.y, p.y);
+  }
+
+  // SHIFT+F4 cycles which type F4 writes, so the readout stays correct the day
+  // a second type exists rather than needing to be remembered.
+  if (IsKeyPressed(KEY_F4) && IsKeyDown(KEY_LEFT_SHIFT)) {
+    debug_spawn_type = static_cast<EnemyType>(
+        (static_cast<int>(debug_spawn_type) + 1) % kEnemyTypeCount);
+  }
+
+  // F5: rebuild this phase, re-reading level.json and enemies.json. The other
+  // half of the authoring loop -- edit the file, press this, see it.
+  if (IsKeyPressed(KEY_F5)) {
+    return StateAction::RequestReloadPhase;
+  }
+
+  if (spawn_line_timer > 0.0f) spawn_line_timer -= dt;
 
   if (smoke_cooldown_timer > 0.0f) {
       smoke_cooldown_timer -= dt;
@@ -692,6 +773,30 @@ void GameplayState::draw() {
       int font_size = 30;
       int text_width = MeasureText(money_str.c_str(), font_size);
       DrawText(money_str.c_str(), GetScreenWidth() - text_width - 30, 30, font_size, GOLD);
+  }
+
+  // The F4 readout, latched for a few seconds so it can be read and retyped.
+  if (spawn_line_timer > 0.0f && !spawn_line.empty()) {
+    const int width = MeasureText(spawn_line.c_str(), 20);
+    DrawText(spawn_line.c_str(), (GetScreenWidth() - width) / 2,
+             GetScreenHeight() - 70, 20, RAYWHITE);
+    DrawText("paste into assets/levels/<phase>/enemies.json, then F5",
+             (GetScreenWidth() - MeasureText(
+                  "paste into assets/levels/<phase>/enemies.json, then F5", 16)) / 2,
+             GetScreenHeight() - 44, 16, GRAY);
+  }
+
+  // A broken enemies.json, said out loud.
+  //
+  // Ungated by any key and drawn every frame it applies, because TraceLog goes
+  // to a terminal nobody is looking at while they are inside the game. Without
+  // this, "the level loads with no enemies" is indistinguishable from "the
+  // level has no enemies", which is the one confusion the loud-failure policy
+  // exists to prevent.
+  if (!level.enemyOverlayError.empty()) {
+    const std::string banner = "enemies.json: " + level.enemyOverlayError;
+    DrawRectangle(0, 0, GetScreenWidth(), 34, Fade(BLACK, 0.7f));
+    DrawText(banner.c_str(), 12, 8, 20, RED);
   }
 
   // --- ITEM UI ---

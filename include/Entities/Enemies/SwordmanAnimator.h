@@ -71,7 +71,18 @@ public:
     float speed = 0.0f;
   };
 
-  SwordmanAnimator();
+  /// The AssetID is a parameter, not a constant, so a second enemy type that
+  /// shares this skeleton can reuse this animator with its own model instead
+  /// of copying the whole clip table to change one line.
+  ///
+  /// It constrains what may pass one: descTable() names the *player's* clips,
+  /// so anything using this animator shares the player's skeleton and its clip
+  /// names. A model with a different rig needs its own descTable().
+  explicit SwordmanAnimator(AssetID asset = AssetID::ENEMY_ASHIGARU);
+
+  /// Which model this animator poses -- what getRenderData should return,
+  /// rather than a literal repeated at the call site.
+  AssetID assetId() const { return asset_id; }
 
   /// Resolves clip names to indices. True on the frame it does so, which is
   /// when locomotionSpeed() becomes meaningful.
@@ -101,6 +112,7 @@ public:
   AnimationState renderState() const { return anim.renderState(); }
 
 private:
+  AssetID asset_id;
   /// One row per SwordmanAnimState, in enum order.
   static const Machine::Desc *descTable();
 
