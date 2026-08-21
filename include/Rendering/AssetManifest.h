@@ -9,6 +9,11 @@ enum class RendererKind {
 
 struct AssetEntry {
   AssetID id;
+
+  // Both are RELATIVE to the asset root, not absolute. They used to be built
+  // with ASSET_DIR, which baked the build machine's source directory into the
+  // binary; they are now resolved through assets::path() where they are loaded,
+  // so a packaged copy finds them beside itself. See Core/AssetPaths.h.
   const char *modelPath; ///< nullptr → no model to load
   const char *animPath;  ///< nullptr → no animations to load
   RendererKind renderer = RendererKind::SkinnedCharacter;
@@ -41,8 +46,8 @@ struct AssetEntry {
 static const AssetID kAshigaruSource = AssetID::PLAYER_WOLF;
 
 static const AssetEntry kAssets[] = {
-    {AssetID::PLAYER_WOLF, ASSET_DIR "/Sekiro.rootmotion.glb",
-     ASSET_DIR "/Sekiro.rootmotion.glb", RendererKind::SkinnedCharacter},
+    {AssetID::PLAYER_WOLF, "Sekiro.rootmotion.glb", "Sekiro.rootmotion.glb",
+     RendererKind::SkinnedCharacter},
     {AssetID::ENEMY_ASHIGARU, nullptr, nullptr, RendererKind::SkinnedCharacter,
      &kAshigaruSource, &kAshigaruSource},
 };

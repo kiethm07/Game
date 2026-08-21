@@ -1,4 +1,5 @@
 #include <Rendering/AssetManager.h>
+#include <Core/AssetPaths.h>
 #include <Rendering/ShaderLibrary.h>
 #include <iostream>
 #include <raymath.h>
@@ -37,11 +38,11 @@ void AssetManager::ensureSkinningShader() {
   // Desktop raylib uses OpenGL 3.3 → GLSL 330.
   // ShaderLibrary, not raylib's LoadShader: skinning.fs pulls in
   // shadow_common.glsl, and the driver has no #include of its own.
-  skinningShader = ShaderLibrary::load(ASSET_DIR "/shaders/glsl330/skinning.vs",
-                                       ASSET_DIR "/shaders/glsl330/skinning.fs");
+  skinningShader = ShaderLibrary::load(assets::path("shaders/glsl330/skinning.vs"),
+                                       assets::path("shaders/glsl330/skinning.fs"));
   skinnedDepthShader =
-      ShaderLibrary::load(ASSET_DIR "/shaders/glsl330/skinning_depth.vs",
-                          ASSET_DIR "/shaders/glsl330/depth.fs");
+      ShaderLibrary::load(assets::path("shaders/glsl330/skinning_depth.vs"),
+                          assets::path("shaders/glsl330/depth.fs"));
   skinningShaderLoaded = true; // guard the load attempt even if compile fails
   if (skinningShader.id == 0) {
     TraceLog(LOG_ERROR,

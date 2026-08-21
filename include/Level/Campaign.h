@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Core/AssetPaths.h>
 #include <Level/CampaignManifest.h>
 #include <cstddef>
+#include <string>
 #include <vector>
 
 /// What the player keeps across a phase boundary.
@@ -45,10 +47,15 @@ class Campaign {
 public:
   Campaign() = default;
 
-  /// The current phase's level.json. Never null — the cursor only ever moves
-  /// through advance(), which refuses to leave the table.
-  const char *currentLevelPath() const {
-    return kCampaignPhases[cursor].levelPath;
+  /// The current phase's level.json, resolved against the asset root.
+  ///
+  /// Returns by value rather than as a pointer into the table, because the
+  /// table holds a path relative to the asset root and the absolute one does
+  /// not exist anywhere until that root has been found. Never empty — the
+  /// cursor only ever moves through advance(), which refuses to leave the
+  /// table.
+  std::string currentLevelPath() const {
+    return assets::path(kCampaignPhases[cursor].levelPath);
   }
   const char *currentName() const { return kCampaignPhases[cursor].name; }
 

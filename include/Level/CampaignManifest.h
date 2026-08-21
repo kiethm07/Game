@@ -7,8 +7,10 @@ struct PhaseEntry {
   /// takes its own name from the file, never from here.
   const char *name;
 
-  /// Absolute path to the phase's level.json, built with ASSET_DIR exactly as
-  /// AssetManifest.h's rows are.
+  /// Path to the phase's level.json, RELATIVE to the asset root, exactly as
+  /// AssetManifest.h's rows are. Campaign::currentLevelPath() resolves it
+  /// through assets::path() so a packaged build finds it beside the
+  /// executable rather than in the source tree it was compiled against.
   const char *levelPath;
 };
 
@@ -24,7 +26,7 @@ struct PhaseEntry {
 /// intermediates and test maps, not places a run passes through. Playing one
 /// means pointing a row here at it, which is the whole mechanism.
 static const PhaseEntry kCampaignPhases[] = {
-    {"phase1_forest", ASSET_DIR "/levels/phase1_forest/level.json"},
-    {"phase2_approach", ASSET_DIR "/levels/phase2_approach/level.json"},
-    {"phase3_battlefield", ASSET_DIR "/levels/phase3_battlefield/level.json"},
+    {"phase1_forest", "levels/phase1_forest/level.json"},
+    {"phase2_approach", "levels/phase2_approach/level.json"},
+    {"phase3_battlefield", "levels/phase3_battlefield/level.json"},
 };
