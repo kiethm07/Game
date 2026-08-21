@@ -2,6 +2,7 @@
 
 #include <Components/PhysicsObstacle.h>
 #include <Core/CameraController.h>
+#include <Level/Checkpoint.h>
 #include <Level/Level.h>
 #include <Rendering/AssetManager.h>
 #include <Rendering/IEntityRenderer.h>
@@ -101,6 +102,19 @@ private:
   /// rather than the geometry's. See grass.fs.
   Shader grassShader{};
 
+  /// Location of grass.vs's `time` uniform, resolved once at load.
+  ///
+  /// Cached because it is set every frame and GetShaderLocation is a driver
+  /// string lookup. -1 when the shader failed to load or the uniform was
+  /// optimised out; SetShaderValue ignores -1, so the meadow just stands
+  /// still rather than the frame erroring.
+  int grassTimeLoc = -1;
+
+  /// Unlit shader for the campfire flame. Unlit because fire produces light
+  /// rather than receiving it — run through levelShader the flame would dim in
+  /// shade. See flame.fs.
+  Shader flameShader{};
+
   /// The level's visual mesh. Owned here rather than by AssetManager, whose
   /// cache is keyed on the AssetID enum — one entry per level would mean an
   /// enum edit and a rebuild per map, which is exactly what moving levels into
@@ -143,6 +157,11 @@ private:
   void drawEnvironment(const CameraController &camera,
                        const std::vector<PhysicsObstacle> &obstacles);
 
+  /// The flames, drawn last and additively. Separate from drawEnvironment
+  /// because they must come after the characters: an additive flame writes no
+  /// depth, so anything drawn afterwards would paint straight over it.
+  void drawFlames();
+
   /// Load the level's mesh and point its materials at levelShader. Also
   /// substitutes raylib's default white texture for any material that arrived
   /// without an albedo map, so level.fs samples white instead of whatever
@@ -153,5 +172,25 @@ private:
   /// Unlike loadLevelModel this substitutes no white texture, because nothing
   /// in grass.fs samples one.
   void loadDetailModel(const Level &level);
+
+  /// The campfire, as two models: the body is opaque and lit like any prop,
+  /// the flame is four nested shells drawn additively. They are separate files
+  /// because they are drawn differently, not merely toggled — see
+  /// tools/make_campfire.py.
+  Model campfireBody{};
+  Model campfireFlame{};
+  bool hasCampfireModels = false;
+  void loadCampfireModels();
+
+  /// Where the campfires are and which are alight. Copied in rather than
+  /// passed per frame: they change when one is lit, not every frame.
+  std::vector<Checkpoint> checkpoints;
+
+public:
+  void setCheckpoints(const std::vector<Checkpoint> &points) {
+    checkpoints = points;
+  }
+
+private:
 };
 

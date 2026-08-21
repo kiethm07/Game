@@ -9,6 +9,18 @@
 #include <cassert>
 #include <cmath>
 
+namespace {
+/// How close the player must be to a campfire to light it, in metres.
+///
+/// Measured in the ground plane only. Height is deliberately ignored: the
+/// campfire sits on terrain that may slope, and a player standing beside it on
+/// a rise is plainly "at" it even though their feet are half a metre higher.
+constexpr float CHECKPOINT_REACH = 2.0f;
+
+/// Seconds between the fire catching and the phase ending.
+constexpr float CHECKPOINT_HOLD = 2.0f;
+} // namespace
+
 // The level this state loads comes from Campaign, which Game owns and hands in
 // by reference. It used to be a constant here, because StateAction carries no
 // payload and there was nowhere for a level choice to come from; the answer was
@@ -76,6 +88,32 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
   const PhaseCarry &carry = campaign.getCarry();
   player->addMoney(carry.money);
   player->restoreItemCounts(carry.itemCounts);
+
+  // This phase's exit campfire, if it has one. Placed before the enemies purely
+  // so the ground query it shares with them reads in one block.
+  //
+  // Only X and Z are authored; the height comes off the collision mesh exactly
+  // as a `y`-less enemy spawn's does, so the two numbers in CampaignManifest.h
+  // stay correct if the terrain is ever re-exported at a different height.
+  if (campaign.hasExit()) {
+    Checkpoint exit;
+    exit.position = {campaign.exitX(), 0.0f, campaign.exitZ()};
+    float ground = 0.0f;
+    if (SpawnGround::highestUnder(collision_mesh, level.obstacles, level.bounds,
+                                  exit.position.x, exit.position.z, ground)) {
+      exit.position.y = ground;
+    } else {
+      TraceLog(LOG_WARNING,
+               "GameplayState: phase %d's exit campfire at (%.2f, %.2f) has no "
+               "ground under it; it will sit at y=0. Check the coordinates in "
+               "CampaignManifest.h against the level.",
+               (int)campaign.index() + 1, exit.position.x, exit.position.z);
+    }
+    checkpoints.push_back(exit);
+    TraceLog(LOG_INFO,
+             "GameplayState: exit campfire at (%.2f, %.2f, %.2f)",
+             exit.position.x, exit.position.y, exit.position.z);
+  }
 
   // Enemies. `collision_mesh` is fully built above, which is what lets a spawn
   // that omitted its height be resolved here rather than guessed at.
@@ -152,6 +190,7 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
   nav_query.init(nav_builder.getNavMesh());
 
   renderer = std::make_unique<GameRenderer>(asset_manager, level);
+  renderer->setCheckpoints(checkpoints);
 }
 
 PhaseCarry GameplayState::snapshotCarry() const {
@@ -366,6 +405,45 @@ StateAction GameplayState::update(float dt) {
     return StateAction::ChangeToMenu;
   }
 
+  // The exit campfire: stand near it, press G, watch it catch, and the phase
+  // ends. Ordered before the debug keys below because it is the real feature
+  // and they are stand-ins for it.
+  checkpoint_in_reach = false;
+  if (checkpoint_timer >= 0.0f) {
+    // A countdown is already running. Nothing can start a second one, and the
+    // fire is left burning while it runs -- that pause is the whole point.
+    checkpoint_timer -= dt;
+    if (checkpoint_timer <= 0.0f) {
+      checkpoint_timer = -1.0f;
+      campaign.setCarry(snapshotCarry());
+      return StateAction::RequestNextPhase;
+    }
+  } else {
+    const Vector3 here = player->getPosition();
+    for (size_t i = 0; i < checkpoints.size(); ++i) {
+      if (checkpoints[i].lit) continue;
+      // Plan distance only. The campfire sits on terrain that may slope, and a
+      // player standing beside it on a rise is plainly at it even though their
+      // feet are higher.
+      const float dx = here.x - checkpoints[i].position.x;
+      const float dz = here.z - checkpoints[i].position.z;
+      if (dx * dx + dz * dz > CHECKPOINT_REACH * CHECKPOINT_REACH) continue;
+
+      checkpoint_in_reach = true;
+      if (input_manager.isActionPressed(GameAction::Interact)) {
+        checkpoints[i].lit = true;
+        renderer->setCheckpoints(checkpoints);
+        checkpoint_timer = CHECKPOINT_HOLD;
+        pending_checkpoint = (int)i;
+        TraceLog(LOG_INFO,
+                 "GameplayState: campfire lit — leaving phase %d/%d in %.1fs",
+                 (int)campaign.index() + 1, (int)campaign.count(),
+                 CHECKPOINT_HOLD);
+      }
+      break;  // Only ever the first one in reach; they are metres apart.
+    }
+  }
+
   // L: leave this phase for the next one.
   //
   // A debug affordance in the same sense F1-F3 are, so it stays off
@@ -424,6 +502,48 @@ StateAction GameplayState::update(float dt) {
   // half of the authoring loop -- edit the file, press this, see it.
   if (IsKeyPressed(KEY_F5)) {
     return StateAction::RequestReloadPhase;
+  }
+
+  // F6 drops a campfire where the player stands; F7 lights or snuffs the
+  // nearest one. Debug affordances in the same sense F1-F5 are, and the same
+  // stand-in role KEY_L plays: once phases carry an exit marker, checkpoints
+  // are read from level data and lighting one is what fires the transition.
+  //
+  // Snapped to the ground the same way an authored spawn is, so a campfire
+  // dropped on a slope sits on it rather than at the player's feet height --
+  // the model's origin is the centre of its base, which is what makes this one
+  // call enough.
+  if (IsKeyPressed(KEY_F6)) {
+    Checkpoint point;
+    point.position = player->getPosition();
+    point.yaw = player->getRotation().y;
+    float ground = 0.0f;
+    if (SpawnGround::highestUnder(collision_mesh, level.obstacles, level.bounds,
+                                  point.position.x, point.position.z, ground)) {
+      point.position.y = ground;
+    }
+    checkpoints.push_back(point);
+    renderer->setCheckpoints(checkpoints);
+    TraceLog(LOG_INFO,
+             "GameplayState: campfire %d at (%.2f, %.2f, %.2f) — F7 to light it",
+             (int)checkpoints.size(), point.position.x, point.position.y,
+             point.position.z);
+  }
+
+  if (IsKeyPressed(KEY_F7) && !checkpoints.empty()) {
+    // Nearest one, so the key means "this fire" rather than "some fire".
+    size_t nearest = 0;
+    float best = Vector3DistanceSqr(player->getPosition(),
+                                    checkpoints[0].position);
+    for (size_t i = 1; i < checkpoints.size(); ++i) {
+      const float d = Vector3DistanceSqr(player->getPosition(),
+                                         checkpoints[i].position);
+      if (d < best) { best = d; nearest = i; }
+    }
+    checkpoints[nearest].lit = !checkpoints[nearest].lit;
+    renderer->setCheckpoints(checkpoints);
+    TraceLog(LOG_INFO, "GameplayState: campfire %d is now %s",
+             (int)nearest + 1, checkpoints[nearest].lit ? "lit" : "out");
   }
 
   if (spawn_line_timer > 0.0f) spawn_line_timer -= dt;
@@ -785,6 +905,24 @@ void GameplayState::draw() {
              (GetScreenWidth() - MeasureText(
                   "paste into assets/levels/<phase>/enemies.json, then F5", 16)) / 2,
              GetScreenHeight() - 44, 16, GRAY);
+  }
+
+  // The campfire prompt. Without it the interaction is undiscoverable -- there
+  // is nothing about standing near a pile of logs that suggests a key.
+  if (checkpoint_in_reach) {
+    const char *prompt = "[G]  Light the campfire";
+    const int width = MeasureText(prompt, 26);
+    DrawText(prompt, (GetScreenWidth() - width) / 2,
+             GetScreenHeight() - 120, 26, Color{255, 220, 150, 255});
+  }
+
+  // ...and once it is lit, say what is happening, so the two seconds before the
+  // screen changes read as deliberate rather than as a hang.
+  if (checkpoint_timer >= 0.0f) {
+    const char *resting = "Resting...";
+    const int width = MeasureText(resting, 30);
+    DrawText(resting, (GetScreenWidth() - width) / 2,
+             GetScreenHeight() - 120, 30, Color{255, 200, 120, 255});
   }
 
   // A broken enemies.json, said out loud.

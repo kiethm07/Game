@@ -16,6 +16,7 @@
 #include <AI/NavMeshBuilder.h>
 #include <AI/NavMeshQuery.h>
 #include <Level/Campaign.h>
+#include <Level/Checkpoint.h>
 #include <Level/Level.h>
 #include <Physics/CollisionMesh.h>
 #include <States/GameState.h>
@@ -93,6 +94,31 @@ private:
 
   /// Which type F4 writes into that line. SHIFT+F4 cycles it.
   EnemyType debug_spawn_type = EnemyType::Swordman;
+
+  /// Campfires in this level.
+  ///
+  /// Filled in the constructor from the campaign's exit for this phase, and
+  /// deliberately NOT modelled into the map — a campfire baked into VISUAL is
+  /// merged into a terrain chunk at export and could never be lit, because
+  /// raylib's glTF loader discards mesh names and nothing would be left to
+  /// address. F6 can still drop extra ones for testing.
+  std::vector<Checkpoint> checkpoints;
+
+  /// Counts down from CHECKPOINT_HOLD once a campfire is lit, then the phase
+  /// ends. Negative means nothing is pending.
+  ///
+  /// The pause is the point: lighting the fire and being taken out of the level
+  /// in the same frame reads as a glitch, whereas a beat of watching it catch
+  /// reads as resting. It is also what makes the fire worth having — it is on
+  /// screen, alight, for exactly as long as it takes to notice.
+  float checkpoint_timer = -1.0f;
+
+  /// Which campfire is burning down the clock, so the message can name it and
+  /// a second G cannot start a second countdown.
+  int pending_checkpoint = -1;
+
+  /// True while the player is close enough to light one, so draw() can prompt.
+  bool checkpoint_in_reach = false;
   
   float takedown_text_timer = 0.0f;
   std::string takedown_type_str = "";

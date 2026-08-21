@@ -21,7 +21,12 @@ enum class GameAction {
   Crouch,
   UseItem,
   NextItem,
-  PrevItem
+  PrevItem,
+
+  /// Light the campfire you are standing at. A world interaction rather than a
+  /// debug affordance, so unlike F6/F7 it belongs on this enum and gets a
+  /// rebindable binding like every other thing the player does.
+  Interact
 };
 
 enum class InputState { Idle, Pressed, Held, Released };

@@ -112,6 +112,7 @@ GameRenderer::GameRenderer(AssetManager &assets, const Level &level)
   initializeAssets();
   loadLevelModel(level);
   loadDetailModel(level);
+  loadCampfireModels();
   shadowMap.setBounds(level.bounds);
 }
 
@@ -119,6 +120,17 @@ GameRenderer::~GameRenderer() {
   if (worldShader.id != 0) UnloadShader(worldShader);
   if (levelShader.id != 0) UnloadShader(levelShader);
   if (grassShader.id != 0) UnloadShader(grassShader);
+  if (flameShader.id != 0) UnloadShader(flameShader);
+  if (hasCampfireModels) {
+    // Same shader-clearing dance as the models below: UnloadModel would free
+    // levelShader and flameShader a second time through the materials.
+    for (int i = 0; i < campfireBody.materialCount; i++)
+      campfireBody.materials[i].shader = Shader{};
+    for (int i = 0; i < campfireFlame.materialCount; i++)
+      campfireFlame.materials[i].shader = Shader{};
+    UnloadModel(campfireBody);
+    UnloadModel(campfireFlame);
+  }
   if (hasDetailModel) {
     // Same reason as the level model below: UnloadModel would free grassShader
     // a second time through the material that points at it.
@@ -223,6 +235,65 @@ void GameRenderer::loadDetailModel(const Level &level) {
            totalTriangles);
 }
 
+void GameRenderer::loadCampfireModels() {
+  campfireBody = LoadModel(assets::path("props/campfire_body.glb").c_str());
+  campfireFlame = LoadModel(assets::path("props/campfire_flame.glb").c_str());
+  if (campfireBody.meshCount == 0 || campfireFlame.meshCount == 0) {
+    TraceLog(LOG_WARNING,
+             "GameRenderer: campfire props missing or empty; checkpoints will "
+             "not be drawn. Run tools/make_campfire.py.");
+    UnloadModel(campfireBody);
+    UnloadModel(campfireFlame);
+    campfireBody = Model{};
+    campfireFlame = Model{};
+    return;
+  }
+
+  const Texture2D white = defaultWhiteTexture();
+  for (int i = 0; i < campfireBody.materialCount; i++) {
+    campfireBody.materials[i].shader = levelShader;
+    if (campfireBody.materials[i].maps[MATERIAL_MAP_DIFFUSE].texture.id == 0) {
+      campfireBody.materials[i].maps[MATERIAL_MAP_DIFFUSE].texture = white;
+    }
+  }
+  // No white substitute for the flame: flame.fs samples no texture at all, so
+  // there is nothing for a missing one to corrupt.
+  for (int i = 0; i < campfireFlame.materialCount; i++) {
+    campfireFlame.materials[i].shader = flameShader;
+  }
+
+  hasCampfireModels = true;
+  TraceLog(LOG_INFO, "GameRenderer: campfire — body %d meshes, flame %d meshes",
+           campfireBody.meshCount, campfireFlame.meshCount);
+}
+
+void GameRenderer::drawFlames() {
+  if (!hasCampfireModels || flameShader.id == 0) return;
+
+  // Additive, and depth-writes off.
+  //
+  // The flame is four nested closed shells. Drawn opaque the outermost hides
+  // the rest; drawn additively they sum, so the core goes white-hot and the
+  // fringe stays red — which is the gradient the asset was authored for.
+  // Addition is commutative, so no depth sort is needed, and that matters
+  // because concentric shells have no meaningful back-to-front order.
+  //
+  // Depth writes are off for the same reason: with them on, whichever shell
+  // happened to be drawn first would occlude the ones inside it. Depth
+  // *testing* stays on, so the fire is still hidden by geometry in front.
+  rlDisableBackfaceCulling();
+  rlDisableDepthMask();
+  BeginBlendMode(BLEND_ADDITIVE);
+  for (const Checkpoint &point : checkpoints) {
+    if (!point.lit) continue;
+    DrawModelEx(campfireFlame, point.position, {0.0f, 1.0f, 0.0f}, point.yaw,
+                {1.0f, 1.0f, 1.0f}, WHITE);
+  }
+  EndBlendMode();
+  rlEnableDepthMask();
+  rlEnableBackfaceCulling();
+}
+
 void GameRenderer::initializeAssets() {
   // Models, animations and aliases are loaded by LoadingState before this
   // object exists — see the manifest walk there. Repeating those passes here
@@ -252,6 +323,13 @@ void GameRenderer::initializeAssets() {
                         "mesh will draw unlit.");
   }
 
+  flameShader = ShaderLibrary::load(assets::path("shaders/glsl330/flame.vs"),
+                                    assets::path("shaders/glsl330/flame.fs"));
+  if (flameShader.id == 0) {
+    TraceLog(LOG_ERROR, "GameRenderer: failed to load the flame shader; lit "
+                        "campfires will not draw.");
+  }
+
   grassShader = ShaderLibrary::load(assets::path("shaders/glsl330/grass.vs"),
                                     assets::path("shaders/glsl330/grass.fs"));
   if (grassShader.id == 0) {
@@ -261,6 +339,8 @@ void GameRenderer::initializeAssets() {
     // than not at all.
     TraceLog(LOG_ERROR, "GameRenderer: failed to load the grass shader; the "
                         "detail mesh will draw unlit.");
+  } else {
+    grassTimeLoc = GetShaderLocation(grassShader, "time");
   }
 }
 
@@ -404,6 +484,22 @@ void GameRenderer::drawWorld(
   // The grass casts nothing but still receives, so a tree's shadow falls across
   // the meadow. Miss this line and it draws uniformly lit under every canopy.
   shadowMap.applyTo(grassShader);
+
+  // Drives the wind in grass.vs. Once per frame, alongside the shadow uniforms,
+  // rather than next to the detail draw: the grass is frustum- and
+  // distance-culled down there, so a meadow that happened to be fully culled on
+  // one frame would leave the clock stale and the blades would jump when it
+  // came back into view.
+  //
+  // GetTime() rather than an accumulated GetFrameTime() so the phase does not
+  // drift with the frame rate. It grows without bound, and the sines in the
+  // shader lose precision in a float somewhere past a day of uptime; that is
+  // well beyond any session and the failure is a slower-looking wind, not a
+  // glitch.
+  if (grassTimeLoc != -1) {
+    const float elapsed = static_cast<float>(GetTime());
+    SetShaderValue(grassShader, grassTimeLoc, &elapsed, SHADER_UNIFORM_FLOAT);
+  }
   shadowMap.applyTo(assetManager.getSkinningShader());
 
   drawEnvironment(camera, obstacles);
@@ -414,6 +510,11 @@ void GameRenderer::drawWorld(
       it->second->draw(assetManager, renderData, RenderPass::Scene);
     }
   }
+
+  // Last of all. An additive flame writes no depth, so anything drawn after it
+  // would paint straight over it — including a character standing behind the
+  // fire, which would then appear in front of it.
+  drawFlames();
 }
 
 namespace {
@@ -529,6 +630,15 @@ void GameRenderer::drawEnvironment(
       if (!frustum.intersects(levelMeshBounds[i])) continue;
       DrawMesh(levelModel.meshes[i],
                levelModel.materials[levelModel.meshMaterial[i]], identity);
+    }
+
+    // Campfire bodies: opaque props on the level's own shader. Lit or not,
+    // the stones and logs are always there — only the flame is conditional.
+    if (hasCampfireModels) {
+      for (const Checkpoint &point : checkpoints) {
+        DrawModelEx(campfireBody, point.position, {0.0f, 1.0f, 0.0f},
+                    point.yaw, {1.0f, 1.0f, 1.0f}, WHITE);
+      }
     }
 
     // The detail mesh, over the same frustum.

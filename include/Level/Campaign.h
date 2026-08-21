@@ -59,6 +59,14 @@ public:
   }
   const char *currentName() const { return kCampaignPhases[cursor].name; }
 
+  /// Does this phase end at a campfire? False on the last one.
+  bool hasExit() const { return kCampaignPhases[cursor].hasExit; }
+
+  /// The exit campfire's plan position. Height is resolved against the
+  /// collision mesh by the caller, which is the only thing that has one.
+  float exitX() const { return kCampaignPhases[cursor].exitX; }
+  float exitZ() const { return kCampaignPhases[cursor].exitZ; }
+
   size_t index() const { return cursor; }
   size_t count() const {
     return sizeof(kCampaignPhases) / sizeof(kCampaignPhases[0]);

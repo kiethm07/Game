@@ -308,9 +308,9 @@
       "type": "box",
       "name": "BOX_Boundary_E_12",
       "center": [
-        104.58,
-        8.98158,
-        -41.04333
+        35.66131,
+        10.44587,
+        -37.16053
       ],
       "halfExtents": [
         3.0,
@@ -329,9 +329,9 @@
       "type": "box",
       "name": "BOX_Boundary_E_13",
       "center": [
-        104.58,
-        8.40516,
-        -52.71
+        35.66131,
+        9.86945,
+        -48.8272
       ],
       "halfExtents": [
         3.0,
@@ -350,9 +350,9 @@
       "type": "box",
       "name": "BOX_Boundary_E_14",
       "center": [
-        104.58,
-        8.20155,
-        -64.37666
+        35.66131,
+        9.66584,
+        -60.49387
       ],
       "halfExtents": [
         3.0,
@@ -371,9 +371,9 @@
       "type": "box",
       "name": "BOX_Boundary_E_15",
       "center": [
-        104.58,
-        7.71192,
-        -76.04333
+        35.66131,
+        9.17622,
+        -72.16055
       ],
       "halfExtents": [
         3.0,
@@ -392,9 +392,9 @@
       "type": "box",
       "name": "BOX_Boundary_E_16",
       "center": [
-        104.58,
-        7.81318,
-        -87.71001
+        35.66131,
+        9.27747,
+        -83.82722
       ],
       "halfExtents": [
         3.0,
@@ -413,9 +413,9 @@
       "type": "box",
       "name": "BOX_Boundary_E_17",
       "center": [
-        104.58,
-        7.89851,
-        -99.37667
+        35.66131,
+        9.3628,
+        -95.49388
       ],
       "halfExtents": [
         3.0,
@@ -5765,5 +5765,6 @@
       ]
     }
   ],
-  "collisionMesh": "collision.bin"
+  "collisionMesh": "collision.bin",
+  "detailModel": "detail.glb"
 }

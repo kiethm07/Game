@@ -15,7 +15,7 @@ the game draws the level at identity).
 Usage:
     python3 tools/verify_level.py assets/levels/<name>
 
-Five checks, the first three in increasing strength:
+Six checks, the first three in increasing strength:
 
   1. Bounds. The GLB's overall AABB against the `bounds` field in the JSON.
      Applies to every level. A mirrored layout or a swapped axis shows up here
@@ -57,6 +57,10 @@ Five checks, the first three in increasing strength:
      printed. Note check 3 tests whichever spawn list the GAME will use, so an
      overlay repoints it.
 
+  6. Tree proxies. Reports collision boxes the player can neither reach nor be
+     hidden behind — wasted per-frame work that a re-export silently restores.
+     A note, never a failure: the level plays identically either way.
+
 A kitbashed map will usually only satisfy checks 1 and 3, since its art is not
 built one-mesh-per-proxy. That is expected; check 2 reports what it could pair
 up.
@@ -70,6 +74,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from enemy_types import enemy_types
+import prune_tree_proxies
 
 COMPONENT = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2),
              5123: ("H", 2), 5125: ("I", 4), 5126: ("f", 4)}
@@ -394,6 +399,37 @@ def ground_under(verts, idx, x, z, from_y=1000.0):
     if best is None:
         return None
     return from_y - best[0], best[1]
+
+
+def check_tree_proxies(level, failures):
+    """Report tree collision boxes nothing can reach or see past.
+
+    A note rather than a failure. Unreachable proxies are wasted work, not
+    wrong -- the level plays identically with them. What makes this worth
+    checking is that tools/export_level.py rebuilds `obstacles` from the .blend
+    every time, so a level that was pruned and then re-exported silently gets
+    them all back. This is where that shows up, in the check that is already
+    run after an export.
+    """
+    try:
+        reach, trees, touch, sight, removable = prune_tree_proxies.classify(level)
+    except prune_tree_proxies.PruneError as error:
+        print("  (not checked: %s)" % error)
+        return
+    if not trees:
+        print("  (no BOX_Tree_* proxies)")
+        return
+
+    if removable:
+        print("  note  %d of %d tree proxies are unreachable and block no "
+              "sightline." % (len(removable), len(trees)))
+        print("        They cost a per-character obstacle test every frame and "
+              "%d triangles in every navmesh bake, for geometry nothing can "
+              "touch. Run:" % (len(removable) * 12))
+        print("          python3 tools/prune_tree_proxies.py <level-dir>")
+    else:
+        print("  OK    %d tree proxies, all reachable or sight-blocking"
+              % len(trees))
 
 
 def check_enemy_spawns(level, level_dir, declared, overlay, spawns_effective,
@@ -812,6 +848,9 @@ def main():
     print("\n5. Enemy spawns")
     check_enemy_spawns(level, level_dir, declared, overlay, spawns_effective,
                        failures)
+
+    print("\n6. Tree proxies")
+    check_tree_proxies(level, failures)
 
     print()
     if failures:

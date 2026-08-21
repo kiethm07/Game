@@ -22,10 +22,17 @@ quad is transparent, so triangles bought nothing and every fragment paid an
 alpha `discard`; and the colour was fixed when the texture was photographed, so
 it could never agree with a terrain whose colour lives in a Blender material.
 
-A generated blade is one triangle with no transparency, and its colour is *read
-off the terrain material* (see `terrain_colour`), so it matches by construction
-and goes on matching when the ground is re-tinted -- which is what
+A generated blade is three triangles with no transparency, and its colour is
+*read off the terrain material* (see `terrain_colour`), so it matches by
+construction and goes on matching when the ground is re-tinted -- which is what
 tools/tint_ground.py is for.
+
+Both objections still stand against a stylised cut-out, not just a photographed
+one: a painted blade sheet is as transparent per quad as a photographed one, and
+its green is as fixed. What the asset would have bought -- a shape that does not
+read as a spike -- is bought here instead by giving the blade a curve, a short
+taper and a tuft to grow in, which costs geometry rather than fill rate and
+keeps the colour coupling intact.
 
 WHERE THE GRASS GOES
 
@@ -46,6 +53,14 @@ that is the same depth everywhere reads better, so the only thing that varies
 across the level now is what the ground is made of. The trail keeps itself
 clear by being a different material, not by being measured against.
 
+That covers every phase but one. In phase2 the castle island's ground carries
+the same `grass` material as the approach on the far side of the bridge, and is
+just as flat and just as dry, so no test this tool can make separates them --
+the island is meadow by every one of them. Where the material cannot answer the
+question, MEADOW_REGIONS does, in plan-space coordinates measured off the
+level as built. It is deliberately the exception and not the mechanism: a phase
+with no entry grows grass wherever it is green.
+
 WHY IT IS NOT IN `VISUAL`
 
 `DETAIL` is exported as its own `detail.glb` and named by an optional
@@ -59,7 +74,8 @@ normals, `VISUAL` the other way round.
 Usage:
     blender --background source/levels/phase1_forest.blend \
         --python tools/scatter_grass.py -- [--out <path>] [--dry-run]
-        [--density 24] [--max-blades 400000] [--width 0.07] [--height 1.00]
+        [--density 9] [--max-blades 320000] [--width 0.115] [--height 1.00]
+        [--level <phase>] [--region minx,miny,maxx,maxy]
 
 Re-running is safe: every GRASS_* object is deleted from both collections and
 rebuilt from the same seed, so a second run on an unchanged level produces the
@@ -121,21 +137,57 @@ CELL = 36.0
 
 # --- The blade -------------------------------------------------------------
 
-# One isoceles triangle: a base edge tapering to a point. A blunt-tipped quad
-# (2 triangles) or a curved two-segment blade (3) were both measured against
-# this and rejected -- at the game's 4.2 m camera distance the curve they buy
-# deviates by about two pixels on the very nearest blades and by less than one
-# past 8 m, for two to three times the triangles and the file size. The lean
-# below is what actually reads as shape.
-VERTS_PER_BLADE = 3
-TRIS_PER_BLADE = 1
+# A three-segment blade that arcs: pairs of verts at the foot and at two rings
+# up the blade, one at the tip. Seven vertices, five triangles.
+#
+# This replaced a single isoceles triangle, and the note that rejected the curve
+# the first time round measured the wrong thing. It compared *centreline
+# deviation in pixels* -- about two on the nearest blades, under one past 8 m --
+# and concluded the curve was invisible. It is not a pixel-accuracy question.
+# Straight edges converging on a point read as a triangle at any distance,
+# because the eye reads the silhouette's shape language and not its error
+# against some reference.
+#
+# Three segments and not two, which was tried in between and rendered. Two
+# segments do not curve -- they kink. A blade is a straight piece, one visible
+# corner, then another straight piece, and at the camera's 4.2 m the corner is
+# what the eye finds. The third segment is what turns that corner into an arc,
+# and it is the whole reason this looks like grass rather than like bent wire.
+VERTS_PER_BLADE = 7
+TRIS_PER_BLADE = 5
 
-# Base width in metres, tapering to a point. Reach for this before BLADE_DENSITY
-# when the meadow looks thin: coverage across a view is proportional to
-# density * depth * width, so widening a blade buys the same fullness as adding
-# blades and costs no triangles and no bytes at all. 7 cm is also the stylised
-# proportion -- blades in this art style are chunky next to real grass.
-BLADE_WIDTH = 0.07
+# Corner indices into the seven, in the order blade_geometry emits them: rings
+# of two at 0-1, 2-3 and 4-5 going up, then the tip alone at 6. Winding is
+# consistent but not load-bearing -- GameRenderer draws the meadow with
+# backface culling off, and grass.fs lights from a constant up vector rather
+# than from geometry, so neither face has a front to be on.
+BLADE_TRIS = ((0, 1, 3), (0, 3, 2),
+              (2, 3, 5), (2, 5, 4),
+              (4, 5, 6))
+
+# Where each ring sits along the blade, as a fraction of its length. The first
+# is the foot and the last is the tip, so this is also what sets
+# VERTS_PER_BLADE: two verts for every ring but the tip, which is one.
+RINGS = (0.0, 0.38, 0.72, 1.0)
+
+# Half-width at each of those rings, as a fraction of BLADE_WIDTH.
+#
+# The blade holds nearly all its width to 72% of its length and then narrows
+# over the last quarter. That is what keeps it a ribbon: taper it evenly from
+# the ground up -- which is what a single triangle does by definition -- and it
+# is a wedge again however hard it is curved.
+#
+# The tip is a single vertex, so it is a point rather than the blunt end an
+# eighth vertex would buy. At 4.2 m a fine point on the end of an arc reads as
+# a grass tip; what read as a spike was the straightness, not the sharpness.
+WIDTH_PROFILE = (1.0, 0.95, 0.66, 0.0)
+
+# Base width in metres. Reach for this before BLADE_DENSITY when the meadow
+# looks thin: coverage across a view is proportional to density * depth *
+# width, so widening a blade buys the same fullness as adding blades and costs
+# no triangles and no bytes at all. Raised from 7 cm alongside the curve, which
+# is how the triangle budget stays near where it was -- see BLADE_DENSITY.
+BLADE_WIDTH = 0.115
 WIDTH_JITTER = (0.85, 1.15)
 
 # Standing height in metres against a ~1.8 m player: waist. Uniform across the
@@ -148,10 +200,34 @@ WIDTH_JITTER = (0.85, 1.15)
 BLADE_HEIGHT = 1.00
 HEIGHT_JITTER = (0.65, 1.35)
 
-# Lean off the ground normal. The blade is made longer by 1/cos(lean) so that
-# the height above is a *standing* height and means what it says regardless of
-# how far the blade tips over.
-LEAN = (12.0, 38.0)
+# How far the blade's tangent has turned off the ground normal, at its root and
+# at its tip. The blade leaves the ground nearly upright and keeps bending, so
+# the difference between these two is the curve; LEAN used to be a single angle
+# held all the way up, which is a straight stalk.
+#
+# No 1/cos correction any more. blade_curve builds the arc at unit length,
+# measures how much height that actually won, and scales -- so a standing
+# height still means what it says however far the blade arcs over, and it stays
+# right for a curve where no single cosine would.
+ROOT_LEAN = (4.0, 16.0)
+
+# Past 90 degrees on purpose for the upper end of the range: those blades arch
+# over and point their tips back down at the ground, which is the shape that
+# makes a tuft read as a fountain rather than as a brush. blade_curve measures a
+# blade's height at its highest point rather than at its tip precisely so that
+# these still stand as tall as they are asked to.
+TIP_LEAN = (52.0, 112.0)
+
+# Exponent on the root-to-tip interpolation of that angle. Above 1.0 the blade
+# holds its root angle longer and then whips over near the tip, which is the
+# stylised profile -- a stiff stalk with a soft end. At 1.0 the curvature is
+# uniform and it reads as a bent wire.
+CURVE_BIAS = 1.7
+
+# Integration steps for that arc. Past ~16 the ring positions move by well under
+# a millimetre, so this is not a quality dial; it is only here to be a named
+# number rather than a literal in the loop.
+CURVE_STEPS = 24
 
 # Metres, absolute rather than a fraction of height: every blade gets its own
 # raycast, so the exact ground point is known and this only has to hide the
@@ -168,9 +244,47 @@ SINK = 0.02
 SHADE_TIP = 1.00
 SHADE_BASE = 0.62
 
+# Warmth added toward the tip, as a fraction pushed into red and out of blue.
+# Stylised grass is not one green darkened -- the base sits cool in its own
+# shadow and the tip catches sun, so the gradient carries hue as well as value.
+# Small: this is multiplying an already-green baseColorFactor, so 0.10 here is
+# a visible shift rather than a subtle one.
+TIP_WARMTH = 0.10
+
 # Per-blade variation, so a meadow is not one flat field of the same green.
 VALUE_JITTER = 0.08
 HUE_JITTER = 0.05
+
+# --- Clumping --------------------------------------------------------------
+
+# Blades per tuft, and the radius they are scattered within.
+#
+# The scatter used to be uniform over the whole meadow, and uniform is what a
+# field of spikes looks like: every blade the same distance from its neighbours,
+# no structure at any scale between one blade and the whole level. Real grass --
+# and every stylised grass that reads as grass -- grows in tufts, and the tuft
+# is the thing the eye actually resolves at 4.2 m.
+#
+# This costs nothing. The same blade count is spent; only where it lands
+# changes.
+TUFT_BLADES = (5, 11)
+TUFT_RADIUS = 0.20
+
+# Mean members of a tuft, which is what turns a cell's blade budget into a
+# number of tufts. Derived and not typed, so it cannot drift out of step with
+# TUFT_BLADES -- and it has to be right, because the budget is spent in whole
+# tufts and any error here shows up as a density that is not the one asked for.
+MEAN_TUFT_BLADES = (TUFT_BLADES[0] + TUFT_BLADES[1]) / 2.0
+
+# Blades lean *away* from the tuft's centre, so the clump opens like a fountain
+# rather than combing one way. This is how far a blade's azimuth is allowed to
+# wander off that outward direction.
+TUFT_SPLAY = 42.0
+
+# How much of the tip lean a blade at the centre of a tuft keeps. The middle of
+# a clump stands up and the outside flops, which is what gives a tuft a profile
+# instead of a uniform brush.
+TUFT_CENTRE_LEAN = 0.45
 
 # --- Where it grows --------------------------------------------------------
 
@@ -193,6 +307,36 @@ MIN_NORMAL_Z = 0.88
 # mostly keeps itself clear by being a different material.
 PATH_CLEAR = 0.3
 
+# --- Where each phase grows grass ------------------------------------------
+
+# Plan-space limits on the scatter, keyed by the .blend's own stem. A phase
+# absent from here grows grass on every `grass` face it has, which is what
+# phase1 and phase3 want: there the material is already the whole answer.
+#
+# phase2 is the exception, and the reason is worth stating because it is not
+# visible from the material list. The castle island's ground carries the *same*
+# `grass` material as the approach does -- it is one authored `ground` object,
+# 73,106 faces of it -- and it is flat, dry and unshaded. Every test this tool
+# has says meadow. So the only thing that can separate the island from the
+# approach is where it is, and that is what this table is.
+#
+# Coordinates are the shipped frame, the one VISUAL and COLLISION are in, NOT
+# the authored frame the `landscape` collection sits in. The two differ by a
+# shift and a x3 scale that nobody has written down (see the module docstring),
+# so these were measured off the level as built -- from the bridge's own
+# collision railings -- and not read off the .blend's landscape objects.
+#
+# The margin past the bridge is not decoration: a blade rooted on the line
+# still arcs up to 1.2 m westward, and the westernmost vertex this actually
+# exports is x 135.2, against a bridge that ends at 134.5.
+MEADOW_REGIONS = {
+    # East of the bridge only: the approach the player spawns on, and nothing
+    # across the water. BOX_Railing_bridge_0/1 put the bridge at x 94.3 to
+    # 134.5, so this is its far end plus a couple of metres so that no blade
+    # sprouts from the abutment itself.
+    "phase2_approach": {"min_x": 136.5},
+}
+
 # --- Budget ----------------------------------------------------------------
 
 # Blades per square metre, and the number this tool exists to let you turn.
@@ -202,7 +346,13 @@ PATH_CLEAR = 0.3
 # detail.glb, where the same figure under the old trail falloff bought about
 # half that. Reach for --width before this when the meadow looks thin -- a wider
 # blade covers the same ground for no triangles at all.
-BLADE_DENSITY = 24.0
+#
+# Halved from 24 when the blade went from one triangle to three, and the meadow
+# did not get thinner: BLADE_WIDTH went up by a third at the same time, tufts
+# concentrate the blades that remain, and a curved blade covers more of its own
+# bounding box than a wedge does. Triangle count lands around 1.5x the old
+# figure and detail.glb comes out about where it was.
+BLADE_DENSITY = 9.0
 
 # Classification samples per square metre -- NOT the blade count.
 #
@@ -218,7 +368,21 @@ SITE_DENSITY = 0.45
 # Ceiling for the whole level, applied as a uniform scale on the per-cell blade
 # count once the classification pass has reported how much ground there is.
 # Scaling rather than subsampling keeps the falloff's shape intact.
-MAX_BLADES = 400000
+#
+# A guard rail and not a design target: BLADE_DENSITY is the dial, and this only
+# exists to stop a level nobody measured from shipping a gigabyte. Set high
+# enough that no phase currently binds against it -- phase3's battlefield is
+# 34,000 m^2, more than twice phase1's meadow, and holding it to the old 150,000
+# gave it 4.2 blades/m^2 against the 8.5 the other two get. Half the density
+# reads as half a meadow, so the ceiling moved rather than the battlefield
+# staying thin.
+#
+# What it costs is file size and VRAM, not frame time. GameRenderer culls the
+# detail meshes by frustum and by kGrassDrawDistance, so what is actually drawn
+# is set by the density inside an 85 m disc and is the same on a small level as
+# on a large one. A bigger level at the same density costs more bytes on disk
+# and nothing per frame.
+MAX_BLADES = 320000
 
 # Blender writes u16 indices only while the largest is under 65535
 # (io_scene_gltf2/blender/exp/primitives.py:218), and raylib's Mesh.indices is
@@ -461,14 +625,33 @@ class Ground(object):
     different surface than the one its cell was classified from.
     """
 
-    def __init__(self, visual):
+    def __init__(self, visual, region=None):
         self.targets, self.face_material = scatter_targets(visual)
         self.path = material_tree(visual, PATH_MATERIAL)
         self.water = water_level(visual)
         (self.min_x, self.min_y), (self.max_x, self.max_y), top = \
             ground_bounds(visual)
+
+        # The region is applied here, to the bounds the classification grid is
+        # laid over, rather than as a per-sample test inside classify(). Same
+        # answer, and it is the difference between scanning 400 m of phase2 to
+        # throw away 85% of it and scanning only the strip that can survive.
+        self.region = dict(region or {})
+        self.min_x = max(self.min_x, self.region.get("min_x", -1e30))
+        self.min_y = max(self.min_y, self.region.get("min_y", -1e30))
+        self.max_x = min(self.max_x, self.region.get("max_x", 1e30))
+        self.max_y = min(self.max_y, self.region.get("max_y", 1e30))
+        if self.min_x >= self.max_x or self.min_y >= self.max_y:
+            raise BuildError(
+                "the meadow region %r leaves no ground: x %.1f..%.1f, y "
+                "%.1f..%.1f. These are shipped-frame coordinates, not the "
+                "authored frame the `landscape` collection is in."
+                % (self.region, self.min_x, self.max_x, self.min_y, self.max_y))
+
         # Well clear of the tallest canopy: a ray that starts inside a tree
-        # misses it and plants grass under the branches.
+        # misses it and plants grass under the branches. Measured over the
+        # whole level and not just the region -- higher is never wrong, and a
+        # region that clipped a tall canopy out of this would bury grass.
         self.origin_z = top + 15.0
         self.down = Vector((0.0, 0.0, -1.0))
 
@@ -564,27 +747,115 @@ def blade_frame(normal, azimuth):
     return lean, lean.cross(normal).normalized()
 
 
-def shade_colour(level, tint):
-    """One COLOR_0 value: neutral modulation, never the colour itself.
+def shade_colour(fraction, tint):
+    """One COLOR_0 value for a point `fraction` of the way up a blade.
 
     glTF multiplies baseColorFactor by COLOR_0, and baseColorFactor already
     carries the terrain green -- so putting the green in here as well would
     square it. What goes in is how *dark* this point of the blade is, nudged
     per blade so the meadow is not one flat sheet of a single value.
+
+    Alpha is not a colour at all: it is the height fraction itself, 0 at the
+    foot and 1 at the tip, and grass.vs uses it as the mask that pins a blade's
+    root to the ground while its tip moves in the wind. It rides in this
+    attribute because COLOR_0 is already being exported and a second one would
+    be another accessor per mesh for four bytes of the same information. Safe
+    to put there because grass.fs writes alpha 1.0 unconditionally and the
+    blade material is OPAQUE, so nothing downstream reads it as coverage.
     """
-    return (max(0.0, min(1.0, level * tint[0])),
-            max(0.0, min(1.0, level * tint[1])),
-            max(0.0, min(1.0, level * tint[2])))
+    level = SHADE_BASE + (SHADE_TIP - SHADE_BASE) * fraction
+    warm = TIP_WARMTH * fraction
+    shift = (1.0 + warm, 1.0, 1.0 - warm)
+    return tuple(max(0.0, min(1.0, level * tint[i] * shift[i]))
+                 for i in range(3)) + (fraction,)
+
+
+def blade_curve(normal, direction, root_lean, tip_lean):
+    """Ring points along a unit-length blade, plus the height it stands.
+
+    Integrated rather than interpolated between two endpoints. A blade here is
+    defined by how its *tangent* turns along its length -- from `root_lean` off
+    the ground normal at the foot to `tip_lean` at the tip -- so the shape has
+    to be walked; lerping two endpoints would give the straight stalk this
+    replaced.
+
+    Built at unit length so the caller can scale it. The second return value is
+    the greatest height the blade reaches along `normal` per unit of length,
+    which is what makes that scale exact: a standing height still means what it
+    says however far the blade arcs over, and it stays right for a curve where
+    no single cosine would.
+
+    The *greatest* height and not the tip's, which matters once TIP_LEAN is
+    allowed past 90 degrees. Such a blade arches over and its tip comes back
+    down, so scaling by the tip would divide by a number heading for zero and
+    grow the blade without bound to keep a tip that is falling at a height it
+    has already left.
+    """
+    path = [Vector((0.0, 0.0, 0.0))]
+    step = 1.0 / CURVE_STEPS
+    for i in range(CURVE_STEPS):
+        # Midpoint of the step, not its start -- with CURVE_BIAS bending the
+        # angle this is a meaningfully better integral for the same work.
+        along = (i + 0.5) / CURVE_STEPS
+        angle = root_lean + (tip_lean - root_lean) * (along ** CURVE_BIAS)
+        path.append(path[-1] + (normal * math.cos(angle)
+                                + direction * math.sin(angle)) * step)
+
+    rings = []
+    for fraction in RINGS:
+        where = fraction * CURVE_STEPS
+        low = min(int(where), CURVE_STEPS - 1)
+        rings.append(path[low].lerp(path[low + 1], where - low))
+    return rings, max(point.dot(normal) for point in path)
+
+
+def blade_geometry(foot, normal, direction, side, height, half_width,
+                   root_lean, tip_lean, tint):
+    """Five world verts and their five COLOR_0 values, base ring to tip.
+
+    Order is (base left, base right, mid left, mid right, tip), which is what
+    BLADE_TRIS indexes.
+
+    `side` is fixed for the whole blade rather than recomputed per ring. It is
+    perpendicular to the lean, so a blade that has tipped over shows its face
+    to a viewer standing beside it -- twisting it to follow the curve would
+    turn the tip edge-on and lose exactly the part of the silhouette the curve
+    was added to show.
+    """
+    rings, rise = blade_curve(normal, direction, root_lean, tip_lean)
+    # The first step of the integral leaves the ground at ROOT_LEAN, at most 16
+    # degrees off the normal, so `rise` is never below cos(16 deg) of that first
+    # step and this cannot approach a divide by zero.
+    scale = height / rise
+
+    verts, colours = [], []
+    last = len(RINGS) - 1
+    for index, fraction in enumerate(RINGS):
+        centre = foot + rings[index] * scale
+        colour = shade_colour(fraction, tint)
+        if index == last:
+            verts.append(centre[:])
+            colours.append(colour)
+        else:
+            half = side * (half_width * WIDTH_PROFILE[index])
+            verts.extend(((centre - half)[:], (centre + half)[:]))
+            colours.extend((colour, colour))
+    return verts, colours
 
 
 def grow_blades(ground, cells, spacing, rng, options, report):
-    """A blade list: (x, y, three world verts, three vertex colours).
+    """A blade list: (x, y, five world verts, five vertex colours).
 
-    Each classified cell is filled independently, and every blade inside it
-    gets its own downward ray. That ray is the reason blades sit flush across a
-    terrain crease: the mesh runs about 0.6 triangles per square metre, so a
-    1.5 m cell straddles an edge routinely and extrapolating from the cell's
-    own hit triangle would float or bury blades by 10-20 cm.
+    Each classified cell is filled independently, in tufts rather than one
+    blade at a time -- a tuft picks a centre in the cell and its members land
+    within TUFT_RADIUS of it, leaning away from that centre. The blade budget
+    is spent the same either way; only where the blades land changes.
+
+    Every blade still gets its own downward ray, including the ones sharing a
+    tuft. That ray is the reason blades sit flush across a terrain crease: the
+    mesh runs about 0.6 triangles per square metre, so even a 20 cm tuft can
+    straddle an edge, and reusing the tuft centre's hit would float or bury
+    the outer members.
     """
     cell_area = spacing * spacing
     projected = options["density"] * cell_area * len(cells)
@@ -593,14 +864,23 @@ def grow_blades(ground, cells, spacing, rng, options, report):
     report["projected"] = projected
     report["scale"] = scale
 
-    # Uniform, so the per-cell count is the same everywhere and only its
+    # Uniform, so the per-cell figure is the same everywhere and only its
     # fractional part is resolved per cell. Stochastic rounding rather than a
     # floor, or a density of 24.6 would scatter 24 and quietly lose 2.5%.
-    wanted = options["density"] * cell_area * scale
+    #
+    # Counted in *tufts*, not blades, and that is not a presentational choice.
+    # The budget is spent in whole tufts -- a partial tuft is a runt of two or
+    # three blades and looks like one -- so laying tufts down until a blade
+    # budget is met overshoots it by most of a tuft every time. With ~8 blades
+    # to a tuft and a cell wanting 10, that is two tufts and 16 blades: 60%
+    # over, every cell, and --max-blades stops being a ceiling at all. Dividing
+    # first makes the blade count come out right in expectation and leaves
+    # every tuft full.
+    wanted = options["density"] * cell_area * scale / MEAN_TUFT_BLADES
     whole, fraction = int(wanted), wanted - int(wanted)
 
     counts = {"tried": 0, "missed": 0, "not_ground": 0, "steep": 0,
-              "drowned": 0}
+              "drowned": 0, "tufts": 0}
     blades = []
     step = max(1, len(cells) // 10)
 
@@ -609,46 +889,66 @@ def grow_blades(ground, cells, spacing, rng, options, report):
             print("[scatter_grass]   ...%3d%%  %d blades"
                   % (100 * index // len(cells), len(blades)))
 
-        count = whole + (1 if rng.random() < fraction else 0)
-        for _ in range(count):
-            counts["tried"] += 1
-            x = cell_x + rng.random() * spacing
-            y = cell_y + rng.random() * spacing
-            hit, normal, material, _ = ground.drop(x, y)
-            if hit is None:
-                counts["missed"] += 1
-                continue
-            if material != GROUND_MATERIAL:
-                counts["not_ground"] += 1
-                continue
-            if normal.z < MIN_NORMAL_Z:
-                counts["steep"] += 1
-                continue
-            if ground.water is not None and hit.z < ground.water:
-                counts["drowned"] += 1
-                continue
+        for _ in range(whole + (1 if rng.random() < fraction else 0)):
+            counts["tufts"] += 1
+            tuft_x = cell_x + rng.random() * spacing
+            tuft_y = cell_y + rng.random() * spacing
 
-            lean_angle = math.radians(rng.uniform(*LEAN))
-            direction, side = blade_frame(normal, rng.uniform(0.0, math.tau))
-            half = side * (options["width"] * rng.uniform(*WIDTH_JITTER) * 0.5)
-            # Length, not height: dividing by cos(lean) keeps the tip at the
-            # asked-for height above the ground however far the blade tips.
-            length = (options["height"]
-                      * rng.uniform(*HEIGHT_JITTER)) / math.cos(lean_angle)
-
-            foot = hit - normal * SINK
-            tip = hit + normal * (length * math.cos(lean_angle)) \
-                + direction * (length * math.sin(lean_angle))
-
+            # Shared across the tuft, which is the point of having tufts: one
+            # clump is one plant, so its blades agree on height and colour and
+            # the variation the eye reads is between clumps rather than
+            # between neighbouring blades.
+            tuft_height = options["height"] * rng.uniform(*HEIGHT_JITTER)
             value = 1.0 + rng.uniform(-VALUE_JITTER, VALUE_JITTER)
             hue = rng.uniform(-HUE_JITTER, HUE_JITTER)
             tint = (value * (1.0 - 0.8 * hue), value * (1.0 + hue), value)
-            base = shade_colour(SHADE_BASE, tint) + (0.0,)
-            crown = shade_colour(SHADE_TIP, tint) + (1.0,)
 
-            blades.append((hit.x, hit.y,
-                           ((foot - half)[:], (foot + half)[:], tip[:]),
-                           (base, base, crown)))
+            for _ in range(rng.randint(*TUFT_BLADES)):
+                counts["tried"] += 1
+
+                # Square-rooted so the members spread evenly over the disc
+                # instead of bunching at its centre.
+                azimuth = rng.uniform(0.0, math.tau)
+                reach = math.sqrt(rng.random())
+                offset = TUFT_RADIUS * reach
+                x = tuft_x + math.cos(azimuth) * offset
+                y = tuft_y + math.sin(azimuth) * offset
+
+                hit, normal, material, _ = ground.drop(x, y)
+                if hit is None:
+                    counts["missed"] += 1
+                    continue
+                if material != GROUND_MATERIAL:
+                    counts["not_ground"] += 1
+                    continue
+                if normal.z < MIN_NORMAL_Z:
+                    counts["steep"] += 1
+                    continue
+                if ground.water is not None and hit.z < ground.water:
+                    counts["drowned"] += 1
+                    continue
+
+                # Away from the tuft's centre, jittered. A clump that opens
+                # outward reads as one plant; give every member an independent
+                # azimuth and the tuft is just a dense patch of the old
+                # uniform scatter.
+                splay = math.radians(rng.uniform(-TUFT_SPLAY, TUFT_SPLAY))
+                direction, side = blade_frame(normal, azimuth + splay)
+
+                # The centre of a clump stands up and the outside flops, which
+                # is what gives a tuft a profile rather than a flat brush.
+                lean_scale = TUFT_CENTRE_LEAN \
+                    + (1.0 - TUFT_CENTRE_LEAN) * reach
+                root_lean = math.radians(rng.uniform(*ROOT_LEAN)) * lean_scale
+                tip_lean = math.radians(rng.uniform(*TIP_LEAN)) * lean_scale
+
+                half_width = (options["width"]
+                              * rng.uniform(*WIDTH_JITTER) * 0.5)
+
+                verts, colours = blade_geometry(
+                    hit - normal * SINK, normal, direction, side,
+                    tuft_height, half_width, root_lean, tip_lean, tint)
+                blades.append((hit.x, hit.y, verts, colours))
 
     report["grow"] = counts
     report["blades"] = len(blades)
@@ -716,7 +1016,8 @@ def build_chunks(blades, material, detail, report):
                 base = len(verts)
                 verts.extend(blade[2])
                 colours.extend(blade[3])
-                tris.append((base, base + 1, base + 2))
+                tris.extend(tuple(base + corner for corner in tri)
+                            for tri in BLADE_TRIS)
 
             if len(verts) > MAX_VERTS_PER_MESH:
                 raise BuildError(
@@ -783,7 +1084,35 @@ def parse_args(argv):
                         help="standing blade height in metres, uniform across "
                              "the level (default %.2f -- waist on a 1.8 m "
                              "player)" % BLADE_HEIGHT)
+    parser.add_argument("--level", default=None,
+                        help="which MEADOW_REGIONS entry to use (default: the "
+                             ".blend's own stem)")
+    parser.add_argument("--region", default=None,
+                        help="override MEADOW_REGIONS for this run, as "
+                             "minx,miny,maxx,maxy in the shipped frame. Any "
+                             "field may be blank for unbounded, e.g. "
+                             "'136.5,,,' for everything east of x=136.5.")
     return parser.parse_args(argv)
+
+
+def resolve_region(args):
+    """(region dict, where it came from) for this run."""
+    if args.region is not None:
+        fields = args.region.split(",")
+        if len(fields) != 4:
+            raise BuildError("--region wants four comma-separated fields "
+                             "(minx,miny,maxx,maxy), got %r" % args.region)
+        keys = ("min_x", "min_y", "max_x", "max_y")
+        region = {k: float(v) for k, v in zip(keys, fields) if v.strip()}
+        return region, "--region"
+
+    level = args.level
+    if level is None:
+        stem = os.path.basename(bpy.data.filepath)
+        level = os.path.splitext(stem)[0]
+    if level in MEADOW_REGIONS:
+        return MEADOW_REGIONS[level], "MEADOW_REGIONS[%r]" % level
+    return None, "whole level (no MEADOW_REGIONS entry for %r)" % level
 
 
 def main():
@@ -796,9 +1125,11 @@ def main():
     colour = terrain_colour()
     material = blade_material(colour)
 
+    region, region_source = resolve_region(args)
+
     rng = random.Random(SEED)
     spacing = 1.0 / math.sqrt(SITE_DENSITY)
-    ground = Ground(visual)
+    ground = Ground(visual, region)
 
     cells = classify(ground, spacing, rng, report)
     if not cells:
@@ -824,12 +1155,20 @@ def main():
 
     print("\n[scatter_grass] colour     (%.3f, %.3f, %.3f) from the %r material"
           % (colour[0], colour[1], colour[2], GROUND_MATERIAL))
-    print("[scatter_grass] blade      %.2f m tall (x%.2f..%.2f), %.0f cm wide, "
-          "leaning %.0f-%.0f deg"
+    print("[scatter_grass] blade      %.2f m tall (x%.2f..%.2f), %.1f cm wide, "
+          "arcing %.0f-%.0f to %.0f-%.0f deg over %d tris"
           % (args.height, HEIGHT_JITTER[0], HEIGHT_JITTER[1],
-             args.width * 100.0, LEAN[0], LEAN[1]))
+             args.width * 100.0, ROOT_LEAN[0], ROOT_LEAN[1],
+             TIP_LEAN[0], TIP_LEAN[1], TRIS_PER_BLADE))
+    print("[scatter_grass] tufts      %d clumps of %d-%d, %.0f cm across, "
+          "splaying +/-%.0f deg"
+          % (grown["tufts"], TUFT_BLADES[0], TUFT_BLADES[1],
+             TUFT_RADIUS * 200.0, TUFT_SPLAY))
     print("[scatter_grass] falloff    none -- uniform over every green cell, "
           "%.1f m clear of the trail" % PATH_CLEAR)
+    print("[scatter_grass] region     x %.1f..%.1f, y %.1f..%.1f  (%s)"
+          % (ground.min_x, ground.max_x, ground.min_y, ground.max_y,
+             region_source))
     print("[scatter_grass] classify   %d samples -> %d meadow cells = %.0f m^2 "
           "(off-mesh %d, not ground %d, too steep %d, on the trail %d, "
           "drowned %d; %d through canopy)"
