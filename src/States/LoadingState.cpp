@@ -1,3 +1,4 @@
+#include <Core/AssetPaths.h>
 #include <States/LoadingState.h>
 #include <Rendering/AssetManifest.h>
 #include <raylib.h>
@@ -28,7 +29,7 @@ StateAction LoadingState::update(float dt) {
             if (current_asset_index < num_assets) {
                 const auto& entry = kAssets[current_asset_index];
                 if (entry.modelPath) {
-                    asset_manager.loadModel(entry.id, entry.modelPath);
+                    asset_manager.loadModel(entry.id, assets::path(entry.modelPath));
                 }
                 current_asset_index++;
                 target_progress = 0.1f + 0.2f * ((float)current_asset_index / num_assets);
@@ -45,7 +46,7 @@ StateAction LoadingState::update(float dt) {
                 for (size_t i = 0; i < num_assets; i++) {
                     const auto& entry = kAssets[i];
                     if (entry.animPath) {
-                        asset_manager.loadAnimations(entry.id, entry.animPath);
+                        asset_manager.loadAnimations(entry.id, assets::path(entry.animPath));
                     }
                 }
             });

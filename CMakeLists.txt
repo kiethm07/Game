@@ -83,4 +83,21 @@ set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT $
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-target_compile_definitions(${PROJECT_NAME} PRIVATE ASSET_DIR="${CMAKE_SOURCE_DIR}/assets")
+# The asset root is found at RUNTIME, relative to the executable — see
+# src/Core/AssetPaths.cpp. This is only the last-resort fallback it uses when
+# there is no assets directory beside the binary at all, which keeps a
+# developer's build runnable from anywhere on this machine. A packaged copy
+# never reaches it, because the symlink below means one is always beside it.
+target_compile_definitions(${PROJECT_NAME} PRIVATE SOURCE_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets")
+
+# Put an `assets` beside the binary, so running out of the build tree exercises
+# the same lookup a player's copy will. Without it the build-tree run would only
+# ever hit the fallback above, and the path that actually ships would never be
+# tested until someone else ran it.
+#
+# A symlink rather than a copy: the assets are 140 MB and change constantly.
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+            "${CMAKE_SOURCE_DIR}/assets"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets"
+    COMMENT "Linking assets next to the executable")

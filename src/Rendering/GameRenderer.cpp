@@ -1,4 +1,5 @@
 #include <Rendering/DebugCubeRenderer.h>
+#include <Core/AssetPaths.h>
 #include <Rendering/GameRenderer.h>
 #include <Rendering/ScopedMaterialShader.h>
 #include <Rendering/ShaderLibrary.h>
@@ -237,22 +238,22 @@ void GameRenderer::initializeAssets() {
   //    environment, and AssetManager's shaders are keyed to a model's vertex
   //    format. Both pull in shadow_common.glsl, hence ShaderLibrary rather than
   //    raylib's LoadShader.
-  worldShader = ShaderLibrary::load(ASSET_DIR "/shaders/glsl330/world.vs",
-                                    ASSET_DIR "/shaders/glsl330/world.fs");
+  worldShader = ShaderLibrary::load(assets::path("shaders/glsl330/world.vs"),
+                                    assets::path("shaders/glsl330/world.fs"));
   if (worldShader.id == 0) {
     TraceLog(LOG_ERROR, "GameRenderer: failed to load world shader; obstacles "
                         "will draw unlit.");
   }
 
-  levelShader = ShaderLibrary::load(ASSET_DIR "/shaders/glsl330/level.vs",
-                                    ASSET_DIR "/shaders/glsl330/level.fs");
+  levelShader = ShaderLibrary::load(assets::path("shaders/glsl330/level.vs"),
+                                    assets::path("shaders/glsl330/level.fs"));
   if (levelShader.id == 0) {
     TraceLog(LOG_ERROR, "GameRenderer: failed to load level shader; the level "
                         "mesh will draw unlit.");
   }
 
-  grassShader = ShaderLibrary::load(ASSET_DIR "/shaders/glsl330/grass.vs",
-                                    ASSET_DIR "/shaders/glsl330/grass.fs");
+  grassShader = ShaderLibrary::load(assets::path("shaders/glsl330/grass.vs"),
+                                    assets::path("shaders/glsl330/grass.fs"));
   if (grassShader.id == 0) {
     // Deliberately no fallback to levelShader: its vertex stage declares
     // vertexTexCoord and vertexNormal, which the detail meshes do not carry, so

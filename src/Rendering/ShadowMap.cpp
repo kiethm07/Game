@@ -1,4 +1,6 @@
 #include <Rendering/ShadowMap.h>
+#include <Core/AssetPaths.h>
+#include <string>
 
 #include <cmath>
 #include <raymath.h>
@@ -100,8 +102,11 @@ ShadowMap::ShadowMap() {
   cascades[1].textureSlot = kFarSlot;
   farCentre = kDefaultFarCentre;
 
-  staticDepthShader = LoadShader(ASSET_DIR "/shaders/glsl330/depth.vs",
-                                 ASSET_DIR "/shaders/glsl330/depth.fs");
+  // raylib's LoadShader takes const char*, unlike ShaderLibrary::load, so these
+  // two temporaries have to outlive the call rather than being inlined.
+  const std::string depth_vs = assets::path("shaders/glsl330/depth.vs");
+  const std::string depth_fs = assets::path("shaders/glsl330/depth.fs");
+  staticDepthShader = LoadShader(depth_vs.c_str(), depth_fs.c_str());
 
   ready = (staticDepthShader.id != 0);
   for (int i = 0; i < kCascadeCount; i++) {

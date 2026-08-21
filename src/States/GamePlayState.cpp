@@ -1,4 +1,5 @@
 #include "States/GamePlayState.h"
+#include <Core/AssetPaths.h>
 #include "raylib.h"
 #include "raymath.h"
 #include <Core/Game.h>
@@ -38,7 +39,7 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
              "GameplayState: phase %d/%d ('%s') failed to load from '%s'; "
              "starting with an empty world.",
              (int)campaign.index() + 1, (int)campaign.count(),
-             campaign.currentName(), campaign.currentLevelPath());
+             campaign.currentName(), campaign.currentLevelPath().c_str());
   }
 
   // Loaded here rather than in LevelLoader so a Level stays parseable without a
@@ -57,12 +58,12 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
   player = std::make_unique<Player>(input_manager);
 
   // Load test SFX
-  asset_manager.loadSound(AssetID::SFX_COIN, ASSET_DIR "/audio/coin.wav");
-  asset_manager.loadSound(AssetID::SFX_HIT, ASSET_DIR "/audio/hit.mp3");
-  asset_manager.loadSound(AssetID::SFX_DEFLECT_1, ASSET_DIR "/audio/deflect_1.MP3");
-  asset_manager.loadSound(AssetID::SFX_DEFLECT_2, ASSET_DIR "/audio/Deflect_2.MP3");
-  asset_manager.loadSound(AssetID::SFX_DEFLECT_NPC, ASSET_DIR "/audio/deflect_NPC.MP3");
-  asset_manager.loadSound(AssetID::SFX_DEATHBLOW, ASSET_DIR "/audio/deflect_end.mp3");
+  asset_manager.loadSound(AssetID::SFX_COIN, assets::path("audio/coin.wav"));
+  asset_manager.loadSound(AssetID::SFX_HIT, assets::path("audio/hit.mp3"));
+  asset_manager.loadSound(AssetID::SFX_DEFLECT_1, assets::path("audio/deflect_1.MP3"));
+  asset_manager.loadSound(AssetID::SFX_DEFLECT_2, assets::path("audio/Deflect_2.MP3"));
+  asset_manager.loadSound(AssetID::SFX_DEFLECT_NPC, assets::path("audio/deflect_NPC.MP3"));
+  asset_manager.loadSound(AssetID::SFX_DEATHBLOW, assets::path("audio/deflect_end.mp3"));
   player->setPosition(level.playerSpawn.position);
   player->setRotation({0.0f, level.playerSpawn.yaw, 0.0f});
 
