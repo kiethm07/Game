@@ -15,7 +15,7 @@ the game draws the level at identity).
 Usage:
     python3 tools/verify_level.py assets/levels/<name>
 
-Four checks, the first three in increasing strength:
+Five checks, the first three in increasing strength:
 
   1. Bounds. The GLB's overall AABB against the `bounds` field in the JSON.
      Applies to every level. A mirrored layout or a swapped axis shows up here
@@ -50,6 +50,13 @@ Four checks, the first three in increasing strength:
      COLOR_0, and geometry outside the declared bounds. See check_detail_mesh
      for why each of those is silent.
 
+  5. Enemy spawns. When the level carries an enemies.json overlay -- the
+     hand-authored spawn list that replaces its Blender markers -- it is
+     schema-checked, bounds-checked, and (where there is a collision mesh) the
+     height the engine will snap each `y`-less entry to is resolved and
+     printed. Note check 3 tests whichever spawn list the GAME will use, so an
+     overlay repoints it.
+
 A kitbashed map will usually only satisfy checks 1 and 3, since its art is not
 built one-mesh-per-proxy. That is expected; check 2 reports what it could pair
 up.
@@ -60,6 +67,9 @@ import math
 import os
 import struct
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from enemy_types import enemy_types
 
 COMPONENT = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2),
              5123: ("H", 2), 5125: ("I", 4), 5126: ("f", 4)}
@@ -386,6 +396,138 @@ def ground_under(verts, idx, x, z, from_y=1000.0):
     return from_y - best[0], best[1]
 
 
+def check_enemy_spawns(level, level_dir, declared, overlay, spawns_effective,
+                       failures):
+    """Validate the hand-authored spawn overlay.
+
+    Runs regardless of format, because the overlay is the one file in the
+    pipeline a person types and it is therefore the one most likely to be
+    wrong -- while `collision.bin`, which the ground test needs, is only
+    present on format 2. So the checks are layered: schema and bounds work on
+    every level, and the ground test adds itself when there is a mesh to test
+    against.
+
+    The height printout for entries that omitted `y` is the real product here.
+    That number is what the engine will snap the spawn to, and it is otherwise
+    something the author has to guess.
+    """
+    if overlay is None:
+        print("  (no %s — this level's enemies come from its Blender markers)"
+              % OVERLAY_NAME)
+        return
+
+    if not isinstance(overlay, dict):
+        failures.append("enemies.json")
+        print("  FAIL  %s is not a JSON object" % OVERLAY_NAME)
+        return
+    if overlay.get("format") != 1:
+        failures.append("enemies.json format")
+        print("  FAIL  %s is format %r; this build reads format 1"
+              % (OVERLAY_NAME, overlay.get("format")))
+        return
+    if not isinstance(overlay.get("spawns"), list):
+        failures.append("enemies.json spawns")
+        print("  FAIL  %s has no \"spawns\" array" % OVERLAY_NAME)
+        return
+
+    try:
+        known = set(enemy_types())
+    except SystemExit:
+        known = None
+
+    allowed = {"type", "x", "y", "z", "yaw", "maxHealth", "vision",
+               "startAwareness"}
+    bad = 0
+
+    for i, spawn in enumerate(overlay["spawns"]):
+        label = "spawn %d" % i
+        if not isinstance(spawn, dict):
+            bad += 1
+            print("  FAIL  %-12s is not an object" % label)
+            continue
+
+        unknown = sorted(set(spawn) - allowed)
+        if unknown:
+            print("  note  %-12s has unrecognised key(s) %s — the loader will "
+                  "ignore them" % (label, ", ".join(unknown)))
+
+        kind = spawn.get("type")
+        if known is not None and kind not in known:
+            bad += 1
+            print("  FAIL  %-12s type %r is not in EnemyTypes.def (known: %s)"
+                  % (label, kind, ", ".join(sorted(known))))
+        for key in ("x", "z"):
+            if not isinstance(spawn.get(key), (int, float)):
+                bad += 1
+                print("  FAIL  %-12s has no numeric %r" % (label, key))
+        if isinstance(spawn.get("maxHealth"), (int, float)) \
+                and spawn["maxHealth"] <= 0:
+            bad += 1
+            print("  FAIL  %-12s maxHealth %.1f would spawn something already "
+                  "dead" % (label, spawn["maxHealth"]))
+        awareness = spawn.get("startAwareness")
+        if isinstance(awareness, (int, float)) and not 0 <= awareness <= 200:
+            print("  note  %-12s startAwareness %.0f is outside the 0-200 "
+                  "scale (100 suspicious, 200 aware)" % (label, awareness))
+
+    if bad:
+        failures.append("enemies.json entries")
+
+    # Inside the level, in plan. The one geometric check that works on every
+    # level, and it catches the commonest paste error by a distance: an x/z
+    # carried over from a different map, or the two swapped.
+    outside = 0
+    for label, _kind, x, _y, z in spawns_effective:
+        if not isinstance(x, (int, float)) or not isinstance(z, (int, float)):
+            continue
+        if not (declared[0][0] - BOUNDS_TOLERANCE <= x
+                <= declared[1][0] + BOUNDS_TOLERANCE
+                and declared[0][2] - BOUNDS_TOLERANCE <= z
+                <= declared[1][2] + BOUNDS_TOLERANCE):
+            outside += 1
+            failures.append(label)
+            print("  FAIL  %-12s at x=%.1f z=%.1f is outside the level bounds"
+                  % (label, x, z))
+    if not outside:
+        print("  OK    %d spawn(s), all inside the level bounds"
+              % len(spawns_effective))
+
+    # The ground pass. Explicit heights were already tested by check 3; what is
+    # printed here is the height the engine will pick for the ones that left it
+    # out.
+    name = level.get("collisionMesh")
+    if not name or not os.path.exists(os.path.join(level_dir, name)):
+        print("  note  no collision mesh — heights for spawns without an "
+              "explicit \"y\" cannot be resolved here. The engine snaps them "
+              "against the BOX_/RAMP_ proxies at load; that path is not "
+              "reimplemented in this script on purpose, because a second "
+              "implementation of containsXZ and getHeightAt is exactly the "
+              "drift this file exists to catch.")
+        return
+
+    verts, idx = load_collision_bin(os.path.join(level_dir, name))
+    for label, _kind, x, y, z in spawns_effective:
+        if y is not None:
+            continue
+        if not isinstance(x, (int, float)) or not isinstance(z, (int, float)):
+            continue
+        found = ground_under(verts, idx, x, z)
+        if found is None:
+            failures.append(label)
+            print("  FAIL  %-12s no mesh under it — the engine will drop this "
+                  "spawn" % label)
+            continue
+        resolved, normal = found
+        if normal is None or normal[1] < 0.4:
+            failures.append(label)
+            print("  FAIL  %-12s lands on a surface facing %+.2f, which the "
+                  "engine reads as a wall"
+                  % (label, normal[1] if normal else 0.0))
+        else:
+            print("  OK    %-12s will snap to y=%.2f (normal.y %+.2f)"
+                  % (label, resolved, normal[1]))
+
+
 def check_detail_mesh(level, level_dir, declared, failures):
     """Verify the detail mesh is something raylib will actually draw.
 
@@ -481,7 +623,50 @@ def check_detail_mesh(level, level_dir, declared, failures):
         print("  OK    inside the declared bounds, %d triangles" % triangles)
 
 
-def check_collision_mesh(level, level_dir, failures):
+OVERLAY_NAME = "enemies.json"
+
+
+def load_enemy_overlay(level_dir):
+    """The level's enemies.json, or None when it has none.
+
+    Returns the parsed object without judging it -- check 5 does that. Read
+    here as well because check 3 has to know which spawns the *game* will
+    actually use, which stopped being level.json's list the moment overlays
+    existed.
+    """
+    path = os.path.join(level_dir, OVERLAY_NAME)
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
+        return json.load(f)
+
+
+def effective_spawns(level, overlay):
+    """(label, type, x, y_or_None, z) for every enemy the game will build.
+
+    This is the list check 3 must ground-test. Testing level.json's spawns once
+    an overlay exists would check positions the game does not use -- and pass,
+    while the real ones hang in the air.
+    """
+    if overlay is not None and isinstance(overlay.get("spawns"), list):
+        out = []
+        for i, spawn in enumerate(overlay["spawns"]):
+            if not isinstance(spawn, dict):
+                continue
+            out.append(("%s_%02d" % (spawn.get("type", "?"), i),
+                        spawn.get("type"), spawn.get("x"),
+                        spawn.get("y"), spawn.get("z")))
+        return out
+
+    out = []
+    for i, spawn in enumerate(level.get("enemySpawns", [])):
+        p = spawn["position"]
+        out.append(("%s_%02d" % (spawn["type"], i), spawn["type"],
+                    p[0], p[1], p[2]))
+    return out
+
+
+def check_collision_mesh(level, level_dir, spawns_effective, failures):
     """Verify the mesh is where the level says it is, and the right way up.
 
     The winding check is the important one and it is cheap. `to_game` is a
@@ -532,9 +717,15 @@ def check_collision_mesh(level, level_dir, failures):
         print("  note  %d degenerate triangles (%.1f%%); the engine drops these"
               % (degenerate, 100.0 * degenerate / triangles))
 
+    # The player spawn always comes from level.json; the enemies come from
+    # whichever source the game will actually read. An entry that omitted its
+    # `y` has nothing to compare against, so it is reported by check 5 with its
+    # resolved height instead of being tested here.
     spawns = [("PLAYER_SPAWN", level["playerSpawn"]["position"])]
-    for i, spawn in enumerate(level.get("enemySpawns", [])):
-        spawns.append(("%s_%02d" % (spawn["type"], i), spawn["position"]))
+    for label, _type, x, y, z in spawns_effective:
+        if y is None:
+            continue
+        spawns.append((label, [x, y, z]))
 
     for label, position in spawns:
         found = ground_under(verts, idx, position[0], position[2])
@@ -605,18 +796,33 @@ def main():
         print("  (no VIS_* meshes named after a proxy — nothing to pair up.\n"
               "   Normal for a kitbashed map; check 1 above still applies.)")
 
+    try:
+        overlay = load_enemy_overlay(level_dir)
+    except (OSError, ValueError) as error:
+        overlay = None
+        print("\n  (enemies.json present but unreadable: %s)" % error)
+    spawns_effective = effective_spawns(level, overlay)
+
     print("\n3. Collision mesh")
-    check_collision_mesh(level, level_dir, failures)
+    check_collision_mesh(level, level_dir, spawns_effective, failures)
 
     print("\n4. Detail mesh")
     check_detail_mesh(level, level_dir, declared, failures)
 
+    print("\n5. Enemy spawns")
+    check_enemy_spawns(level, level_dir, declared, overlay, spawns_effective,
+                       failures)
+
     print()
     if failures:
-        print("FAILED: %d of %d checks disagree.\n"
-              "A uniform offset means the axis conversion is wrong; a rotation\n"
-              "that only shows on yawed proxies means the yaw sign is."
-              % (len(failures), paired + 1))
+        # A count, not a fraction. The denominator used to be `paired + 1`,
+        # which stopped meaning anything once checks 4 and 5 could fail too --
+        # it read "3 of 1" on a level with one paired proxy and three faults.
+        print("FAILED: %d problem(s): %s.\n"
+              "For a misplaced proxy: a uniform offset means the axis\n"
+              "conversion is wrong; a rotation that only shows on yawed\n"
+              "proxies means the yaw sign is."
+              % (len(failures), ", ".join(sorted(set(failures)))))
         return 1
 
     print("PASSED: collision proxies and visual mesh agree to within %.0fmm."

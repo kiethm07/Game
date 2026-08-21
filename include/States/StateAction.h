@@ -18,5 +18,6 @@ enum class StateAction{
     ChangeToLoading,
     ChangeToGameplay,
     RequestNextPhase,
+    RequestReloadPhase,
     RequestQuit
 };

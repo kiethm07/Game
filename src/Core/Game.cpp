@@ -39,6 +39,26 @@ void Game::update() {
             popState();
             pushState(std::make_unique<GameplayState>(input_manager, asset_manager, sound_controller, campaign));
         }
+        if (action == StateAction::RequestReloadPhase) {
+            // RequestNextPhase's shape, minus the cursor move: this rebuilds
+            // the phase already running, so LevelLoader::load re-reads
+            // level.json and its enemies.json overlay.
+            //
+            // Straight to GameplayState rather than through LoadingState. The
+            // assets live in `asset_manager`, which outlives every state, so a
+            // loading pass would walk kAssets top to bottom to load nothing.
+            // What this actually costs is one level load, one collision mesh,
+            // one GameRenderer and one navmesh bake -- strictly less than the
+            // phase transition above, which does all of that plus the loading
+            // screen. That is what makes it an authoring key.
+            //
+            // No carry snapshot. This is not a seam, it is the same phase
+            // again, and the fresh Player comes up at full health -- which is
+            // what you want when the thing you are iterating on is the fight.
+            popState();
+            pushState(std::make_unique<GameplayState>(
+                input_manager, asset_manager, sound_controller, campaign));
+        }
         if (action == StateAction::RequestNextPhase) {
             // The destination is not in the action -- it is in `campaign`.
             // That is what keeps StateAction payload-free, and keeping it

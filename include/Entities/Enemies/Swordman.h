@@ -6,11 +6,10 @@
 
 class Swordman : public Enemy {
 public:
-  Swordman(Vector3 start_position);
+  Swordman(const EnemySpawn &spawn);
   ~Swordman() override = default;
 
   void update(const UpdateContext &ctx) override;
-  std::vector<HitBox> getActiveHitBoxes() const override;
   CharacterRenderData getRenderData() const override;
 
 protected:
@@ -23,20 +22,16 @@ private:
 
   SwordmanAnimator animator;
 
-  std::vector<Vector3> current_path;
-  float path_recalc_timer = 0.0f;
-
-  const float BODY_HEIGHT = 1.8f;
-  const float BODY_RADIUS = 0.5f;
-  const float ATTACK_REACH = 1.2f;
-  const float ATTACK_RADIUS = 0.8f;
+  // BODY_HEIGHT, BODY_RADIUS, ATTACK_REACH, ATTACK_RADIUS and ROTATION_SPEED
+  // used to sit here and were referenced by nothing -- the collider actually
+  // comes from Enemy's body_height/body_radius. They are gone because five
+  // dead constants are exactly what a second enemy type would copy and then
+  // wonder why editing does nothing.
   const float MOVEMENT_SPEED = 2.0f;
-  const float ROTATION_SPEED = 100.0f;
   void setupBehaviorTree();
-  const UpdateContext* current_ctx = nullptr;
 
-  Vector3 spawn_position;
-  float spawn_yaw = 0.0f;
+  // spawn_position and spawn_yaw are Enemy's now, set from the spawn in one
+  // place so they cannot disagree with `rotation`.
   float attack_cooldown_timer = 0.0f;
   float move_cooldown_timer = 0.0f;
   float investigation_timer = 0.0f;

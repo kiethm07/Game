@@ -109,10 +109,14 @@ void AssetManager::loadAnimations(AssetID id, const std::string &filePath) {
 }
 
 void AssetManager::loadSound(AssetID id, const std::string &filePath) {
-  if (sounds.find(id) != sounds.end()) {
-    std::cerr << "AssetManager Warning: Sound already loaded for this AssetID.\n";
-    return;
-  }
+  // Silently idempotent, unlike loadModel's warn-and-skip.
+  //
+  // GameplayState's constructor loads its six SFX unconditionally, and that
+  // constructor now runs on every phase change and on every F5 reload -- so
+  // warning here would print six lines each time, into the same console the F4
+  // spawn readout is written to. Re-requesting a sound that is already resident
+  // is the expected case for this call, not a mistake worth reporting.
+  if (sounds.find(id) != sounds.end()) return;
   Sound sound = LoadSound(filePath.c_str());
   sounds[id] = sound;
 }

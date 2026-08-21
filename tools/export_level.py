@@ -51,6 +51,12 @@ import sys
 import bpy
 from mathutils import Vector
 
+# Blender does not put a --python script's directory on sys.path, so a sibling
+# module is not importable without this. Same reason and same fix as
+# make_castle_level.py's.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from enemy_types import enemy_types
+
 # Collection names. Case-sensitive, and all three are looked up by exact name so
 # a typo is an error rather than a quietly empty export.
 VISUAL_COLLECTION = "VISUAL"
@@ -93,10 +99,11 @@ RAMP_PREFIX = "RAMP_"
 PLAYER_SPAWN = "PLAYER_SPAWN"
 ENEMY_PREFIX = "ENEMY_"
 
-# Must stay in step with EnemyType in include/Entities/EnemyFactory.h. Kept as a
-# list here so a marker naming a type the factory cannot build fails at export
-# rather than at runtime.
-ENEMY_TYPES = ["Swordman"]
+# Read from include/Entities/EnemyTypes.def, the X-macro file the C++ enum is
+# generated from, so a marker naming a type the factory cannot build still fails
+# at export rather than at runtime -- but without a second copy of the list that
+# can drift away from the first.
+ENEMY_TYPES = enemy_types()
 
 # Two proxies whose faces are flush would leave the character's depenetration
 # pass arbitrating between them; more practically, a zero-thickness box is

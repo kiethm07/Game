@@ -13,23 +13,27 @@
 namespace {
 /// Walk.glb carries a single clip, whose name is the armature's rather than
 /// anything descriptive.
-const AnimStateMachine<SwordmanAnimState>::Desc kAnimTable[] = {
-    /* Idle */ {"Armature|mixamo.com|Layer0", true, 1.0f, false, 0.0f},
-};
+// The single-clip kAnimTable that stood here had zero uses -- it was
+// superseded by SwordmanAnimator::descTable() and never removed.
 } // namespace
 
-Swordman::Swordman(Vector3 start_position) : Enemy(start_position) {
-  stats = Stats(1000.0f, 100.0f, 10.0f);
+Swordman::Swordman(const EnemySpawn &spawn) : Enemy(spawn) {
+  // Every literal below is this type's default, and the only place it lives.
+  // An override that the overlay left out resolves back to it through value_or,
+  // so retuning a swordman is an edit here and nowhere else -- not in the
+  // loader, not in the schema, not in EnemyOverrides.
+  const EnemyOverrides &o = spawn.overrides;
+
+  stats = Stats(o.maxHealth.value_or(1000.0f), 100.0f, 10.0f);
   combo = {AttackID::PlayerLight1};
-  stealth_component.addSensor(std::make_shared<VisionSensor>(20.0f, 70.0f));
+  stealth_component.addSensor(std::make_shared<VisionSensor>(
+      o.visionRadius.value_or(20.0f), o.visionConeDegrees.value_or(70.0f)));
   stealth_component.addSensor(std::make_shared<SoundSensor>(6.0f));
   stealth_component.addSensor(std::make_shared<ProximitySensor>(1.2f));
   stealth_component.addSensor(std::make_shared<CombatSenseSensor>(10.0f));
-  
+
   sword_trail.setColors({255, 230, 200, 240}, {255, 70, 40, 200});
 
-  spawn_position = start_position;
-  spawn_yaw = 0.0f; // Could be randomized or passed in
   
   // Stagger initial waiting time so they don't all attack at the exact same moment
   attack_cooldown_timer = (getId() % 4) * 0.8f + ((rand() % 100) / 100.0f);
@@ -158,83 +162,7 @@ void Swordman::setupBehaviorTree() {
   // ---------------------------------------------------------
   // Common Helper: Move along a path
   // ---------------------------------------------------------
-  auto moveAlongPath = [this](float speed) {
-    if (current_path.empty()) {
-      this->setHorizontalVelocity({0, 0, 0});
-      return NodeState::SUCCESS;
-    }
-    
-    Vector3 target = current_path.front();
-    Vector3 dir = Vector3Subtract(target, position);
-    float dist = Vector2Distance({position.x, position.z}, {target.x, target.z});
-    
-    if (dist < 0.5f) {
-      current_path.erase(current_path.begin());
-      if (current_path.empty()) {
-        this->setHorizontalVelocity({0, 0, 0});
-        return NodeState::SUCCESS;
-      }
-      target = current_path.front();
-      dir = Vector3Subtract(target, position);
-    }
-    
-    Vector3 normalized_dir = Vector3Normalize({dir.x, 0.0f, dir.z});
-    Vector3 target_vel = {normalized_dir.x * speed, 0.0f, normalized_dir.z * speed};
-    this->setHorizontalVelocity(target_vel);
-    
-    float target_yaw = std::atan2(normalized_dir.x, normalized_dir.z) * RAD2DEG;
-    float angle_diff = target_yaw - rotation.y;
-    while (angle_diff < -180.0f) angle_diff += 360.0f;
-    while (angle_diff > 180.0f) angle_diff -= 360.0f;
-    
-    float alpha = 10.0f * current_ctx->dt;
-    if (alpha > 1.0f) alpha = 1.0f;
-    
-    rotation.y += angle_diff * alpha;
-    while (rotation.y < 0.0f) rotation.y += 360.0f;
-    while (rotation.y >= 360.0f) rotation.y -= 360.0f;
-    
-    return NodeState::RUNNING;
-  };
   
-  auto truncatePathBySmoke = [this](std::vector<Vector3>& path) {
-      if (!current_ctx || !current_ctx->smoke_clouds) return;
-      // i + 1 < size(), not i < size() - 1. size() is unsigned, so on an empty
-      // path the subtraction wraps to SIZE_MAX, the loop runs, and path[0]
-      // dereferences the null data pointer of an empty vector.
-      // NavMeshQuery::findPath returns an empty path whenever findNearestPoly
-      // fails for either end (NavMeshQuery.cpp:18) — which is what happens the
-      // moment the player stands somewhere off the navmesh, such as on top of
-      // a castle wall.
-      for (size_t i = 0; i + 1 < path.size(); ++i) {
-          Vector3 A = path[i];
-          Vector3 B = path[i + 1];
-          Vector3 dir = Vector3Subtract(B, A);
-          float len = Vector3Length(dir);
-          if (len == 0.0f) continue;
-          Vector3 norm_dir = Vector3Scale(dir, 1.0f / len);
-          
-          for (const auto& smoke : *current_ctx->smoke_clouds) {
-              if (smoke.owner == this) continue;
-              
-              Vector3 L = Vector3Subtract(smoke.position, A);
-              float tca = Vector3DotProduct(L, norm_dir);
-              if (tca < 0.0f) continue; // going away
-              float d2 = Vector3DotProduct(L, L) - tca * tca;
-              float r2 = smoke.radius * smoke.radius;
-              if (d2 > r2) continue; // misses sphere
-              float thc = std::sqrt(r2 - d2);
-              float t0 = tca - thc;
-              
-              if (t0 > 0.0f && t0 < len) {
-                  Vector3 hit_pos = Vector3Add(A, Vector3Scale(norm_dir, t0));
-                  path.resize(i + 1);
-                  path.push_back(hit_pos);
-                  return; // Path truncated
-              }
-          }
-      }
-  };
 
   // ---------------------------------------------------------
   // Conditions
@@ -254,7 +182,7 @@ void Swordman::setupBehaviorTree() {
   // ---------------------------------------------------------
   // Aware Node (Combat)
   // ---------------------------------------------------------
-  auto combatAction = std::make_shared<Action>([this, moveAlongPath, truncatePathBySmoke]() {
+  auto combatAction = std::make_shared<Action>([this]() {
     if (!current_ctx) return NodeState::FAILURE;
     if (combat_component.getCurrentState() == CombatState::PostureBroken) return NodeState::SUCCESS;
     
@@ -359,7 +287,7 @@ void Swordman::setupBehaviorTree() {
   // ---------------------------------------------------------
   // Suspicious Node (Investigation)
   // ---------------------------------------------------------
-  auto investigateAction = std::make_shared<Action>([this, moveAlongPath, truncatePathBySmoke]() {
+  auto investigateAction = std::make_shared<Action>([this]() {
     if (!current_ctx) return NodeState::FAILURE;
     
     Vector3 target = stealth_component.getLastKnownPlayerPos();
@@ -398,7 +326,7 @@ void Swordman::setupBehaviorTree() {
   // ---------------------------------------------------------
   // Unaware Node (Return to Post / Idle)
   // ---------------------------------------------------------
-  auto returnToPostAction = std::make_shared<Action>([this, moveAlongPath, truncatePathBySmoke]() {
+  auto returnToPostAction = std::make_shared<Action>([this]() {
     if (!current_ctx) return NodeState::FAILURE;
     
     float dist_to_post = Vector2Distance({position.x, position.z}, {spawn_position.x, spawn_position.z});
@@ -445,48 +373,6 @@ void Swordman::setupBehaviorTree() {
   ai_component.setRoot(rootSelector);
 }
 
-std::vector<HitBox> Swordman::getActiveHitBoxes() const {
-  if (stats.isDead())
-    return {};
-
-  std::vector<HitBox> active_hitboxes;
-
-  if (combat_component.getCurrentState() == CombatState::AttackActive) {
-    const AttackData* active_attack = combat_component.getActiveAttack();
-    if (!active_attack) return active_hitboxes;
-
-    float yaw_rad = rotation.y * DEG2RAD;
-    Vector3 forward = {std::sin(yaw_rad), 0.0f, std::cos(yaw_rad)};
-    Vector3 right = {-std::cos(yaw_rad), 0.0f, std::sin(yaw_rad)};
-    Vector3 up = {0.0f, 1.0f, 0.0f};
-
-    for (const auto& def : active_attack->getHitBoxDefs()) {
-        if (def.type == HitBoxShapeType::Sphere) {
-            Vector3 center = position;
-            center = Vector3Add(center, Vector3Scale(forward, def.forward_offset));
-            center = Vector3Add(center, Vector3Scale(up, def.vertical_offset));
-            
-            Sphere sphere(center, def.radius);
-            active_hitboxes.emplace_back(sphere, def.health_damage, def.posture_damage, getFaction(), getId());
-        } else if (def.type == HitBoxShapeType::Capsule) {
-            Vector3 start = position;
-            start = Vector3Add(start, Vector3Scale(right, def.start_offset.x));
-            start = Vector3Add(start, Vector3Scale(up, def.start_offset.y));
-            start = Vector3Add(start, Vector3Scale(forward, def.start_offset.z));
-
-            Vector3 end = position;
-            end = Vector3Add(end, Vector3Scale(right, def.end_offset.x));
-            end = Vector3Add(end, Vector3Scale(up, def.end_offset.y));
-            end = Vector3Add(end, Vector3Scale(forward, def.end_offset.z));
-
-            Capsule capsule(start, end, def.capsule_radius);
-            active_hitboxes.emplace_back(capsule, def.health_damage, def.posture_damage, getFaction(), getId());
-        }
-    }
-  }
-
-  return active_hitboxes;
-}
 
 // void Swordman::takeDamage(float health_damage, float posture_damage) {
 //     if (combat_component.getCurrentState() == CombatState::Parrying) return;
@@ -511,5 +397,5 @@ CharacterRenderData Swordman::getRenderData() const {
       dissolveProgress = std::fmin(dissolve_timer / 2.0f, 1.0f);
   }
 
-  return {AssetID::ENEMY_ASHIGARU, transform, animator.renderState(), dissolveProgress, decay_type};
+  return {animator.assetId(), transform, animator.renderState(), dissolveProgress, decay_type};
 }
