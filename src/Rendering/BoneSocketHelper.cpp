@@ -5,24 +5,56 @@
 #include <cstring>
 #include <cmath>
 
-int BoneSocketHelper::findHandBoneIndex(const Model &model, const ModelAnimation *anims, int anim_count) {
-  for (int i = 0; i < model.skeleton.boneCount; ++i) {
-    const char *name = model.skeleton.bones[i].name;
-    if (strstr(name, "RightHand") != nullptr || strstr(name, "hand.r") != nullptr || strstr(name, "Hand_R") != nullptr) {
-      return i;
+namespace {
+
+/// Name fragments for each socket, most specific first.
+///
+/// Substring matches rather than equality because the rigs prefix everything
+/// with `mixamorig:`, and because the same joint is spelled three ways across
+/// the exporters this project has taken models from.
+struct SocketNames {
+  const char *const *patterns;
+  int count;
+};
+
+const char *const kHandNames[] = {"RightHand", "hand.r", "Hand_R"};
+
+/// Spine2 is the upper chest on a Mixamo rig -- Hips, Spine, Spine1, Spine2,
+/// Neck, Head. Ordered so a rig that stops at Spine1 still lands as high up the
+/// back as it has, and `Spine` alone is the last resort rather than the first
+/// match: it is the lowest of the three and would put the marker at the belt.
+const char *const kChestNames[] = {"Spine2",  "UpperChest", "Spine1",
+                                   "Chest",   "Spine"};
+
+SocketNames namesFor(BoneSocketHelper::Socket socket) {
+  switch (socket) {
+  case BoneSocketHelper::Socket::Chest:
+    return {kChestNames, (int)(sizeof(kChestNames) / sizeof(kChestNames[0]))};
+  case BoneSocketHelper::Socket::RightHand:
+  default:
+    return {kHandNames, (int)(sizeof(kHandNames) / sizeof(kHandNames[0]))};
+  }
+}
+
+} // namespace
+
+int BoneSocketHelper::findBoneIndex(const Model &model, Socket socket) {
+  const SocketNames names = namesFor(socket);
+  // Pattern-major: an early pattern on a late bone beats a late pattern on an
+  // early bone, which is what makes the kChestNames ordering mean anything.
+  for (int p = 0; p < names.count; ++p) {
+    for (int i = 0; i < model.skeleton.boneCount; ++i) {
+      if (strstr(model.skeleton.bones[i].name, names.patterns[p]) != nullptr) {
+        return i;
+      }
     }
   }
   return -1;
 }
 
-bool BoneSocketHelper::sampleSwordPoints(
-    AssetManager &assets,
-    const CharacterRenderData &render_data,
-    Vector3 &out_base,
-    Vector3 &out_tip,
-    Vector3 blade_vector,
-    Vector3 hilt_vector) {
-  
+bool BoneSocketHelper::sampleSocket(AssetManager &assets,
+                                    const CharacterRenderData &render_data,
+                                    Socket socket, BoneSample &out) {
   Model &model = assets.getModel(render_data.assetId);
   int anim_count = 0;
   ModelAnimation *anims = assets.getAnimations(render_data.assetId, anim_count);
@@ -31,13 +63,16 @@ bool BoneSocketHelper::sampleSwordPoints(
     return false;
   }
 
+  std::unordered_map<AssetID, int> &cache =
+      (socket == Socket::Chest) ? chest_bone_cache : hand_bone_cache;
+
   int bone_index = -1;
-  std::unordered_map<AssetID, int>::iterator it = bone_index_cache.find(render_data.assetId);
-  if (it != bone_index_cache.end()) {
+  std::unordered_map<AssetID, int>::iterator it = cache.find(render_data.assetId);
+  if (it != cache.end()) {
     bone_index = it->second;
   } else {
-    bone_index = findHandBoneIndex(model, anims, anim_count);
-    bone_index_cache[render_data.assetId] = bone_index;
+    bone_index = findBoneIndex(model, socket);
+    cache[render_data.assetId] = bone_index;
   }
 
   if (bone_index < 0) {
@@ -72,8 +107,8 @@ bool BoneSocketHelper::sampleSwordPoints(
   Transform pose0 = anim.keyframePoses[f0][bone_index];
   Transform pose1 = anim.keyframePoses[f1][bone_index];
 
-  Vector3 hand_trans = Vector3Lerp(pose0.translation, pose1.translation, t);
-  Quaternion hand_rot = QuaternionSlerp(pose0.rotation, pose1.rotation, t);
+  Vector3 bone_trans = Vector3Lerp(pose0.translation, pose1.translation, t);
+  Quaternion bone_rot = QuaternionSlerp(pose0.rotation, pose1.rotation, t);
 
   const int from_index = render_data.animation.blendFromIndex;
   const float from_frame = render_data.animation.blendFromTime * AnimUtils::ANIM_SAMPLE_RATE;
@@ -94,19 +129,16 @@ bool BoneSocketHelper::sampleSwordPoints(
       Transform from_pose0 = from_anim.keyframePoses[from_f0][bone_index];
       Transform from_pose1 = from_anim.keyframePoses[from_f1][bone_index];
 
-      Vector3 from_hand_trans = Vector3Lerp(from_pose0.translation, from_pose1.translation, from_t);
-      Quaternion from_hand_rot = QuaternionSlerp(from_pose0.rotation, from_pose1.rotation, from_t);
+      Vector3 from_bone_trans = Vector3Lerp(from_pose0.translation, from_pose1.translation, from_t);
+      Quaternion from_bone_rot = QuaternionSlerp(from_pose0.rotation, from_pose1.rotation, from_t);
 
-      hand_trans = Vector3Lerp(from_hand_trans, hand_trans, blend);
-      hand_rot = QuaternionSlerp(from_hand_rot, hand_rot, blend);
+      bone_trans = Vector3Lerp(from_bone_trans, bone_trans, blend);
+      bone_rot = QuaternionSlerp(from_bone_rot, bone_rot, blend);
     }
   }
 
-  // Calculate local model-space positions
-  Vector3 local_base = Vector3Add(hand_trans, Vector3RotateByQuaternion(hilt_vector, hand_rot));
-  Vector3 local_tip = Vector3Add(hand_trans, Vector3RotateByQuaternion(blade_vector, hand_rot));
-
-  // Compute root motion offset to match mesh position exactly
+  // Root motion offset, so the sample sits on the mesh as drawn rather than
+  // where the mesh would be if the clip carried no travel.
   auto rootOffset = [&assets, &render_data](int index, float at_frame) {
     const RootMotion::Track &track = assets.getRootMotion(render_data.assetId, index);
     if (!track.hasMotion) {
@@ -122,14 +154,49 @@ bool BoneSocketHelper::sampleSwordPoints(
   root_offset = Vector3Multiply(root_offset, render_data.transform.scale);
   root_offset = RootMotion::toWorld(root_offset, render_data.transform.rotation.y);
 
-  Vector3 draw_pos = Vector3Subtract(render_data.transform.position, root_offset);
+  out.translation = bone_trans;
+  out.rotation = bone_rot;
+  out.draw_pos = Vector3Subtract(render_data.transform.position, root_offset);
+  out.scale = render_data.transform.scale;
+  out.yaw = render_data.transform.rotation.y;
+  return true;
+}
 
-  // Transform model space to world space
-  Vector3 scaled_base = Vector3Multiply(local_base, render_data.transform.scale);
-  Vector3 scaled_tip = Vector3Multiply(local_tip, render_data.transform.scale);
+Vector3 BoneSocketHelper::pointOnBone(const BoneSample &sample,
+                                      Vector3 local_offset) {
+  const Vector3 local = Vector3Add(
+      sample.translation, Vector3RotateByQuaternion(local_offset, sample.rotation));
+  const Vector3 scaled = Vector3Multiply(local, sample.scale);
+  return Vector3Add(sample.draw_pos, RootMotion::toWorld(scaled, sample.yaw));
+}
 
-  out_base = Vector3Add(draw_pos, RootMotion::toWorld(scaled_base, render_data.transform.rotation.y));
-  out_tip = Vector3Add(draw_pos, RootMotion::toWorld(scaled_tip, render_data.transform.rotation.y));
+bool BoneSocketHelper::sampleSwordPoints(
+    AssetManager &assets,
+    const CharacterRenderData &render_data,
+    Vector3 &out_base,
+    Vector3 &out_tip,
+    Vector3 blade_vector,
+    Vector3 hilt_vector) {
 
+  BoneSample hand;
+  if (!sampleSocket(assets, render_data, Socket::RightHand, hand)) {
+    return false;
+  }
+
+  out_base = pointOnBone(hand, hilt_vector);
+  out_tip = pointOnBone(hand, blade_vector);
+  return true;
+}
+
+bool BoneSocketHelper::sampleChestPoint(AssetManager &assets,
+                                        const CharacterRenderData &render_data,
+                                        Vector3 &out_world,
+                                        Vector3 local_offset) {
+  BoneSample chest;
+  if (!sampleSocket(assets, render_data, Socket::Chest, chest)) {
+    return false;
+  }
+
+  out_world = pointOnBone(chest, local_offset);
   return true;
 }

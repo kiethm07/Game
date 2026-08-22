@@ -6,8 +6,10 @@
 #include <Level/SpawnGround.h>
 #include <Physics/CollisionMeshLoader.h>
 #include <Stealth/Sensor.h>
+#include <Rendering/BoneSocketHelper.h>
 #include <cassert>
 #include <cmath>
+#include <rlgl.h>
 
 namespace {
 /// How close the player must be to a campfire to light it, in metres.
@@ -19,6 +21,51 @@ constexpr float CHECKPOINT_REACH = 2.0f;
 
 /// Seconds between the fire catching and the phase ending.
 constexpr float CHECKPOINT_HOLD = 2.0f;
+
+/// The deathblow marker: a glowing red orb on the chest of an enemy the player
+/// could execute right now -- a broken guard, or an unaware one with the player
+/// at their back.
+///
+/// Drawn from a generated radial gradient rather than an image file. A dot with
+/// a soft falloff is two calls to GenImageGradientRadial and no asset to ship,
+/// load, downscale or keep in step with the art; assets/PostureBreakCue.png is
+/// left on disk but nothing reads it any more.
+constexpr int POSTURE_CUE_TEX_PX = 128;
+
+/// Where the orb sits along the chest bone, in that bone's own frame.
+///
+/// The position comes from `mixamorig:Spine2` -- the upper chest -- so it rides
+/// the animation instead of hanging at a fixed height over the character's
+/// feet. Measured on the rig: the bone itself sits 1.24 m above the feet, and
+/// its local +Y runs up the spine, so this nudges the orb ~0.11 m further up to
+/// about 1.35 m -- the breastbone on a 2 m body.
+///
+/// Vertical only. The bone's local X and Z are lateral, and pushing along them
+/// slides the orb around the ribcage rather than out of it; getting clear of
+/// the mesh is POSTURE_CUE_LIFT's job, in world space, where the direction that
+/// matters is toward the camera.
+constexpr Vector3 POSTURE_CUE_BONE_OFFSET = {0.0f, 0.12f, 0.0f};
+
+/// Fallback height above the feet, used only when the rig has no chest bone to
+/// sample. Static, so it will not follow an animation -- but a marker in
+/// roughly the right place beats no marker at all.
+constexpr float POSTURE_CUE_FALLBACK_HEIGHT = 1.45f;
+
+/// Diameter of the orb's solid body, in metres, and the multipliers for the
+/// glow around it and the hot spot inside it. Small and bright: this is a dot,
+/// not a decal.
+constexpr float POSTURE_CUE_BODY_SIZE = 0.20f;
+constexpr float POSTURE_CUE_HALO_SCALE = 3.0f;
+constexpr float POSTURE_CUE_HOT_SCALE = 0.40f;
+
+/// Clearance added to the body radius when pulling the orb toward the camera.
+///
+/// The chest bone sits on the character's CENTRE line, not on their chest
+/// surface, so the push has to clear a whole body radius before it is out in
+/// the open -- a smaller nudge leaves the billboard inside the mesh, losing the
+/// depth test, and the marker simply never appears. The lock-on dot below pushes
+/// by the same radius for the same reason.
+constexpr float POSTURE_CUE_LIFT = 0.15f;
 } // namespace
 
 // The level this state loads comes from Campaign, which Game owns and hands in
@@ -209,15 +256,206 @@ PhaseCarry GameplayState::snapshotCarry() const {
   return carry;
 }
 
+GameplayState::~GameplayState() {
+  // exit() has already run on every path Game takes -- popState calls it -- so
+  // this is belt and braces for a state destroyed without one.
+  unloadPostureCue();
+}
+
 void GameplayState::enter() {
   // Mouse-look needs the pointer hidden and locked to the window. Declared here
   // rather than once at startup so that every route into gameplay is covered --
   // from the menu, from a phase change, and from an F5 reload, which never
   // passes through either of the others.
   DisableCursor();
+
+  // White in the middle falling off to transparent. White rather than red
+  // because the draw tints it -- one texture then serves both the hot core and
+  // the halo, at different sizes and colours.
+  Image glow = GenImageGradientRadial(POSTURE_CUE_TEX_PX, POSTURE_CUE_TEX_PX,
+                                      0.0f, WHITE, BLANK);
+  posture_cue = LoadTextureFromImage(glow);
+  UnloadImage(glow);
+
+  if (posture_cue.id != 0) {
+    // Drawn at a size that changes with distance, so it is always resampled.
+    SetTextureFilter(posture_cue, TEXTURE_FILTER_BILINEAR);
+  } else {
+    TraceLog(LOG_WARNING,
+             "GameplayState: could not generate the deathblow marker texture; "
+             "posture-broken enemies will show no marker. The deathblow itself "
+             "still works.");
+  }
+}
+
+void GameplayState::unloadPostureCue() {
+  UnloadTexture(posture_cue); // a no-op when id == 0
+  posture_cue = Texture2D{};  // so a second call cannot double-free
+}
+
+GameplayState::TakedownKind
+GameplayState::availableTakedown(const Enemy &enemy) const {
+  if (enemy.getStats().isDead()) return TakedownKind::None;
+
+  const Vector3 p_pos = player->getPosition();
+  const Vector3 e_pos = enemy.getPosition();
+
+  const Vector2 p2 = {p_pos.x, p_pos.z};
+  const Vector2 e2 = {e_pos.x, e_pos.z};
+  const float horiz_dist = Vector2Distance(p2, e2);
+  const float vert_dist = p_pos.y - e_pos.y;
+
+  // Tighter vertical check for grounded takedowns so you don't do grounded
+  // takedowns from a ledge.
+  const bool is_normal_range =
+      (horiz_dist < 2.0f && std::abs(vert_dist) < 0.5f);
+  const bool is_aerial_range = (horiz_dist < 2.5f && vert_dist >= 1.5f &&
+                                vert_dist < 10.0f && !player->isGrounded());
+
+  if (!is_normal_range && !is_aerial_range) return TakedownKind::None;
+
+  // Raycast check to prevent takedowns through walls. After the range test on
+  // purpose: this walks every obstacle in the level, and the range test throws
+  // out all but the one or two enemies that could possibly qualify.
+  const Vector3 p_head = {p_pos.x, p_pos.y + player->getColliderHeight() * 0.8f,
+                          p_pos.z};
+  const Vector3 e_head = {e_pos.x, e_pos.y + enemy.getColliderHeight() * 0.8f,
+                          e_pos.z};
+
+  for (const auto &obs : level.obstacles) {
+    Vector3 local_obs = Vector3Transform(p_head, obs.getWorldToLocal());
+    Vector3 local_tgt = Vector3Transform(e_head, obs.getWorldToLocal());
+
+    Ray local_ray;
+    local_ray.position = local_obs;
+    local_ray.direction =
+        Vector3Normalize(Vector3Subtract(local_tgt, local_obs));
+
+    RayCollision collision = GetRayCollisionBox(local_ray, obs.getLocalBox());
+    if (collision.hit) {
+      float dist_to_tgt_local = Vector3Distance(local_obs, local_tgt);
+      if (collision.distance < dist_to_tgt_local) {
+        return TakedownKind::None;
+      }
+    }
+  }
+
+  const bool is_aerial = is_aerial_range && !is_normal_range;
+  const StealthState s_state = enemy.getStealthComponent().getStealthState();
+
+  bool in_smoke = false;
+  for (const auto &sc : smoke_clouds) {
+    if (sc.owner != &enemy &&
+        Vector3DistanceSqr(e_pos, sc.position) <= sc.radius * sc.radius) {
+      in_smoke = true;
+      break;
+    }
+  }
+
+  const bool off_guard = (s_state == StealthState::Unaware ||
+                          s_state == StealthState::Suspicious || in_smoke);
+
+  // The order is a chain, not three independent tests, and it stays one: an
+  // enemy who is off guard is a stealth kill or nothing, even if their posture
+  // also happens to be broken. Flattening this into three ORs would quietly
+  // let you combat-deathblow someone from the front because they were unaware.
+  if (is_aerial && off_guard) {
+    return TakedownKind::Aerial;
+  }
+  if (off_guard) {
+    // Must be closely behind them -- roughly a 74 degree cone off their back.
+    const Vector3 enemy_fwd = {std::sin(enemy.getRotation().y * DEG2RAD), 0.0f,
+                               std::cos(enemy.getRotation().y * DEG2RAD)};
+    const Vector3 to_player = Vector3Normalize(Vector3Subtract(p_pos, e_pos));
+    if (Vector3DotProduct(enemy_fwd, to_player) < -0.8f) {
+      return TakedownKind::Stealth;
+    }
+    return TakedownKind::None;
+  }
+  if (enemy.getStats().isPostureBroken()) {
+    return TakedownKind::Combat;
+  }
+  return TakedownKind::None;
+}
+
+void GameplayState::drawPostureCues() {
+  if (posture_cue.id == 0) return;
+
+  // The same two global gates the Takedown key is behind. Without them the orb
+  // stays lit through the execution the player already started.
+  if (pending_aerial_target != nullptr || player->isExecuting()) return;
+
+  const Camera3D camera = camera_controller->getCamera();
+
+  for (const auto &enemy_ptr : enemies) {
+    const Enemy *enemy = enemy_ptr.get();
+    if (enemy->isModelUnloaded()) continue;
+
+    // Marks every deathblow the player could actually take right now, by asking
+    // the same question the Takedown key asks -- so it lights up for a stealth
+    // kill from behind an unaware enemy just as it does for a broken guard, and
+    // it is never showing when F would refuse.
+    if (availableTakedown(*enemy) == TakedownKind::None) continue;
+
+    // Once the takedown is under way the offer has been taken. Leaving the cue
+    // up through the animation would read as a second deathblow being available
+    // on a corpse.
+    if (enemy->isBeingExecuted()) continue;
+
+    // Off the animated skeleton, so the orb rides the chest through every
+    // stagger, breath and turn instead of hanging in the air where the
+    // character's feet happen to be. Falls back to a fixed height only if the
+    // rig has no spine bone to sample.
+    Vector3 chest;
+    if (!BoneSocketHelper::sampleChestPoint(asset_manager, enemy->getRenderData(),
+                                            chest, POSTURE_CUE_BONE_OFFSET)) {
+      chest = enemy->getPosition();
+      chest.y += POSTURE_CUE_FALLBACK_HEIGHT;
+    }
+
+    // Out of the body toward the camera, or the billboard is a flat quad buried
+    // inside a solid model. Same treatment as the lock-on dot below.
+    const Vector3 to_cam =
+        Vector3Normalize(Vector3Subtract(camera.position, chest));
+    chest = Vector3Add(
+        chest,
+        Vector3Scale(to_cam, enemy->getColliderRadius() + POSTURE_CUE_LIFT));
+
+    // Depth WRITES off, depth testing on. The three layers overlap, and if the
+    // first wrote depth the rest would fail the test against it and vanish;
+    // testing stays on so the world still occludes the orb.
+    rlDisableDepthMask();
+
+    // Outer glow: additive, because light spilling onto what is behind it is
+    // exactly what additive does.
+    BeginBlendMode(BLEND_ADDITIVE);
+    DrawBillboard(camera, posture_cue, chest,
+                  POSTURE_CUE_BODY_SIZE * POSTURE_CUE_HALO_SCALE,
+                  Color{190, 20, 10, 255});
+    EndBlendMode();
+
+    // The orb itself: ALPHA, not additive, and that is the whole difference
+    // between a red dot and a yellow one. Additive can only add, so over lit
+    // grass the green and blue channels saturate alongside the red and the
+    // marker washes out to white-yellow -- which is what the first version of
+    // this did. Alpha replaces the background instead, so the orb stays the
+    // colour it is told to be whatever it is standing in front of.
+    DrawBillboard(camera, posture_cue, chest, POSTURE_CUE_BODY_SIZE,
+                  Color{255, 40, 25, 255});
+
+    // Hot centre, back to additive: this one is meant to blow out.
+    BeginBlendMode(BLEND_ADDITIVE);
+    DrawBillboard(camera, posture_cue, chest,
+                  POSTURE_CUE_BODY_SIZE * POSTURE_CUE_HOT_SCALE,
+                  Color{255, 200, 180, 255});
+    EndBlendMode();
+
+    rlEnableDepthMask();
+  }
 }
 
 StateAction GameplayState::update(float dt) {
+
   // 1. Tick entities through the shared polymorphic update path. Each reads
   // input/AI internally and shifts its own position safely.
   Vector3 player_pos = player->getPosition();
@@ -653,91 +891,20 @@ StateAction GameplayState::update(float dt) {
       input_manager.isActionPressed(GameAction::Takedown)) {
     for (auto &enemy_ptr : enemies) {
       Enemy *enemy = enemy_ptr.get();
-      if (!enemy->getStats().isDead()) {
+
+      // Range, line of sight and the three routes all live in
+      // availableTakedown, which the chest marker reads too. Keeping that
+      // decision in one place is what stops the marker and this key disagreeing
+      // about who can be executed.
+      const TakedownKind kind = availableTakedown(*enemy);
+      if (kind != TakedownKind::None) {
+        const bool is_aerial = (kind == TakedownKind::Aerial);
+
         Vector3 p_pos = player->getPosition();
         Vector3 e_pos = enemy->getPosition();
+        StealthState s_state = enemy->getStealthComponent().getStealthState();
 
-        Vector2 p2 = {p_pos.x, p_pos.z};
-        Vector2 e2 = {e_pos.x, e_pos.z};
-        float horiz_dist = Vector2Distance(p2, e2);
-        float vert_dist = p_pos.y - e_pos.y;
-
-        // Tighter vertical check for grounded takedowns so you don't do
-        // grounded takedowns from a ledge
-        bool is_normal_range =
-            (horiz_dist < 2.0f && std::abs(vert_dist) < 0.5f);
-        bool is_aerial_range = (horiz_dist < 2.5f && vert_dist >= 1.5f &&
-                                vert_dist < 10.0f && !player->isGrounded());
-
-        if (is_normal_range || is_aerial_range) {
-          // Raycast check to prevent takedowns through walls
-          bool is_blocked = false;
-          Vector3 p_head = {
-              p_pos.x, p_pos.y + player->getColliderHeight() * 0.8f, p_pos.z};
-          Vector3 e_head = {
-              e_pos.x, e_pos.y + enemy->getColliderHeight() * 0.8f, e_pos.z};
-
-          for (const auto &obs : level.obstacles) {
-            Vector3 local_obs = Vector3Transform(p_head, obs.getWorldToLocal());
-            Vector3 local_tgt = Vector3Transform(e_head, obs.getWorldToLocal());
-
-            Ray local_ray;
-            local_ray.position = local_obs;
-            local_ray.direction =
-                Vector3Normalize(Vector3Subtract(local_tgt, local_obs));
-
-            RayCollision collision =
-                GetRayCollisionBox(local_ray, obs.getLocalBox());
-            if (collision.hit) {
-              float dist_to_tgt_local = Vector3Distance(local_obs, local_tgt);
-              if (collision.distance < dist_to_tgt_local) {
-                is_blocked = true;
-                break;
-              }
-            }
-          }
-
-          if (is_blocked)
-            continue;
-
-          bool can_takedown = false;
-          bool is_aerial = is_aerial_range && !is_normal_range;
-          StealthState s_state = enemy->getStealthComponent().getStealthState();
-
-          bool in_smoke = false;
-          for (const auto& sc : smoke_clouds) {
-              if (sc.owner != enemy && Vector3DistanceSqr(e_pos, sc.position) <= sc.radius * sc.radius) {
-                  in_smoke = true;
-                  break;
-              }
-          }
-
-          // 1. Aerial Takedown
-          if (is_aerial && (s_state == StealthState::Unaware ||
-                            s_state == StealthState::Suspicious || in_smoke)) {
-            can_takedown = true;
-          }
-          // 2. Stealth Takedown (Must be Unaware or Suspicious, or blinded by smoke, and player
-          // closely behind)
-          else if (s_state == StealthState::Unaware ||
-                   s_state == StealthState::Suspicious || in_smoke) {
-            
-            Vector3 enemy_fwd = {std::sin(enemy->getRotation().y * DEG2RAD),
-                                 0.0f,
-                                 std::cos(enemy->getRotation().y * DEG2RAD)};
-            Vector3 to_player = Vector3Normalize(Vector3Subtract(p_pos, e_pos));
-            float dot = Vector3DotProduct(enemy_fwd, to_player);
-            if (dot <
-                -0.8f) { // Narrower cone (approx 74 degrees directly behind)
-              can_takedown = true;
-            }
-          }
-          // 3. Combat Deathblow (Enemy posture broken)
-          else if (enemy->getStats().isPostureBroken()) {
-            can_takedown = true;
-          }
-
-          if (can_takedown) {
+        {
             if (is_aerial) {
               // Trigger the drop phase!
               pending_aerial_target = enemy;
@@ -782,7 +949,6 @@ StateAction GameplayState::update(float dt) {
               takedown_text_timer = 2.0f;
             }
             break; // Only execute one enemy
-          }
         }
       }
     }
@@ -850,6 +1016,11 @@ void GameplayState::draw() {
   physics_manager.drawDebug(active_characters, level.obstacles);
   combat_manager.drawDebug(active_characters);
   stealth_manager.drawDebug(active_characters);
+
+  // Deathblow markers. Before the lock-on dot so that on an enemy who is both
+  // locked on and broken, the small solid dot sits on top of the cue rather
+  // than being swallowed by it.
+  drawPostureCues();
 
   if (locked_target) {
     Vector3 chest_pos = locked_target->getPosition();
@@ -965,5 +1136,8 @@ void GameplayState::draw() {
 }
 
 void GameplayState::exit() {
-  // Clean up local menu resources here
+  // GPU handles only. This runs on quit-to-menu, on a phase change and at
+  // shutdown, so it is deliberately not where run state is written -- see the
+  // note on the carry in update().
+  unloadPostureCue();
 }

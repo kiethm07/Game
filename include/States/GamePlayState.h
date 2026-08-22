@@ -40,7 +40,7 @@ class GameplayState : public GameState {
 public:
   GameplayState(const InputManager &input_manager, AssetManager &asset_manager,
                 SoundController &sound_controller, Campaign &campaign);
-  ~GameplayState() override = default;
+  ~GameplayState() override;
 
   void enter() override;
   StateAction update(float dt) override;
@@ -48,6 +48,43 @@ public:
   void exit() override;
 
 private:
+  /// The marker shown on a posture-broken enemy's chest, telling the player a
+  /// deathblow is available. Loaded in enter() and freed in exit(), which is
+  /// also why this state now has a destructor.
+  ///
+  /// Held here rather than in AssetManager for the same reason MainMenuState
+  /// holds its background: AssetManager has no texture map at all, its manifest
+  /// is a model/animation/sound list, and exactly one screen draws this.
+  Texture2D posture_cue{};
+
+  /// Which deathblow, if any, is on offer against one enemy right now.
+  ///
+  /// `None` is the answer to "nothing here", and the other three name the route
+  /// taken, because the follow-through differs: an aerial drop is set up over
+  /// several frames, a stealth kill aligns behind the target and dissolves it,
+  /// a combat deathblow turns to face it.
+  enum class TakedownKind { None, Aerial, Stealth, Combat };
+
+  /// Is a deathblow available on `enemy`, and by which route?
+  ///
+  /// One implementation, deliberately, because two things ask: the Takedown
+  /// input acts on it and the chest marker advertises it. Those two answering
+  /// differently is the specific bug this shape prevents -- a marker over an
+  /// enemy that F refuses, or an enemy F would kill wearing no marker.
+  ///
+  /// Per-enemy only. The global gates -- already executing, an aerial drop
+  /// already committed -- belong to the callers, which is why they are not
+  /// tested here.
+  TakedownKind availableTakedown(const Enemy &enemy) const;
+
+  /// Free `posture_cue` and zero the handle. Called from exit() and from the
+  /// destructor; zeroing is what makes the second call a no-op.
+  void unloadPostureCue();
+
+  /// Draw the cue over every enemy currently open to a deathblow. Must be
+  /// called inside a BeginMode3D scope.
+  void drawPostureCues();
+
   /// Declared before `renderer`, which holds a reference to it: destruction is
   /// reverse-declaration order, so the renderer dies first.
   AssetManager& asset_manager;
