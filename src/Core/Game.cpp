@@ -10,6 +10,12 @@ Game::~Game() {
     }
 }
 
+void Game::start() { pushMainMenu(); }
+
+void Game::pushMainMenu() {
+    pushState(std::make_unique<MainMenuState>(campaign));
+}
+
 void Game::update() {
     if (!states.empty()) {
         time_manager.update();
@@ -20,7 +26,10 @@ void Game::update() {
         StateAction action = states.back()->update(dt);
         // // Handle state actions if needed
         if (action == StateAction::RequestQuit) {
-            // Handle quit request, e.g., exit the game loop
+            // A flag rather than an exit() or a break: Application owns the
+            // loop, and unwinding it normally is what runs ~Game -> popState ->
+            // every state's exit(), freeing GPU handles before CloseWindow().
+            quit_requested = true;
         }
         if (action == StateAction::ChangeToMenu) {
             popState();
@@ -29,7 +38,7 @@ void Game::update() {
             // popState(), so that a carry written on the way out cannot
             // survive the reset.
             campaign.restart();
-            pushState(std::make_unique<MainMenuState>());
+            pushMainMenu();
         }
         if (action == StateAction::ChangeToLoading) {
             popState();
@@ -75,7 +84,7 @@ void Game::update() {
                 // That was the last phase. The run is over.
                 popState();
                 campaign.restart();
-                pushState(std::make_unique<MainMenuState>());
+                pushMainMenu();
             }
         }
     }

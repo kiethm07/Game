@@ -210,7 +210,11 @@ PhaseCarry GameplayState::snapshotCarry() const {
 }
 
 void GameplayState::enter() {
-  // Load local menu-only graphics or titles here
+  // Mouse-look needs the pointer hidden and locked to the window. Declared here
+  // rather than once at startup so that every route into gameplay is covered --
+  // from the menu, from a phase change, and from an F5 reload, which never
+  // passes through either of the others.
+  DisableCursor();
 }
 
 StateAction GameplayState::update(float dt) {

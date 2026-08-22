@@ -95,12 +95,34 @@ public:
     return true;
   }
 
+  /// Begin a run at `phaseIndex`, carrying nothing.
+  ///
+  /// restart() aimed at an arbitrary row, and it drops the carry for the same
+  /// reason restart() does: a run started here has not been anywhere yet.
+  /// Keeping the previous run's money would hand the player a purse they earned
+  /// in a run they abandoned.
+  ///
+  /// Out of range is refused and answered rather than clamped to 0. The only
+  /// caller is a menu built by walking this same table, so an index past the end
+  /// means the menu and the table have gone out of step -- quietly starting the
+  /// first phase instead would hide exactly that.
+  ///
+  /// Nothing else is touched, so a cursor landed here is indistinguishable from
+  /// one advance() walked here. That is what makes finishing a menu-started
+  /// phase 2 lead to phase 3 with no special case anywhere.
+  bool startAt(size_t phaseIndex) {
+    if (phaseIndex >= count()) return false;
+    cursor = phaseIndex;
+    carry = PhaseCarry{};
+    return true;
+  }
+
   /// Back to the first phase carrying nothing. This is what ends a run, and it
   /// is reached two ways: quitting out of a phase, and finishing the last one.
-  void restart() {
-    cursor = 0;
-    carry = PhaseCarry{};
-  }
+  ///
+  /// Expressed as startAt(0) so "a fresh run carries nothing" is stated once
+  /// rather than twice with a chance to drift.
+  void restart() { startAt(0); }
 
   const PhaseCarry &getCarry() const { return carry; }
   void setCarry(const PhaseCarry &c) { carry = c; }

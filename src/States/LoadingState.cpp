@@ -6,7 +6,12 @@
 LoadingState::LoadingState(AssetManager& asset_manager, const Campaign& campaign)
     : asset_manager(asset_manager), campaign(campaign) {}
 
-void LoadingState::enter() {}
+void LoadingState::enter() {
+    // Nothing here is clickable, and without this the OS cursor is left over
+    // from the menu, floating on top of the progress bar for a second on every
+    // load. Every state declares its own mode; none inherits one.
+    DisableCursor();
+}
 
 StateAction LoadingState::update(float dt) {
     size_t num_assets = sizeof(kAssets) / sizeof(kAssets[0]);

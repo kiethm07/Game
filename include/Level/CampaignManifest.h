@@ -43,7 +43,15 @@ struct PhaseEntry {
 /// phase4_battlefield, all of which load — they are greyboxes, build
 /// intermediates and test maps, not places a run passes through. Playing one
 /// means pointing a row here at it, which is the whole mechanism.
-static const PhaseEntry kCampaignPhases[] = {
+/// `inline constexpr` rather than `static const`, which is not a style choice.
+/// `static` at namespace scope in a header gives every translation unit its own
+/// internal-linkage copy, while Campaign's inline members (currentName,
+/// currentLevelPath, count) refer to it -- an inline function referring to an
+/// internal-linkage object is ill-formed, no diagnostic required, and the linker
+/// folds one definition arbitrarily. `inline` makes it one object across the
+/// program, so "this table IS the order" is literally true and not just
+/// aspirational.
+inline constexpr PhaseEntry kCampaignPhases[] = {
     {"phase1_forest", "levels/phase1_forest/level.json",
      true, -53.79f, -21.63f},
     {"phase2_approach", "levels/phase2_approach/level.json",
