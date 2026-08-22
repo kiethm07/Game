@@ -293,6 +293,19 @@ void GameplayState::unloadPostureCue() {
   posture_cue = Texture2D{};  // so a second call cannot double-free
 }
 
+const Enemy *GameplayState::blockingBoss() const {
+  for (const auto &enemy_ptr : enemies) {
+    const Enemy *enemy = enemy_ptr.get();
+    // Dead is enough. Not `isFullyDissolved`, which is a rendering state that
+    // takes seconds to arrive -- being made to stand over the body waiting for
+    // it to fade would read as the gate being broken.
+    if (isBossType(enemy->getType()) && !enemy->getStats().isDead()) {
+      return enemy;
+    }
+  }
+  return nullptr;
+}
+
 GameplayState::TakedownKind
 GameplayState::availableTakedown(const Enemy &enemy) const {
   if (enemy.getStats().isDead()) return TakedownKind::None;
@@ -651,6 +664,7 @@ StateAction GameplayState::update(float dt) {
   // ends. Ordered before the debug keys below because it is the real feature
   // and they are stand-ins for it.
   checkpoint_in_reach = false;
+  checkpoint_blocked_by = nullptr;
   if (checkpoint_timer >= 0.0f) {
     // A countdown is already running. Nothing can start a second one, and the
     // fire is left burning while it runs -- that pause is the whole point.
@@ -672,6 +686,16 @@ StateAction GameplayState::update(float dt) {
       if (dx * dx + dz * dz > CHECKPOINT_REACH * CHECKPOINT_REACH) continue;
 
       checkpoint_in_reach = true;
+
+      // A phase with a boss in it does not end until the boss does. Checked
+      // here rather than at the keypress so the prompt can say so on approach
+      // -- being told why after pressing G is how a player concludes the key
+      // is broken.
+      checkpoint_blocked_by = blockingBoss();
+      if (checkpoint_blocked_by != nullptr) {
+        break;
+      }
+
       if (input_manager.isActionPressed(GameAction::Interact)) {
         checkpoints[i].lit = true;
         renderer->setCheckpoints(checkpoints);
@@ -1085,10 +1109,23 @@ void GameplayState::draw() {
   // The campfire prompt. Without it the interaction is undiscoverable -- there
   // is nothing about standing near a pile of logs that suggests a key.
   if (checkpoint_in_reach) {
-    const char *prompt = "[G]  Light the campfire";
-    const int width = MeasureText(prompt, 26);
-    DrawText(prompt, (GetScreenWidth() - width) / 2,
-             GetScreenHeight() - 120, 26, Color{255, 220, 150, 255});
+    if (checkpoint_blocked_by != nullptr) {
+      // Named off the blocker's own type rather than hardcoded, so the one
+      // phase that has a mini boss says "mini boss" and a phase that is ever
+      // gated on something else does not lie about which fight is left.
+      const char *prompt =
+          checkpoint_blocked_by->getType() == EnemyType::MiniBoss
+              ? "You must defeat mini boss to proceed"
+              : "You must defeat the boss to proceed";
+      const int width = MeasureText(prompt, 26);
+      DrawText(prompt, (GetScreenWidth() - width) / 2,
+               GetScreenHeight() - 120, 26, Color{255, 120, 110, 255});
+    } else {
+      const char *prompt = "[G]  Light the campfire";
+      const int width = MeasureText(prompt, 26);
+      DrawText(prompt, (GetScreenWidth() - width) / 2,
+               GetScreenHeight() - 120, 26, Color{255, 220, 150, 255});
+    }
   }
 
   // ...and once it is lit, say what is happening, so the two seconds before the

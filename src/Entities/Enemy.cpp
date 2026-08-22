@@ -12,6 +12,7 @@ Enemy::Enemy(const EnemySpawn &spawn, Faction faction) : Character(faction) {
   rotation = {0.0f, spawn.at.yaw, 0.0f};
   spawn_position = spawn.at.position;
   spawn_yaw = spawn.at.yaw;
+  type = spawn.type;
 
   // Applied before any subclass adds its sensors, which is safe: forceAwareness
   // touches only the awareness level and the derived state, and no sensor reads

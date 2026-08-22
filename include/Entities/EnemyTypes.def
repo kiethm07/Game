@@ -15,3 +15,11 @@
 // missing case at the point you build, which is the intended and only
 // remaining cost.
 ENEMY_TYPE(Swordman)
+
+// The two bosses. Both are built as a Swordman today -- same model, same
+// animator, same attack data -- so what these rows currently buy is identity:
+// something has to be able to say "that one is the mini boss" for the phase-2
+// campfire to stay shut until it is dead. Their own assets replace the factory
+// case and nothing else.
+ENEMY_TYPE(MiniBoss)
+ENEMY_TYPE(FinalBoss)

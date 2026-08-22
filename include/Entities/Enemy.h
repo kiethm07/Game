@@ -50,6 +50,14 @@ public:
   /// unaware behaviour walks back here and settles on this yaw.
   Vector3 getSpawnPosition() const { return spawn_position; }
   float getSpawnYaw() const { return spawn_yaw; }
+
+  /// Which row of EnemyTypes.def this was built from.
+  ///
+  /// Kept because the concrete class no longer answers the question: a mini
+  /// boss and a plain swordman are both a Swordman today, and the phase gate
+  /// has to tell them apart. Set from the spawn, so it cannot disagree with
+  /// what the level authored.
+  EnemyType getType() const { return type; }
   const CombatComponent &getCombatComponent() const { return combat_component; }
   StealthComponent &getStealthComponent() { return stealth_component; }
   const StealthComponent &getStealthComponent() const { return stealth_component; }
@@ -100,6 +108,7 @@ protected:
   /// Lives here rather than in a subclass because "walk back to your post" is
   /// an Enemy-level idea and because setting it anywhere but the constructor is
   /// how it came adrift from `rotation` in the first place.
+  EnemyType type = EnemyType::Swordman;
   Vector3 spawn_position{0.0f, 0.0f, 0.0f};
   float spawn_yaw = 0.0f;
 

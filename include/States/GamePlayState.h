@@ -57,6 +57,19 @@ private:
   /// is a model/animation/sound list, and exactly one screen draws this.
   Texture2D posture_cue{};
 
+  /// The boss still standing between the player and this phase's exit, or
+  /// nullptr when there is none.
+  ///
+  /// A phase's campfire stays shut while any boss-type enemy in it is alive --
+  /// which is what makes phase 2's mini boss a wall rather than an optional
+  /// fight. Expressed over EnemyTypes' isBossType rather than over a per-phase
+  /// list, so a phase that gains a boss is gated by the spawn alone and no
+  /// table has to be kept in step with the level.
+  ///
+  /// Returns the enemy rather than a bool because the prompt names what is
+  /// blocking it, and a bool cannot.
+  const Enemy *blockingBoss() const;
+
   /// Which deathblow, if any, is on offer against one enemy right now.
   ///
   /// `None` is the answer to "nothing here", and the other three name the route
@@ -156,6 +169,13 @@ private:
 
   /// True while the player is close enough to light one, so draw() can prompt.
   bool checkpoint_in_reach = false;
+
+  /// The boss barring the campfire the player is standing at, or nullptr.
+  ///
+  /// Written by update() and read by draw(), so the prompt and the interaction
+  /// can never disagree about whether the fire can be lit. Only meaningful when
+  /// `checkpoint_in_reach`.
+  const Enemy *checkpoint_blocked_by = nullptr;
   
   float takedown_text_timer = 0.0f;
   std::string takedown_type_str = "";

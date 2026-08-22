@@ -29,3 +29,19 @@ const char *enemyTypeName(EnemyType type);
 
 /// Reverse. False when `name` matches no row, leaving `out` untouched.
 bool parseEnemyType(const std::string &name, EnemyType &out);
+
+/// Is this type a boss -- something a phase is expected to be gated on?
+///
+/// A switch with no `default:` for the same reason EnemyFactory's has none: a
+/// row added to EnemyTypes.def and forgotten here is then a -Wswitch warning at
+/// the point it was added, rather than a new enemy that silently is not a boss.
+inline constexpr bool isBossType(EnemyType type) {
+  switch (type) {
+  case EnemyType::Swordman:
+    return false;
+  case EnemyType::MiniBoss:
+  case EnemyType::FinalBoss:
+    return true;
+  }
+  return false;
+}
