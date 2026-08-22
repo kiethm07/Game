@@ -9,6 +9,85 @@
 
 class CollisionMath {
 public:
+    /// The closest pair of points on two segments: `c1` on p1-q1, `c2` on
+    /// p2-q2.
+    ///
+    /// Split out of closestDistanceSqrBetweenLineSegments, which computed both
+    /// points and then returned only the distance between them. Callers that
+    /// want to know *where* two things met -- rather than just whether they did
+    /// -- had no way to ask.
+    static void closestPointsBetweenLineSegments(Vector3 p1, Vector3 q1,
+                                                 Vector3 p2, Vector3 q2,
+                                                 Vector3 &c1, Vector3 &c2) {
+        Vector3 d1 = Vector3Subtract(q1, p1);
+        Vector3 d2 = Vector3Subtract(q2, p2);
+        Vector3 r = Vector3Subtract(p1, p2);
+        float a = Vector3DotProduct(d1, d1); // Length squared of segment 1
+        float e = Vector3DotProduct(d2, d2); // Length squared of segment 2
+        float f = Vector3DotProduct(d2, r);
+
+        float s = 0.0f, t = 0.0f;
+        float c = Vector3DotProduct(d1, r);
+        float b = Vector3DotProduct(d1, d2);
+        float denom = a * e - b * b;
+
+        if (denom != 0.0f) {
+            s = std::clamp((b * f - c * e) / denom, 0.0f, 1.0f);
+        } else {
+            s = 0.0f;
+        }
+
+        float tnom = b * s + f;
+        if (tnom < 0.0f) {
+            t = 0.0f;
+            s = (a > 0.0001f) ? std::clamp(-c / a, 0.0f, 1.0f) : 0.0f;
+        } else if (tnom > e) {
+            t = 1.0f;
+            s = (a > 0.0001f) ? std::clamp((b - c) / a, 0.0f, 1.0f) : 0.0f;
+        } else {
+            t = (e > 0.0001f) ? (tnom / e) : 0.0f;
+        }
+
+        c1 = Vector3Add(p1, Vector3Scale(d1, s));
+        c2 = Vector3Add(p2, Vector3Scale(d2, t));
+    }
+
+    /// Where a blow landed on a body, as a point on the hurtbox's surface.
+    ///
+    /// `from` is the incoming hitbox -- its centre for a sphere, or the point on
+    /// its axis nearest the body for a capsule. The result is clamped onto the
+    /// hurtbox's own segment and then pushed out to its surface facing the
+    /// attacker, which is what makes it a torso-height point on the defender
+    /// rather than a point at the attacker's height.
+    ///
+    /// That distinction only shows up on sloped ground. An attack hitbox is
+    /// built from the *attacker's* position plus a vertical offset (see
+    /// Player::getActiveHitBoxes), so downhill of the attacker its centre sits
+    /// above the defender it is hitting -- and effects spawned there came out
+    /// over the defender's head.
+    static Vector3 contactPointOnCapsule(Vector3 from, const Capsule &hurt) {
+        const Vector3 on_axis =
+            closestPointOnSegment(hurt.getBase(), hurt.getTip(), from);
+
+        // Height comes from the axis and nothing else. The axis is inset by the
+        // capsule's radius at both ends, so this lands in the band between about
+        // knee and shoulder however the blow arrived -- which is the "torso
+        // level" a hit is supposed to read at.
+        //
+        // The push to the surface is HORIZONTAL for the same reason. Pushing
+        // along the full 3D direction climbs: a blow arriving from above clamps
+        // to the top of the axis and then gets lifted a further radius, landing
+        // over the head -- measurably worse than the hitbox centre it replaced.
+        Vector3 out = Vector3Subtract(from, on_axis);
+        out.y = 0.0f;
+        const float len = Vector3Length(out);
+        // Directly above or below the axis gives no horizontal direction to
+        // push along; the axis point is already inside the body and is the best
+        // answer available.
+        if (len < 1e-6f) return on_axis;
+        return Vector3Add(on_axis, Vector3Scale(out, hurt.getRadius() / len));
+    }
+
     // Distance squared between two line segments
     static float closestDistanceSqrBetweenLineSegments(Vector3 p1, Vector3 q1, Vector3 p2, Vector3 q2) {
         Vector3 d1 = Vector3Subtract(q1, p1);

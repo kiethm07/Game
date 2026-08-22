@@ -434,10 +434,20 @@ DamageResult Enemy::takeDamage(float health_damage, float posture_damage, Charac
 
   const bool hit_applied = stats.applyDamage(health_damage, posture_damage);
 
-  // If posture was already broken (they are in the 3s vulnerable window), next hit executes them
+  // The kill belongs to the deathblow, and to nothing else.
+  //
+  // BeingExecuted is set by GameplayState the instant a takedown starts, before
+  // Player::performTakedown() swings, so this branch *is* the deathblow's own
+  // hitbox landing -- the one thing that turns a broken guard into a death.
+  //
+  // There used to be a second branch beside it: a hit that landed while posture
+  // was already broken also set health to zero. That made any ordinary swing
+  // inside the 3s window an instant kill, so the deathblow could be skipped
+  // entirely by carrying on mashing attack, and the F takedown became a slower
+  // optional way to do what a normal hit already did. A broken guard now only
+  // leaves them open -- ordinary hits do ordinary damage -- and the execution
+  // is something the player has to ask for.
   if (combat_component.getCurrentState() == CombatState::BeingExecuted) {
-      stats.applyDamage(stats.getCurrentHealth(), 0.0f);
-  } else if (was_posture_broken && stats.isPostureBroken()) {
       stats.applyDamage(stats.getCurrentHealth(), 0.0f);
   } else if (!was_posture_broken && stats.isPostureBroken()) {
       combat_component.breakPosture(3.0f);

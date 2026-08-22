@@ -3,7 +3,7 @@
 #include <cstdlib>
 #include <cmath>
 
-void ParticleManager::emitSparks(Vector3 position, int count) {
+void ParticleManager::emitSparks(Vector3 position, int count, float floor_y) {
     for (int i = 0; i < count; ++i) {
         Particle p;
         p.type = ParticleType::SPARK;
@@ -34,12 +34,13 @@ void ParticleManager::emitSparks(Vector3 position, int count) {
         p.life = ((float)rand() / RAND_MAX) * 0.4f + 0.3f; // 0.3s - 0.7s
         p.max_life = p.life;
         p.size = ((float)rand() / RAND_MAX) * 0.03f + 0.015f; // Radius of the streak
-        
+        p.floor_y = floor_y;
+
         particles.push_back(p);
     }
 }
 
-void ParticleManager::emitBlood(Vector3 position, int count) {
+void ParticleManager::emitBlood(Vector3 position, int count, float floor_y) {
     for (int i = 0; i < count; ++i) {
         Particle p;
         p.type = ParticleType::BLOOD;
@@ -67,7 +68,8 @@ void ParticleManager::emitBlood(Vector3 position, int count) {
         p.life = ((float)rand() / RAND_MAX) * 0.5f + 0.3f; 
         p.max_life = p.life;
         p.size = ((float)rand() / RAND_MAX) * 0.06f + 0.03f; // slightly larger for clustered feel
-        
+        p.floor_y = floor_y;
+
         particles.push_back(p);
     }
 }
@@ -109,7 +111,10 @@ void ParticleManager::emitVisualSmoke(Vector3 position, float radius, float dura
         
         // OPTIMIZATION: Increase individual sphere size to compensate for fewer particles
         p.size = radius * (((float)rand() / RAND_MAX) * 0.4f + 0.6f); 
-        
+        // Smoke does not bounce, but leaving this uninitialised would be a
+        // garbage read the moment anyone gives SMOKE a floor test.
+        p.floor_y = position.y;
+
         particles.push_back(p);
     }
 }
@@ -128,9 +133,10 @@ void ParticleManager::update(float dt) {
             p.velocity.x *= (1.0f - 1.5f * dt);
             p.velocity.z *= (1.0f - 1.5f * dt);
             
-            // Floor bounce
-            if (p.position.y < 0.05f) {
-                p.position.y = 0.05f;
+            // Floor bounce, against the ground this particle was emitted
+            // over rather than a fixed world height. See Particle::floor_y.
+            if (p.position.y < p.floor_y) {
+                p.position.y = p.floor_y;
                 p.velocity.y *= (p.type == ParticleType::BLOOD ? -0.1f : -0.5f); // Blood barely bounces
                 p.velocity.x *= 0.6f; // Floor friction
                 p.velocity.z *= 0.6f;

@@ -87,13 +87,51 @@ void CombatManager::update(const std::vector<Character*>& characters, ParticleMa
                         active_hits.push_back({ attacker->getId(), defender->getId() });
                         
                         if (particle_manager) {
+                            // On the defender's body, not at the hitbox's own
+                            // centre.
+                            //
+                            // A hitbox is built from the ATTACKER's position
+                            // plus a vertical offset (Player::getActiveHitBoxes),
+                            // so its centre tracks the attacker's height. On
+                            // flat ground that is close enough to the contact to
+                            // pass for it; downhill it is not, and effects came
+                            // out level with the attacker's chest -- over the
+                            // defender's head. Clamping onto the hurtbox keeps
+                            // the spawn inside the body that was actually hit,
+                            // whatever the two are standing on.
+                            //
+                            // For a capsule hitbox the reference is the point on
+                            // the weapon nearest the body rather than the middle
+                            // of the weapon, which for a long swing are a blade's
+                            // length apart.
+                            Vector3 from = hitbox.getCenter();
+                            if (hitbox.isCapsule()) {
+                                const Capsule w = hitbox.getCapsule();
+                                Vector3 on_weapon, on_body;
+                                CollisionMath::closestPointsBetweenLineSegments(
+                                    w.getBase(), w.getTip(),
+                                    hurtbox.getShape().getBase(),
+                                    hurtbox.getShape().getTip(),
+                                    on_weapon, on_body);
+                                from = on_weapon;
+                            }
+                            const Vector3 contact =
+                                CollisionMath::contactPointOnCapsule(
+                                    from, hurtbox.getShape());
+
+                            // The ground under the thing that was hit. A
+                            // character's position is its feet, so this is the
+                            // surface it is standing on -- which is the height
+                            // its blood should pool at.
+                            const float floor_y = defender->getPosition().y + 0.05f;
+
                             if (result == DamageResult::BLOCKED) {
-                                particle_manager->emitSparks(hitbox.getCenter(), 10);
+                                particle_manager->emitSparks(contact, 10, floor_y);
                             } else if (result == DamageResult::PARRIED) {
-                                particle_manager->emitSparks(hitbox.getCenter(), 50);
+                                particle_manager->emitSparks(contact, 50, floor_y);
                             } else if (result == DamageResult::HIT) {
                                 int blood_count = (hitbox.getHealthDamage() > 1000.0f) ? 100 : 30;
-                                particle_manager->emitBlood(hitbox.getCenter(), blood_count);
+                                particle_manager->emitBlood(contact, blood_count, floor_y);
                             }
                         }
 
