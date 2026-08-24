@@ -369,6 +369,43 @@ def triangle_normal(a, b, c):
     return None if length < 1e-9 else [v / length for v in n]
 
 
+def surfaces_under(verts, idx, x, z, from_y=1000.0):
+    """Every surface below (x, from_y, z), highest first: [(y, normal), ...].
+
+    All of them, not just the nearest, because an authored spawn height is
+    allowed to name a floor that is not the top one. Inside a building the cast
+    meets the roof first and the courtyard floor several storeys down; testing
+    only against the roof would fail every interior placement the engine
+    happily supports.
+    """
+    hits = []
+    for t in range(len(idx) // 3):
+        a, b, c = (verts[idx[t * 3]], verts[idx[t * 3 + 1]],
+                   verts[idx[t * 3 + 2]])
+        e1 = [b[i] - a[i] for i in range(3)]
+        e2 = [c[i] - a[i] for i in range(3)]
+        h = [-e2[2], 0.0, e2[0]]
+        det = sum(e1[i] * h[i] for i in range(3))
+        if abs(det) < 1e-12:
+            continue
+        inv = 1.0 / det
+        s = [x - a[0], from_y - a[1], z - a[2]]
+        u = inv * sum(s[i] * h[i] for i in range(3))
+        if u < -1e-6 or u > 1.0 + 1e-6:
+            continue
+        q = [s[1] * e1[2] - s[2] * e1[1],
+             s[2] * e1[0] - s[0] * e1[2],
+             s[0] * e1[1] - s[1] * e1[0]]
+        v = inv * -q[1]
+        if v < -1e-6 or u + v > 1.0 + 1e-6:
+            continue
+        dist = inv * sum(e2[i] * q[i] for i in range(3))
+        if dist > 1e-6:
+            hits.append((from_y - dist, triangle_normal(a, b, c)))
+    hits.sort(key=lambda hit: -hit[0])
+    return hits
+
+
 def ground_under(verts, idx, x, z, from_y=1000.0):
     """Nearest surface below (x, from_y, z): (y, normal). Brute force."""
     best = None
@@ -764,22 +801,47 @@ def check_collision_mesh(level, level_dir, spawns_effective, failures):
         spawns.append((label, [x, y, z]))
 
     for label, position in spawns:
-        found = ground_under(verts, idx, position[0], position[2])
-        if found is None:
+        hits = surfaces_under(verts, idx, position[0], position[2])
+        if not hits:
             failures.append(label)
             print("  FAIL  %-16s no mesh surface underneath it" % label)
             continue
-        y, normal = found
-        delta = abs(y - position[1])
-        if delta > SPAWN_TOLERANCE:
+
+        # Any floor, not only the topmost. An explicit `y` in enemies.json is
+        # how a level says "this one stands indoors" -- GameplayState skips the
+        # SpawnGround snap for exactly those -- so the test is that the authored
+        # height rests on some upward-facing surface, not that it agrees with
+        # whatever the sky-down cast happens to hit first.
+        match = None
+        above = 0
+        for index, (hit_y, hit_normal) in enumerate(hits):
+            if abs(hit_y - position[1]) <= SPAWN_TOLERANCE:
+                match = (hit_y, hit_normal)
+                above = index
+                break
+
+        if match is None:
             failures.append(label)
-            print("  FAIL  %-16s stands at y=%.2f but the mesh is at %.2f"
-                  % (label, position[1], y))
-        elif normal is None or normal[1] < 0.4:
+            print("  FAIL  %-16s stands at y=%.2f but the nearest of %d "
+                  "surface(s) under it is %.2f"
+                  % (label, position[1], len(hits),
+                     min((h[0] for h in hits),
+                         key=lambda v: abs(v - position[1]))))
+            continue
+
+        y, normal = match
+        delta = abs(y - position[1])
+        if normal is None or normal[1] < 0.4:
             failures.append(label)
             print("  FAIL  %-16s stands on a surface facing %+.2f, which "
                   "PhysicsManager reads as a wall or ceiling"
                   % (label, normal[1] if normal else 0.0))
+        elif above:
+            # Worth saying out loud: it is indoors, and the roof over it is what
+            # a spawn that forgot its `y` would have been snapped to.
+            print("  OK    %-16s mesh %.2f m away, normal.y %+.2f  "
+                  "(indoors: %d surface(s) above it, topmost %.2f)"
+                  % (label, delta, normal[1], above, hits[0][0]))
         else:
             print("  OK    %-16s mesh %.2f m away, normal.y %+.2f"
                   % (label, delta, normal[1]))
