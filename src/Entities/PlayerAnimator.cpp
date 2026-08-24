@@ -125,6 +125,12 @@ float PlayerAnimator::landPlayDuration(const AssetManager *assets) const {
   return track.duration > 0.0f ? track.duration - LAND_CONTACT : 0.0f;
 }
 
+float PlayerAnimator::deathDuration(const AssetManager &assets) const {
+  if (anim.clipFor(PlayerAnimState::Death) < 0)
+    return 0.0f;
+  return anim.track(assets, PlayerAnimState::Death).duration;
+}
+
 void PlayerAnimator::queueReaction(bool blocked) {
   queued_reaction =
       blocked ? PlayerAnimState::GuardImpact : PlayerAnimState::HitReact;
@@ -205,6 +211,15 @@ PlayerAnimator::resolve(const Frame &frame) const {
   // Highest priority first. A committed state outranks the locomotion states
   // below it, which is what makes an attack or dodge started in mid-air show
   // its own clip rather than the jump.
+
+  // Above every one of them: a corpse does not stride, swing or flinch. Death
+  // is a state of the character, not of the combat machine — the swing that was
+  // running when the last hit landed is still in CombatState for a few frames,
+  // and this is what keeps it off the screen. Non-looping, so the fall plays
+  // once and holds its last pose for as long as the body is up. No variant: a
+  // player only ever dies once per phase, so there is nothing to re-trigger.
+  if (frame.dead && anim.clipFor(PlayerAnimState::Death) >= 0)
+    return anim.select(PlayerAnimState::Death);
 
   if (state == CombatState::PostureBroken &&
       anim.clipFor(PlayerAnimState::PostureBreak) >= 0)

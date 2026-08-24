@@ -32,6 +32,41 @@ void Player::update(const UpdateContext &ctx) {
   stats.update(dt);
   sword_trail.update(dt);
 
+  // Out of health: the fall, and nothing else.
+  //
+  // Ahead of the gate, the inputs and the locomotion rather than expressed as
+  // another ActionGate rule, because death is not a restriction on what the
+  // player may start — it is the end of them starting anything at all, and a
+  // gate with every field false would still leave the ladder below choosing
+  // between an idle and a stride. Returning here is what makes the clip the
+  // only thing on screen.
+  //
+  // Physics still runs on this character afterwards, from GameplayState's own
+  // pass: gravity and ground snapping are what put the body on the floor it
+  // died over rather than leaving it hanging where the last hit landed.
+  if (stats.isDead()) {
+    // Once, on the frame of death. interrupt() is what retires a swing that was
+    // mid-flight — it owns a live hitbox, and a corpse must not still be able
+    // to kill what killed it.
+    if (!death_handled) {
+      death_handled = true;
+      combat_component.interrupt();
+      cancelItemUse();
+      sword_trail.clear();
+    }
+
+    setHorizontalVelocity({0.0f, 0.0f, 0.0f});
+
+    PlayerAnimator::Frame frame;
+    frame.combat = &combat_component;
+    frame.assets = ctx.assets;
+    frame.grounded = isGrounded();
+    frame.verticalVelocity = getVerticalVelocity();
+    frame.dead = true;
+    animator.update(frame, dt);
+    return;
+  }
+
   // Before the inputs, which are what take the character off the ground: a jump
   // pressed this frame must not be mistaken for a landing on it, and must not
   // slip past a gate evaluated before the stagger it would be escaping.
@@ -408,9 +443,13 @@ DamageResult Player::takeDamage(float health_damage, float posture_damage,
       // 2.0s duration for posture break stagger
       combat_component.breakPosture(2.0f);
       stats.resetPosture();
-    } else if (stats.isDead()) {
-      // Player death state!
     }
+    // Nothing here for the killing blow. Death is not an event the damage pass
+    // reacts to — update() reads stats.isDead() at the top of the next frame
+    // and takes the character over from there. Acting on it here would put the
+    // fall a frame ahead of the flinch queued three lines up, and would have
+    // this pass, which runs from CombatManager, reaching into the animation
+    // clock that only update() advances.
     return blocked ? DamageResult::BLOCKED : DamageResult::HIT;
   }
   return DamageResult::IGNORED;

@@ -62,9 +62,10 @@ enum class PlayerAnimState {
   Attack,
   HitReact,
 
-  /// Authored clips do not exist yet: these resolve to index -1, which makes
-  /// their rungs of the ladder inert. Wiring one up is a clip name in the
-  /// table plus the condition that selects it.
+  /// The two states that end an action rather than being one. Both name a clip
+  /// the asset ships, and both rungs are still guarded on clipFor() >= 0 like
+  /// every other — an asset without them falls through to the locomotion states
+  /// rather than freezing.
   PostureBreak,
   Death,
 
@@ -107,6 +108,11 @@ public:
 
     bool lockedOn = false;
     Vector3 localMoveDir = {0.0f, 0.0f, 0.0f};
+
+    /// Out of health. Sits above every other field in the ladder rather than
+    /// alongside them: a corpse does not stride, swing or flinch, so this is
+    /// read before anything else and nothing below it can override it.
+    bool dead = false;
   };
 
   /// What the frame's animation implies for movement. The track is never null;
@@ -133,6 +139,14 @@ public:
   /// caller timing the recovery against it runs out with the clip rather than
   /// holding a finished pose for the length of a descent already flown.
   float landPlayDuration(const AssetManager *assets) const;
+
+  /// The death clip's playable length. 0 when the asset does not contain it,
+  /// which is the honest answer for a caller timing a wait against it: with no
+  /// clip there is no fall to watch, so there is nothing to wait for.
+  ///
+  /// The row plays at rate 1.0, so the clip's own length is also how long it is
+  /// on screen — no division here, unlike dodgeDuration().
+  float deathDuration(const AssetManager &assets) const;
 
   /// Starts whatever flinch queueReaction() left, and ages the running one.
   void updateFlinch(float dt, const AssetManager *assets);

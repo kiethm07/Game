@@ -31,6 +31,13 @@ public:
   std::vector<HitBox> getActiveHitBoxes() const override;
   DamageResult takeDamage(float health_damage, float posture_damage, Character* attacker) override;
 
+  /// How long the fall is on screen, so a caller can wait it out before doing
+  /// anything about the death. 0 when the asset has no death clip, which is the
+  /// right answer for the wait: there is no fall to watch.
+  float deathAnimDuration(const AssetManager &assets) const {
+    return animator.deathDuration(assets);
+  }
+
   bool isCrouching() const override { return locomotion.getStance() == Stance::Crouching; }
   bool isInSmoke() const { return in_smoke_flag; }
 
@@ -132,6 +139,13 @@ private:
 
   bool in_smoke_flag = false;
   int money = 0;
+
+  /// Whether the one-off tidy-up on the frame of death has run — the swing
+  /// retired, the item use cancelled, the trail cleared. A latch rather than a
+  /// test against the combat state, because everything it does is idempotent
+  /// only in appearance: interrupt() every frame would keep re-entering Idle,
+  /// and death should stop the character once, not hold it stopped.
+  bool death_handled = false;
 
   CombatComponent combat_component;
   MovementComponent movement_component;

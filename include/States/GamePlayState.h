@@ -90,6 +90,34 @@ private:
   /// tested here.
   TakedownKind availableTakedown(const Enemy &enemy) const;
 
+  /// One clickable row on the defeat screen: where it is, what it says, and
+  /// what it asks Game to do.
+  ///
+  /// Carries the StateAction directly, unlike MainMenuState's button, and it
+  /// can: both destinations here are ones this state already knows by name --
+  /// the menu, and this same phase again. The menu's buttons carry an index
+  /// instead precisely because their choice has to be written into Campaign
+  /// before the action is returned, and there is no such choice to make here.
+  struct DefeatButton {
+    Rectangle bounds;
+    const char *label;
+    StateAction action;
+  };
+
+  /// Lay the two buttons out under the banner, from GetScreenWidth(). Called
+  /// when the screen goes up rather than in the constructor, for the same
+  /// reason MainMenuState builds its stack in enter().
+  void buildDefeatButtons();
+
+  /// The defeat screen's whole frame: hover, clicks, and the one key that also
+  /// leaves. Returns what Game should do, exactly as update() does -- it is
+  /// update(), for every frame after the screen appears.
+  StateAction updateDefeatScreen();
+
+  /// Grey wash, banner and buttons, over whatever the 3D pass last drew. Must
+  /// be called after the 3D scope is closed.
+  void drawDefeatScreen();
+
   /// Free `posture_cue` and zero the handle. Called from exit() and from the
   /// destructor; zeroing is what makes the second call a no-op.
   void unloadPostureCue();
@@ -177,6 +205,36 @@ private:
   /// `checkpoint_in_reach`.
   const Enemy *checkpoint_blocked_by = nullptr;
   
+  /// Seconds since the player ran out of health, or negative while they are
+  /// alive. Started on the frame stats.isDead() first reads true, which is also
+  /// the frame the fall begins -- Player::update takes the character over from
+  /// the same test, so the clock and the animation start together rather than
+  /// one being timed against the other.
+  float death_timer = -1.0f;
+
+  /// When the defeat screen is due, on that same clock: the fall clip's own
+  /// playable length, so the banner lands on the frame the body settles.
+  ///
+  /// Measured off the clip rather than typed as a constant, and that is the
+  /// whole of what holds this together now that there is no pause padding it.
+  /// A hand-typed wait would have to be retyped every time the death animation
+  /// changed, and would be wrong in one of two invisible ways in between --
+  /// the banner over a fall still in progress, or a corpse held on screen after
+  /// it stopped moving. An asset with no death clip reports 0, which puts the
+  /// screen up on the frame of death: correct, since there is no fall to wait
+  /// for.
+  float defeat_at = 0.0f;
+
+  /// True once the banner is up. The world stops being updated from here: the
+  /// scene keeps being drawn, but nothing in it moves, so the grey wash sits
+  /// over a still rather than over a fight that carries on without its player.
+  bool defeat_shown = false;
+
+  std::vector<DefeatButton> defeat_buttons;
+
+  /// Index into `defeat_buttons`, or -1 for none.
+  int defeat_hovered = -1;
+
   float takedown_text_timer = 0.0f;
   std::string takedown_type_str = "";
   float smoke_cooldown_timer = 0.0f;

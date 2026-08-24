@@ -58,6 +58,22 @@ constexpr float POSTURE_CUE_BODY_SIZE = 0.20f;
 constexpr float POSTURE_CUE_HALO_SCALE = 3.0f;
 constexpr float POSTURE_CUE_HOT_SCALE = 0.40f;
 
+/// The defeat screen. Fractions of the screen, never pixels, for the reason
+/// MainMenuState's layout block gives: a hardcoded rectangle is only centred at
+/// the one resolution it was typed at.
+constexpr float DEFEAT_BUTTON_W = 0.2343f;   // 320 px at 1366, the menu's width
+constexpr float DEFEAT_BUTTON_H = 0.0729f;   // 56 px at 768
+constexpr float DEFEAT_BUTTON_GAP = 0.0293f; // 40 px at 1366, between the pair
+constexpr float DEFEAT_BUTTON_TOP = 0.60f;
+
+/// Bone white, the same ink the menu writes its chapters in -- the two screens
+/// are the same UI seen at opposite ends of a run.
+constexpr Color DEFEAT_INK = {235, 232, 225, 255};
+
+/// The banner. Deep red on the wash rather than pure #FF0000, which on a grey
+/// field vibrates rather than reads.
+constexpr Color DEFEAT_RED = {168, 18, 20, 255};
+
 /// Clearance added to the body radius when pulling the orb toward the camera.
 ///
 /// The chest bone sits on the character's CENTRE line, not on their chest
@@ -469,6 +485,15 @@ void GameplayState::drawPostureCues() {
 
 StateAction GameplayState::update(float dt) {
 
+  // 0. Death, and the two things it costs the frame.
+  //
+  // Once the banner is up the world is not ticked at all -- draw() still runs,
+  // so the scene stays on screen under the wash, but nothing in it moves. That
+  // is what stops the enemies who won the fight from carrying on hacking at a
+  // corpse behind a menu the player is reading.
+  if (defeat_shown)
+    return updateDefeatScreen();
+
   // 1. Tick entities through the shared polymorphic update path. Each reads
   // input/AI internally and shifts its own position safely.
   Vector3 player_pos = player->getPosition();
@@ -493,6 +518,55 @@ StateAction GameplayState::update(float dt) {
                          smoke_clouds, dt);
 
   player->update(ctx);
+
+  // 1.6 The death clock.
+  //
+  // After player->update() and not before it, which is what makes
+  // deathAnimDuration() answerable: the animator resolves its clip names on the
+  // player's first update, and a clock started ahead of that would measure the
+  // fall as zero and put the banner up while the body was still going down. The
+  // ordering is only load-bearing on the first frame of a phase, which is
+  // exactly the frame no honest death can happen on -- so getting it wrong is
+  // invisible until something else makes that frame reachable.
+  //
+  // The world keeps running for the whole wait: the camera follows, bodies go
+  // on dissolving, the killing blow's blood goes on falling. Player::update
+  // reads the same isDead() and has already handed the character to the death
+  // clip, so nothing here has to stop the player -- only to time how long the
+  // fall is watched for.
+  if (player->getStats().isDead()) {
+    if (death_timer < 0.0f) {
+      death_timer = 0.0f;
+      defeat_at = player->deathAnimDuration(asset_manager);
+
+      // Dropped here rather than left to the checks further down. A lock-on
+      // that outlived its holder would hold the camera on an enemy through the
+      // whole fall, framing the fight the player just lost instead of the loss.
+      locked_target = nullptr;
+      deathblow_victim = nullptr;
+      pending_aerial_target = nullptr;
+
+      TraceLog(LOG_INFO,
+               "GameplayState: player died in phase %d/%d; defeat screen in "
+               "%.2fs, the length of the fall",
+               (int)campaign.index() + 1, (int)campaign.count(), defeat_at);
+    }
+
+    death_timer += dt;
+    if (!defeat_shown && death_timer >= defeat_at) {
+      defeat_shown = true;
+      // The screen is driven by the mouse, so the pointer has to come back --
+      // enter() locked it away for mouse-look. Every route out of this state
+      // sets its own mode in enter(), so nothing has to put it back.
+      EnableCursor();
+      buildDefeatButtons();
+      // Deliberately not an early return: this frame finishes as an ordinary
+      // one, and the branch at the top of update() takes the next one. A return
+      // here would drop the physics and combat passes for a single frame purely
+      // to save them, which is the kind of asymmetry that later reads as a bug.
+    }
+  }
+
   for (auto &enemy : enemies) {
     if (enemy->isModelUnloaded()) continue;
 
@@ -674,7 +748,12 @@ StateAction GameplayState::update(float dt) {
       campaign.setCarry(snapshotCarry());
       return StateAction::RequestNextPhase;
     }
-  } else {
+  } else if (death_timer < 0.0f) {
+    // A corpse cannot rest. Guarded here rather than at the keypress so the
+    // prompt goes away too: a player bleeding out on top of the exit campfire
+    // would otherwise be told to press G, press it, and end the phase they
+    // just lost. A countdown already running is deliberately left to finish --
+    // that fire was lit by someone who was still alive.
     const Vector3 here = player->getPosition();
     for (size_t i = 0; i < checkpoints.size(); ++i) {
       if (checkpoints[i].lit) continue;
@@ -810,6 +889,19 @@ StateAction GameplayState::update(float dt) {
     renderer->setCheckpoints(checkpoints);
     TraceLog(LOG_INFO, "GameplayState: campfire %d is now %s",
              (int)nearest + 1, checkpoints[nearest].lit ? "lit" : "out");
+  }
+
+  // F8: die on the spot. The same debug-affordance convention F1-F7 follow, and
+  // the only way to reach the fall and the defeat screen without losing a real
+  // fight -- the player has 1000 HP, so the path this exists to exercise is
+  // otherwise minutes long and not repeatable.
+  //
+  // Routed through takeDamage rather than reaching into Stats, so it takes the
+  // same path a killing blow does. That means a raised guard absorbs it, since
+  // a null attacker is always considered in front: let go of the guard and
+  // press it again.
+  if (IsKeyPressed(KEY_F8)) {
+    player->takeDamage(99999.0f, 0.0f, nullptr);
   }
 
   if (spawn_line_timer > 0.0f) spawn_line_timer -= dt;
@@ -991,6 +1083,115 @@ StateAction GameplayState::update(float dt) {
   return StateAction::KeepCurrent;
 }
 
+void GameplayState::buildDefeatButtons() {
+  const float screen_w = static_cast<float>(GetScreenWidth());
+  const float screen_h = static_cast<float>(GetScreenHeight());
+
+  const float w = screen_w * DEFEAT_BUTTON_W;
+  const float h = screen_h * DEFEAT_BUTTON_H;
+  const float gap = screen_w * DEFEAT_BUTTON_GAP;
+  const float y = screen_h * DEFEAT_BUTTON_TOP;
+
+  // The pair centred as one block, so neither is centred on the screen and the
+  // banner above them is.
+  const float left = (screen_w - (w * 2.0f + gap)) * 0.5f;
+
+  defeat_buttons.clear();
+  defeat_buttons.push_back(
+      DefeatButton{Rectangle{left, y, w, h}, "RETURN TO MENU",
+                   StateAction::ChangeToMenu});
+  // Not ChangeToGameplay, which would rebuild this phase without Campaign ever
+  // hearing about it. RequestReloadPhase is the action that means "this phase
+  // again": Game rebuilds the state from the cursor where it already is, and
+  // the fresh Player comes up at full health with the carry this phase was
+  // entered holding -- which is what retrying a lost fight has to mean.
+  defeat_buttons.push_back(
+      DefeatButton{Rectangle{left + w + gap, y, w, h}, "RETRY CHAPTER",
+                   StateAction::RequestReloadPhase});
+
+  defeat_hovered = -1;
+}
+
+StateAction GameplayState::updateDefeatScreen() {
+  const Vector2 mouse = GetMousePosition();
+
+  defeat_hovered = -1;
+  for (size_t i = 0; i < defeat_buttons.size(); ++i) {
+    if (CheckCollisionPointRec(mouse, defeat_buttons[i].bounds)) {
+      defeat_hovered = static_cast<int>(i);
+      break;
+    }
+  }
+
+  if (defeat_hovered >= 0 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    return defeat_buttons[defeat_hovered].action;
+  }
+
+  // The same key that leaves a live phase leaves a lost one, and it means the
+  // same thing here that it does there. ENTER is deliberately not bound: on a
+  // screen whose whole content is two buttons, a key that picks one of them
+  // without saying which is a way to lose a run by leaning on the keyboard.
+  if (IsKeyPressed(KEY_ESCAPE)) {
+    return StateAction::ChangeToMenu;
+  }
+
+  return StateAction::KeepCurrent;
+}
+
+void GameplayState::drawDefeatScreen() {
+  const float screen_w = static_cast<float>(GetScreenWidth());
+  const float screen_h = static_cast<float>(GetScreenHeight());
+
+  // Grey rather than black, and not opaque: the scene stays legible underneath,
+  // which is what makes this read as the world draining of colour rather than
+  // as a menu that has replaced it.
+  DrawRectangle(0, 0, static_cast<int>(screen_w), static_cast<int>(screen_h),
+                Color{58, 58, 62, 198});
+
+  const int banner_size = static_cast<int>(screen_h * 0.1302f); // 100 px at 768
+  const int banner_w = MeasureText("DEFEATED", banner_size);
+  const int banner_x = static_cast<int>((screen_w - banner_w) * 0.5f);
+  const int banner_y = static_cast<int>(screen_h * 0.34f);
+
+  // Offset copy first, in near-black. Red on grey is the lowest-contrast pair
+  // on this screen, and the drop is what stops the word dissolving into
+  // whatever happens to be behind it.
+  DrawText("DEFEATED", banner_x + 4, banner_y + 4, banner_size,
+           Fade(BLACK, 0.55f));
+  DrawText("DEFEATED", banner_x, banner_y, banner_size, DEFEAT_RED);
+
+  // A rule under the banner, the menu's own device at the menu's proportions.
+  DrawRectangle(static_cast<int>(screen_w * 0.5f - banner_w * 0.3f),
+                banner_y + banner_size + 18,
+                static_cast<int>(banner_w * 0.6f), 2, Fade(DEFEAT_RED, 0.7f));
+
+  const int label_size = static_cast<int>(screen_h * 0.0339f); // 26 px at 768
+  for (size_t i = 0; i < defeat_buttons.size(); ++i) {
+    const DefeatButton &button = defeat_buttons[i];
+    const bool lit = (static_cast<int>(i) == defeat_hovered);
+
+    DrawRectangleRec(button.bounds, Fade(BLACK, lit ? 0.65f : 0.45f));
+    DrawRectangleLinesEx(button.bounds, lit ? 2.0f : 1.0f,
+                         lit ? GOLD : Fade(DEFEAT_INK, 0.35f));
+    if (lit) {
+      DrawRectangleRec(Rectangle{button.bounds.x, button.bounds.y, 4.0f,
+                                 button.bounds.height},
+                       GOLD);
+    }
+
+    // Centred inside the button, unlike the menu's left-aligned chapter rows:
+    // there are two of these side by side, and a ragged inner edge between a
+    // pair reads as a misalignment rather than as a style.
+    const int label_w = MeasureText(button.label, label_size);
+    DrawText(button.label,
+             static_cast<int>(button.bounds.x +
+                              (button.bounds.width - label_w) * 0.5f),
+             static_cast<int>(button.bounds.y +
+                              (button.bounds.height - label_size) * 0.5f),
+             label_size, lit ? GOLD : DEFEAT_INK);
+  }
+}
+
 void GameplayState::draw() {
   renderList.clear();
   renderList.push_back(player->getRenderData());
@@ -1169,6 +1370,13 @@ void GameplayState::draw() {
               DrawRectangle(20, GetScreenHeight() - 85, (int)(200 * progress), 10, SKYBLUE);
           }
       }
+  }
+
+  // Last, over everything: the wash has to fall on the HUD as well as on the
+  // world. An empty health bar and a campfire prompt at full brightness under a
+  // greyed-out scene would read as the game still being live.
+  if (defeat_shown) {
+    drawDefeatScreen();
   }
 }
 
