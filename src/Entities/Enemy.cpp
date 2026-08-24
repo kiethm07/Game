@@ -1,5 +1,6 @@
 #include <AI/NavMeshQuery.h>
 #include <Entities/Enemy.h>
+#include <Rendering/PostureMeter.h>
 #include <cmath>
 #include <raymath.h>
 #include <rlgl.h>
@@ -297,7 +298,7 @@ void Enemy::updateCombatCircling(const UpdateContext& ctx, Vector3 target_pos, f
   while (rotation.y >= 360.0f) rotation.y -= 360.0f;
 }
 
-void Enemy::drawHPBar(const Camera3D &camera) const {
+void Enemy::drawHPBar(const Camera3D &camera, bool locked_on) const {
 
   Vector3 head_pos = {position.x, position.y + body_height + 0.2f, position.z};
 
@@ -324,7 +325,11 @@ void Enemy::drawHPBar(const Camera3D &camera) const {
       return;
   }
 
-  float width = 60.0f;
+  // Health, posture and the stealth readout are all struck off this one width,
+  // so the stack cannot end up three different lengths. Doubled from the 60 it
+  // started at: the posture meter is the bar being read mid-exchange, and at 60
+  // a single parry's worth of it was a couple of pixels.
+  float width = 120.0f;
   float height = 6.0f;
   int x = static_cast<int>(screen_pos.x - (width / 2.0f));
   int y = static_cast<int>(screen_pos.y);
@@ -334,10 +339,32 @@ void Enemy::drawHPBar(const Camera3D &camera) const {
   DrawRectangleLines(x, y, (int)width, (int)height, BLACK);
 
   int posture_y = y + (int)height + 2;
-  DrawRectangle(x, posture_y, (int)width, (int)height, DARKGRAY);
-  DrawRectangle(x, posture_y, (int)(width * stats.getPosturePercentage()), (int)height, ORANGE);
-  DrawRectangleLines(x, posture_y, (int)width, (int)height, BLACK);
+  const bool show_posture = locked_on || stealth_component.isPlayerDetected() ||
+                            stats.getCurrentPosture() > 0.0f;
 
+  // A boss's posture is pinned to the top of the screen instead, drawn by
+  // GameplayState -- a bar that belongs to the screen rather than to a head
+  // cannot be placed from here. Drawing it here as well would be the same
+  // number in two places.
+  if (!isBossType(type) && show_posture) {
+    PostureMeter::Style style;
+    style.half_width = width * 0.5f;
+    style.height = 7.0f;
+
+    // A fraction rather than a length, matching the boss bar's 0.11: what makes
+    // the three meters read as one family is how much of each is taper, not how
+    // many pixels of it there are. Left as a constant this would have quietly
+    // gone blunt when the bar above doubled.
+    style.cap = style.half_width * 0.12f;
+    style.fill = PostureMeter::kEnemyFill;
+
+    PostureMeter::draw(screen_pos.x, posture_y + style.height * 0.5f,
+                       stats.getPosturePercentage(), style);
+  }
+
+  // The stealth bar keeps its slot whether or not posture drew above it. Closing
+  // the gap would make the whole stack hop by six pixels every time an enemy
+  // noticed the player, which reads as the bar itself twitching.
   int stealth_y = posture_y + (int)height + 2;
   float awareness = stealth_component.getAwarenessLevel();
   float sus_pct = std::min(awareness, 100.0f) / 100.0f;

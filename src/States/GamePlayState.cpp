@@ -7,6 +7,7 @@
 #include <Physics/CollisionMeshLoader.h>
 #include <Stealth/Sensor.h>
 #include <Rendering/BoneSocketHelper.h>
+#include <Rendering/PostureMeter.h>
 #include <cassert>
 #include <cmath>
 #include <rlgl.h>
@@ -405,6 +406,37 @@ GameplayState::availableTakedown(const Enemy &enemy) const {
     return TakedownKind::Combat;
   }
   return TakedownKind::None;
+}
+
+void GameplayState::drawBossPostureBars() {
+  const float screen_w = static_cast<float>(GetScreenWidth());
+  float y = 54.0f;
+
+  for (const auto &enemy_ptr : enemies) {
+    const Enemy *enemy = enemy_ptr.get();
+    if (!isBossType(enemy->getType())) continue;
+    if (enemy->getStats().isDead() || enemy->isModelUnloaded()) continue;
+
+    // Aggro, and only aggro. A boss standing unaware across the arena is not a
+    // fight yet, and a bar arriving before it has noticed the player would
+    // announce which of the figures over there is the boss.
+    const bool aggro = enemy->getStealthComponent().isPlayerDetected() ||
+                       locked_target == static_cast<const Character *>(enemy);
+    if (!aggro) continue;
+
+    PostureMeter::Style style;
+    style.half_width = screen_w * 0.20f;
+    style.height = 13.0f;
+    style.cap = style.half_width * 0.11f;
+    style.fill = PostureMeter::kEnemyFill;
+
+    PostureMeter::draw(screen_w * 0.5f, y,
+                       enemy->getStats().getPosturePercentage(), style);
+
+    // No phase authors two bosses awake at once today, but stacking costs one
+    // line and beats drawing the second bar exactly on top of the first.
+    y += style.height + 14.0f;
+  }
 }
 
 void GameplayState::drawPostureCues() {
@@ -1268,11 +1300,31 @@ void GameplayState::draw() {
   }
 
   // --- HEALTH BARS ---
-  player->drawHPBar2D();
+  //
+  // "Engaged" is deliberately the union of three things, not the strictest of
+  // them: locked on, or seen by anything still alive, or already carrying
+  // posture damage. Any one means a fight the player has to read a posture bar
+  // during, and taking the union is what keeps the meter from blinking out
+  // mid-exchange because the lock happened to drop or an enemy lost sight for a
+  // step. Posture above zero is checked by each drawer, which owns that number.
+  bool player_engaged = (locked_target != nullptr);
+  if (!player_engaged) {
+    for (const auto &enemy : enemies) {
+      if (enemy->getStats().isDead() || enemy->isModelUnloaded()) continue;
+      if (enemy->getStealthComponent().isPlayerDetected()) {
+        player_engaged = true;
+        break;
+      }
+    }
+  }
+
+  player->drawHPBar2D(player_engaged);
   for (const auto &enemy : enemies) {
     if (enemy->isModelUnloaded()) continue;
-    enemy->drawHPBar(camera_controller->getCamera());
+    enemy->drawHPBar(camera_controller->getCamera(),
+                     locked_target == enemy.get());
   }
+  drawBossPostureBars();
 
   if (takedown_text_timer > 0.0f) {
     const char *text = takedown_type_str.c_str();

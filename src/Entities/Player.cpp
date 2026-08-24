@@ -7,6 +7,7 @@
 #include <Entities/Items/HealingGourd.h>
 #include <Entities/Items/SmokeBomb.h>
 #include <Rendering/BoneSocketHelper.h>
+#include <Rendering/PostureMeter.h>
 
 Player::Player(const InputManager &input_manager)
     : Character(Faction::Player), input_manager(input_manager) {
@@ -301,7 +302,7 @@ void Player::applyRootMotion(const RootMotion::Track &track, float dt) {
   setHorizontalVelocity({velocity.x, 0.0f, velocity.z});
 }
 
-void Player::drawHPBar2D() const {
+void Player::drawHPBar2D(bool engaged) const {
   float bar_width = 200.0f;
   float bar_height = 16.0f;
 
@@ -314,12 +315,22 @@ void Player::drawHPBar2D() const {
   DrawRectangle(x, y, (int)(bar_width * fill), (int)bar_height, LIME);
   DrawRectangleLines(x, y, (int)bar_width, (int)bar_height, WHITE);
 
-  int posture_y = y + (int)bar_height + 4;
-  float post_fill = stats.getPosturePercentage();
-  DrawRectangle(x, posture_y, (int)bar_width, (int)bar_height, DARKGRAY);
-  DrawRectangle(x, posture_y, (int)(bar_width * post_fill), (int)bar_height,
-                ORANGE);
-  DrawRectangleLines(x, posture_y, (int)bar_width, (int)bar_height, WHITE);
+  // Posture is not stacked under health any more: it sits centred on the bottom
+  // of the screen, under the player, where it is read without looking away from
+  // the fight. `engaged` is the caller's answer to "is there a fight" -- it can
+  // see the lock and every enemy's awareness and this cannot -- but posture
+  // above zero is reason enough on its own, so that a bar the player is
+  // watching drain cannot vanish the moment the last enemy loses sight of them.
+  if (engaged || stats.getCurrentPosture() > 0.0f) {
+    PostureMeter::Style style;
+    style.half_width = GetScreenWidth() * 0.14f;
+    style.height = 11.0f;
+    style.cap = style.half_width * 0.13f;
+    style.fill = PostureMeter::kPlayerFill;
+
+    PostureMeter::draw(GetScreenWidth() * 0.5f, GetScreenHeight() - 60.0f,
+                       stats.getPosturePercentage(), style);
+  }
 
   if (locomotion.getStance() == Stance::Crouching) {
     DrawText("CROUCHING", x, y - 24, 20, SKYBLUE);

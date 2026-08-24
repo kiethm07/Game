@@ -24,7 +24,13 @@ public:
 
   virtual void update(const UpdateContext &ctx) override = 0;
   virtual CharacterRenderData getRenderData() const override = 0;
-  void drawHPBar(const Camera3D &camera) const;
+  /// The over-head stack: health, posture and the stealth/debug readout.
+  ///
+  /// `locked_on` is whether the player has this enemy locked -- one of the three
+  /// things that puts the posture bar up, and the only one an Enemy cannot see
+  /// for itself. A boss draws no posture here at all; GameplayState puts its
+  /// meter at the top of the screen.
+  void drawHPBar(const Camera3D &camera, bool locked_on) const;
   void drawTrail() const override { sword_trail.draw(); }
 
   bool isBeingExecuted() const override {

@@ -22,7 +22,13 @@ public:
   void update(const UpdateContext &ctx) override;
   CharacterRenderData getRenderData() const override;
 
-  void drawHPBar2D() const;
+  /// Health, bottom-left, and posture centred on the bottom of the screen.
+  ///
+  /// `engaged` is whether the player is in a fight -- locked on, or seen by
+  /// something still alive. It is an argument rather than something asked here
+  /// because the answer lives in the enemy list and the lock, neither of which
+  /// a Player has; posture above zero it can and does check for itself.
+  void drawHPBar2D(bool engaged) const;
   void drawTrail() const override { sword_trail.draw(); }
 
   float getColliderRadius() const override;

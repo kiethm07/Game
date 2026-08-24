@@ -126,6 +126,15 @@ private:
   /// called inside a BeginMode3D scope.
   void drawPostureCues();
 
+  /// The mini boss's and the final boss's posture, pinned to the top of the
+  /// screen for as long as they are awake to the player.
+  ///
+  /// Here rather than on Enemy because the placement is the screen's, not the
+  /// boss's: nothing about where a boss stands decides where its bar goes, and
+  /// two of them awake at once have to be told apart by stacking, which no one
+  /// boss can do alone. Must be called after the 3D scope is closed.
+  void drawBossPostureBars();
+
   /// Declared before `renderer`, which holds a reference to it: destruction is
   /// reverse-declaration order, so the renderer dies first.
   AssetManager& asset_manager;
