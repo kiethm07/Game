@@ -96,8 +96,16 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE SOURCE_ASSET_DIR="${CMAKE_SOU
 # tested until someone else ran it.
 #
 # A symlink rather than a copy: the assets are 140 MB and change constantly.
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E create_symlink
-            "${CMAKE_SOURCE_DIR}/assets"
-            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets"
-    COMMENT "Linking assets next to the executable")
+if (WIN32)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_SOURCE_DIR}/assets"
+                "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets"
+        COMMENT "Copying assets next to the executable")
+else()
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E create_symlink
+                "${CMAKE_SOURCE_DIR}/assets"
+                "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets"
+        COMMENT "Linking assets next to the executable")
+endif()
