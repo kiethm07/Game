@@ -16,10 +16,21 @@ enum class SwordmanAnimState {
   /// horizontal velocity.
   Walk,
 
+  /// The same approach, above RUN_SPEED_FACTOR times the walk clip's own
+  /// authored speed. Selected by comparing against that clip rather than
+  /// against a hardcoded m/s, so a pack whose walk was authored slower does not
+  /// silently spend its whole time running.
+  Run,
+
   StrafeForward,
   StrafeBack,
   StrafeLeft,
   StrafeRight,
+
+  /// Airborne. Enemies do not jump, so this is only ever reached by walking off
+  /// something; a pack without the clip falls through to the locomotion rungs
+  /// the way every other optional state does.
+  Fall,
 
   /// The flinch, split the way the player's is: a hit that landed on a raised
   /// guard is a different animation from one that got through. Enemies never
@@ -39,7 +50,14 @@ enum class SwordmanAnimState {
 
   Death,
 
-  Parry,
+  /// The guard, held. Called Guard rather than Parry because the clip is the
+  /// same for both halves of it -- the parry window and the block that follows
+  /// -- exactly as CombatComponent::isGuarding() treats them.
+  Guard,
+
+  /// The guard, carried while moving. Falls back to Guard when a pack has no
+  /// such clip, which is what the ashigaru does.
+  GuardWalk,
 
   Count
 };
@@ -69,15 +87,21 @@ public:
     bool strafing = false;
     Vector3 localMoveDir = {0.0f, 0.0f, 0.0f};
     float speed = 0.0f;
+
+    /// Feet on something. Only the Fall rung reads it, and only a pack that
+    /// ships a Fall clip can act on it.
+    bool grounded = true;
   };
 
   /// The AssetID is a parameter, not a constant, so a second enemy type that
   /// shares this skeleton can reuse this animator with its own model instead
   /// of copying the whole clip table to change one line.
   ///
-  /// It constrains what may pass one: descTable() names the *player's* clips,
-  /// so anything using this animator shares the player's skeleton and its clip
-  /// names. A model with a different rig needs its own descTable().
+  /// It now also picks the clip table. Every asset here shares the Mixamo
+  /// skeleton, but no longer the clip NAMES: the ashigaru animates off the
+  /// player's pack, while the miniboss has a greatsword pack of its own with
+  /// its own names (see tools/build_miniboss_pack.py). descTable() switches on
+  /// the id; a model with a different rig would still need more than that.
   explicit SwordmanAnimator(AssetID asset = AssetID::ENEMY_ASHIGARU);
 
   /// Which model this animator poses -- what getRenderData should return,
@@ -113,8 +137,12 @@ public:
 
 private:
   AssetID asset_id;
-  /// One row per SwordmanAnimState, in enum order.
-  static const Machine::Desc *descTable();
+  /// One row per SwordmanAnimState, in enum order, for the pack `asset` carries.
+  static const Machine::Desc *descTable(AssetID asset);
+
+  /// How much faster than the walk clip's authored speed the character has to
+  /// be moving before Run is chosen over Walk.
+  static constexpr float RUN_SPEED_FACTOR = 1.6f;
 
   /// The single prioritised ladder: the one place that answers "which clip".
   Machine::Selection resolve(const Frame &frame) const;

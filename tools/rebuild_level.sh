@@ -72,11 +72,33 @@ for phase in "${targets[@]}"; do
 
     echo "--- 1/3 export ---"
     # Blender swallows tracebacks in --background, so export_level.py turns its
-    # own authoring errors into exit 1. `set -e` stops the whole run there
-    # rather than pruning and verifying a level that never got written.
+    # own authoring errors into exit 1.
+    #
+    # That status has to come from Blender itself rather than from a pipeline it
+    # is filtered through. This used to read
+    #
+    #     "$BLENDER" ... 2>&1 | grep -E ... || true
+    #
+    # which reports *grep's* status and then throws it away, so a failed export
+    # scored 0, `set -e` never fired, and the run went on to prune and verify
+    # whatever the output directory still held from last time -- printing
+    # PASSED for a level that had just refused to export. The existence check
+    # below cannot catch it either: level.json is left over from the previous
+    # good run, so it is always there.
+    log="$(mktemp -t rebuild_level)"
+    set +e
     "$BLENDER" --background "$blend" --python "$ROOT/tools/export_level.py" -- \
-        --out-dir "$out" --name "$phase" 2>&1 \
-        | grep -E "^\[export_level\]|ExportError|Error:" || true
+        --out-dir "$out" --name "$phase" > "$log" 2>&1
+    status=$?
+    set -e
+    grep -E "^\[export_level\]|ExportError|Error:" "$log" || true
+    rm -f "$log"
+
+    if [ $status -ne 0 ]; then
+        echo "export failed (blender exit $status) -- stopping before prune and" >&2
+        echo "verify, which would otherwise report on the PREVIOUS export." >&2
+        exit 1
+    fi
 
     if [ ! -f "$out/level.json" ]; then
         echo "export produced no level.json -- stopping." >&2

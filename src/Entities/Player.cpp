@@ -360,7 +360,7 @@ std::vector<HitBox> Player::getActiveHitBoxes() const {
     Vector3 right = {-std::cos(yaw_rad), 0.0f, std::sin(yaw_rad)};
     Vector3 up = {0.0f, 1.0f, 0.0f};
 
-    for (const auto& def : active_attack->getHitBoxDefs()) {
+    for (const auto& def : active_attack->getHitBoxDefs(combat_component.getActiveSwing())) {
         if (def.type == HitBoxShapeType::Sphere) {
             Vector3 center = position;
             center = Vector3Add(center, Vector3Scale(forward, def.forward_offset));
@@ -423,10 +423,19 @@ DamageResult Player::takeDamage(float health_damage, float posture_damage,
       stats.applyDamage(0.0f, parry_posture_damage);
     }
 
-    // Attacker takes posture damage from being parried
+    // Attacker takes posture damage from being parried. Through the deflect
+    // hook, not takeDamage: the clash costs them posture without making them
+    // react as though the blow had landed on them.
     if (attacker) {
-      attacker->takeDamage(0.0f, posture_damage * 1.5f, nullptr);
+      attacker->onAttackDeflected(posture_damage * 1.5f);
     }
+
+    // The deflect caught something, so the anti-spam penalty startGuard() armed
+    // is withdrawn: the next guard gets its full window however soon it comes.
+    // This is what lets a combo thrown faster than PARRY_SPAM_COOLDOWN be
+    // deflected hit for hit instead of collapsing to the 0.05s punish window
+    // from its second swing onward.
+    combat_component.notifyParrySuccess();
     return DamageResult::PARRIED;
   }
 
@@ -488,6 +497,12 @@ Vector3 Player::calculateCameraRelativeDirection(Vector3 camForward,
 
 void Player::handleCombatAndUtilityInputs(const UpdateContext &ctx,
                                           const ActionGate &gate) {
+  // Ahead of the item-use return below, so a guard press cannot sit latched
+  // through a heal and fire the moment it ends. Decayed before the press is
+  // latched, so a press arriving this frame still gets its whole window.
+  if (guard_buffer_timer > 0.0f)
+    guard_buffer_timer -= ctx.dt;
+
   // If we are currently using an item, block combat actions
   if (item_use_timer > 0.0f) {
       return;
@@ -512,13 +527,34 @@ void Player::handleCombatAndUtilityInputs(const UpdateContext &ctx,
   if (input_manager.isActionPressed(GameAction::Attack) && gate.canAttack) {
     combat_component.initiateCombo(combo);
   }
-  if (input_manager.isActionPressed(GameAction::Parry) && gate.canGuard) {
-    combat_component.startGuard();
+  // Latched rather than acted on, then spent on the first frame that will have
+  // it -- this one, when nothing is in the way. See guard_buffer_timer.
+  if (input_manager.isActionPressed(GameAction::Parry)) {
+    guard_buffer_timer = GUARD_BUFFER_WINDOW;
+  }
+  if (guard_buffer_timer > 0.0f && gate.canGuard && combat_component.canGuard()) {
+    // canGuard() asked here as well as inside startGuard(), which is otherwise
+    // authoritative: a press the component would refuse has to stay in the
+    // buffer for the next frame rather than be spent on a call that does
+    // nothing. The one thing that must not happen is spending it and clearing
+    // it in the same breath.
+    guard_buffer_timer = 0.0f;
+
+    // The button's state now, not when the press was latched. A tap released
+    // during the recovery it was buffered through opens the deflect window and
+    // then lapses; only a button still down becomes a held block.
+    const bool held = input_manager.isActionPressed(GameAction::Parry) ||
+                      input_manager.isActionHeld(GameAction::Parry);
+    combat_component.startGuard(held);
   }
   if (input_manager.isActionReleased(GameAction::Parry)) {
     // Not gated: releasing a guard is letting go of a commitment, not starting
     // one. A stagger that swallowed the release would leave the guard stuck up
     // once it recovered.
+    //
+    // The buffer is deliberately left armed. A press and release that both land
+    // inside one recovery is a tap asking for a deflect, and honouring it a few
+    // frames late is the whole point of latching it.
     combat_component.stopGuard();
   }
   if (input_manager.isActionPressed(GameAction::Dodge) && gate.canDodge &&
