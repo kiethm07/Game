@@ -61,7 +61,12 @@ const SwordmanAnimator::Machine::Desc *SwordmanAnimator::descTable(AssetID asset
 }
 
 SwordmanAnimator::SwordmanAnimator(AssetID asset)
-    : asset_id(asset), anim(asset, descTable(asset)) {}
+    : asset_id(asset), anim(asset, descTable(asset)) {
+  // See death_from_bow_start. Only the greatsword pack's Death clip passes
+  // close enough to its own broken-posture pose for the entry point to be
+  // worth moving.
+  if (asset == AssetID::ENEMY_MINIBOSS) death_from_bow_start = 1.08f;
+}
 
 bool SwordmanAnimator::resolveClips(const AssetManager &assets) {
   if (!anim.resolveClips(assets))
@@ -117,8 +122,21 @@ SwordmanAnimator::resolve(const Frame &frame) const {
 
   // Above everything: a corpse does not flinch, swing or walk. Non-looping, so
   // it plays once and holds its last pose for as long as the body is up.
-  if (frame.dead && anim.clipFor(SwordmanAnimState::Death) >= 0)
-    return anim.select(SwordmanAnimState::Death);
+  if (frame.dead && anim.clipFor(SwordmanAnimState::Death) >= 0) {
+    Machine::Selection selection = anim.select(SwordmanAnimState::Death);
+
+    // A body that is already bowed does not stand up to die. The clip opens on
+    // the character upright -- the same pose as Idle, to the millimetre -- so
+    // entering it at 0 makes a posture-broken enemy snap to its feet for the
+    // first third of a second of its own death. Entered part-way instead, the
+    // collapse continues from roughly where the bow left off. Only when coming
+    // from the bow: a plain death still plays its whole fall.
+    if (death_from_bow_start > 0.0f &&
+        anim.activeState() == SwordmanAnimState::PostureBreak)
+      selection.startAt = death_from_bow_start;
+
+    return selection;
+  }
 
   const CombatComponent &combat = *frame.combat;
 
@@ -131,6 +149,23 @@ SwordmanAnimator::resolve(const Frame &frame) const {
   if (combat.getCurrentState() == CombatState::PostureBroken &&
       anim.clipFor(SwordmanAnimState::PostureBreak) >= 0)
     return anim.select(SwordmanAnimState::PostureBreak, combat.getActionId());
+
+  // A deathblow victim holds whatever pose it was caught in, for as long as the
+  // player's takedown swing lasts.
+  //
+  // setBeingExecuted() REPLACES PostureBroken rather than adding to it, so the
+  // rung above stops matching the moment the execution starts -- and with no
+  // rung of its own, the ladder used to fall all the way through to the
+  // locomotion cycle and stand the victim up in Idle until the damage landed.
+  // That is the upright pose at the head of every deathblow.
+  //
+  // Freezing on the ACTIVE state rather than naming a clip is what keeps both
+  // kinds of victim right: a broken guard stays bowed, and a stealth backstab
+  // -- where the enemy is unaware and upright, never posture-broken -- stays
+  // standing. activeVariant() comes back with it so apply() reads this as the
+  // same selection it already had and holds the pose instead of rewinding it.
+  if (combat.getCurrentState() == CombatState::BeingExecuted)
+    return anim.select(anim.activeState(), anim.activeVariant());
 
   if (const AttackData *attack = combat.getActiveAttack()) {
     Machine::Selection selection =

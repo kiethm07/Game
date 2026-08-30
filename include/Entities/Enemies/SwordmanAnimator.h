@@ -151,6 +151,19 @@ private:
 
   float locomotion_speed = 0.0f;
 
+  /// Where to enter the Death clip when the body is ALREADY bowed -- a
+  /// deathblow taken on a broken posture, rather than a plain death from full
+  /// health. 0 keeps the clip's own start.
+  ///
+  /// Measured, not guessed: the mini boss's PostureBreak holds hips at 0.648,
+  /// and the closest whole-skeleton frame in its 2.43 s Death clip is f65
+  /// (1.08 s), which brings the mean joint gap the transition has to cover down
+  /// from 0.607 m to 0.244 m. The ashigaru is left at 0 because the same
+  /// measurement says its Death clip never passes near its FallToKneel pose
+  /// -- best frame 0.575 m against frame 0's 0.577 m, which is no improvement
+  /// worth cutting a second off the clip for.
+  float death_from_bow_start = 0.0f;
+
   /// The flinch queueReaction() left for the next updateFlinch() to start, or
   /// Count for none.
   SwordmanAnimState queued_reaction = SwordmanAnimState::Count;

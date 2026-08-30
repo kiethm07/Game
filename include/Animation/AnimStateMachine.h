@@ -120,6 +120,12 @@ public:
   /// they have to assume from scratch.
   StateEnum activeState() const { return prev.state; }
 
+  /// The variant the last apply() settled on. Paired with activeState() to
+  /// re-select exactly what is already on screen: apply() treats a changed
+  /// variant as a re-trigger and rewinds the clip, so a ladder that means to
+  /// FREEZE a pose has to hand back this value rather than a fresh one.
+  unsigned activeVariant() const { return prev.variant; }
+
   const RootMotion::Track &track(const AssetManager &assets,
                                  StateEnum state) const {
     return assets.getRootMotion(asset, clipFor(state));

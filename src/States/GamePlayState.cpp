@@ -140,6 +140,7 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
   asset_manager.loadSound(AssetID::SFX_DEFLECT_1, assets::path("audio/deflect_1.MP3"));
   asset_manager.loadSound(AssetID::SFX_DEFLECT_2, assets::path("audio/Deflect_2.MP3"));
   asset_manager.loadSound(AssetID::SFX_DEFLECT_NPC, assets::path("audio/deflect_NPC.MP3"));
+  asset_manager.loadSound(AssetID::SFX_BLOCK, assets::path("audio/block.wav"));
   asset_manager.loadSound(AssetID::SFX_DEATHBLOW, assets::path("audio/deflect_end.mp3"));
   player->setPosition(level.playerSpawn.position);
   player->setRotation({0.0f, level.playerSpawn.yaw, 0.0f});

@@ -143,6 +143,14 @@ void CombatManager::update(const std::vector<Character*>& characters, ParticleMa
                                 } else {
                                     sound_controller->playSFX(AssetID::SFX_DEFLECT_NPC);
                                 }
+                            } else if (result == DamageResult::BLOCKED) {
+                                // Deliberately one sound for both sides, unlike
+                                // the deflect above. A parry is the player's
+                                // moment and earns a stereo pair plus its own
+                                // NPC variant; a block is just the guard doing
+                                // its job, and giving it the same treatment
+                                // would make the two read as equals.
+                                sound_controller->playSFX(AssetID::SFX_BLOCK);
                             } else if (result == DamageResult::HIT) {
                                 if (!defender->isBeingExecuted()) {
                                     sound_controller->playSFX(AssetID::SFX_HIT);

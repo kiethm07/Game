@@ -10,5 +10,6 @@ enum class AssetID {
     SFX_DEFLECT_1,
     SFX_DEFLECT_2,
     SFX_DEFLECT_NPC,
+    SFX_BLOCK,
     SFX_DEATHBLOW
 };
