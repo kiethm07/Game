@@ -1,17 +1,24 @@
 #include <Entities/Enemies/SwordmanAnimator.h>
 
-const SwordmanAnimator::Machine::Desc *SwordmanAnimator::descTable() {
-  // Rows are in SwordmanAnimState order. Every clip named here belongs to the
-  // player's asset, which the ashigaru borrows whole.
-  static const Machine::Desc table[Machine::STATE_COUNT] = {
+const SwordmanAnimator::Machine::Desc *SwordmanAnimator::descTable(AssetID asset) {
+  // Rows are in SwordmanAnimState order.
+  //
+  // Two packs, because the two enemies no longer share clip NAMES. The ashigaru
+  // borrows the player's asset whole; the miniboss carries a greatsword pack
+  // built for it by tools/build_miniboss_pack.py, whose clips are named after
+  // the states they serve. A state a pack has no clip for resolves to -1 and
+  // the ladder in resolve() falls past it, which is how the ashigaru gets by
+  // with no GuardWalk and how either would get by with no Fall.
+  static const Machine::Desc ashigaru[Machine::STATE_COUNT] = {
       //                clip          loop   rate   root   fadeIn
       /* Idle        */ {"Idle", true, 1.0f, false, 0.15f},
-      // Rate overridden per frame once something moves an enemy, the same way
       /* Walk        */ {"Walk", true, 1.0f, false, 0.15f},
+      /* Run         */ {"Run", true, 1.0f, false, 0.15f},
       /* StrafeFwd   */ {"Walk", true, 1.0f, false, 0.15f},
       /* StrafeBack  */ {"Walk_2", true, 1.0f, false, 0.15f},
       /* StrafeLeft  */ {"Strafe_2", true, 1.0f, false, 0.15f},
       /* StrafeRight */ {"Strafe", true, 1.0f, false, 0.15f},
+      /* Fall        */ {"Fall", true, 1.0f, false, 0.15f},
       /* GuardImpact */ {"Impact", false, 1.0f, false, 0.05f},
       /* HitReact    */ {"Impact_2", false, 1.0f, false, 0.05f},
       // Fallback swing, used when an attack names no clip or names one the
@@ -21,13 +28,40 @@ const SwordmanAnimator::Machine::Desc *SwordmanAnimator::descTable() {
       /* Attack      */ {"Slash", false, 1.0f, false, 0.05f},
       /* PostureBreak*/ {"FallToKneel", false, 1.0f, false, 0.08f},
       /* Death       */ {"Death", false, 1.0f, false, 0.10f},
-      /* Parry       */ {"Block", false, 1.0f, false, 0.05f},
+      /* Guard       */ {"Block", false, 1.0f, false, 0.05f},
+      /* GuardWalk   */ {"BlockWalk", true, 1.0f, false, 0.10f},
   };
-  return table;
+
+  // The greatsword pack. Every name here is one this pack defines; the two it
+  // kept from the player's set (Fall, PostureBreak) were renamed on the way in
+  // so nothing in this table has to know where a clip came from.
+  static const Machine::Desc miniboss[Machine::STATE_COUNT] = {
+      //                clip          loop   rate   root   fadeIn
+      /* Idle        */ {"Idle", true, 1.0f, false, 0.15f},
+      /* Walk        */ {"Walk", true, 1.0f, false, 0.15f},
+      /* Run         */ {"Run", true, 1.0f, false, 0.15f},
+      /* StrafeFwd   */ {"Walk", true, 1.0f, false, 0.15f},
+      /* StrafeBack  */ {"StrafeBack", true, 1.0f, false, 0.15f},
+      /* StrafeLeft  */ {"StrafeLeft", true, 1.0f, false, 0.15f},
+      /* StrafeRight */ {"StrafeRight", true, 1.0f, false, 0.15f},
+      /* Fall        */ {"Fall", true, 1.0f, false, 0.15f},
+      // Both guard clips are built by tools/make_miniboss_guard.py, so the
+      // flinch and the hold share one pose and the recoil reads as the same
+      // guard being driven back rather than as a different one.
+      /* GuardImpact */ {"GuardImpact", false, 1.0f, false, 0.05f},
+      /* HitReact    */ {"HitReact", false, 1.0f, false, 0.05f},
+      /* Attack      */ {"Attack", false, 1.0f, false, 0.05f},
+      /* PostureBreak*/ {"PostureBreak", false, 1.0f, false, 0.08f},
+      /* Death       */ {"Death", false, 1.0f, false, 0.10f},
+      /* Guard       */ {"Guard", false, 1.0f, false, 0.08f},
+      /* GuardWalk   */ {"GuardWalk", true, 1.0f, false, 0.10f},
+  };
+
+  return asset == AssetID::ENEMY_MINIBOSS ? miniboss : ashigaru;
 }
 
 SwordmanAnimator::SwordmanAnimator(AssetID asset)
-    : asset_id(asset), anim(asset, descTable()) {}
+    : asset_id(asset), anim(asset, descTable(asset)) {}
 
 bool SwordmanAnimator::resolveClips(const AssetManager &assets) {
   if (!anim.resolveClips(assets))
@@ -123,8 +157,23 @@ SwordmanAnimator::resolve(const Frame &frame) const {
   if (reaction_timer > 0.0f && anim.clipFor(reaction_state) >= 0)
     return anim.select(reaction_state, reaction_id);
 
-  if (combat.isGuarding() && anim.clipFor(SwordmanAnimState::Parry) >= 0)
-    return anim.select(SwordmanAnimState::Parry, combat.getActionId());
+  // Airborne, above the locomotion rungs: a walk cycle played in mid-air reads
+  // as running on nothing. Below the swing and the flinch, both of which are
+  // committed actions that outlive a step off a ledge.
+  if (!frame.grounded && anim.clipFor(SwordmanAnimState::Fall) >= 0)
+    return anim.select(SwordmanAnimState::Fall);
+
+  if (combat.isGuarding()) {
+    // Carried when moving, held when not -- and GuardWalk is optional, so a
+    // pack without it keeps the standing guard rather than dropping the guard
+    // entirely and walking with the weapon down.
+    const SwordmanAnimState guard =
+        (frame.moving && anim.clipFor(SwordmanAnimState::GuardWalk) >= 0)
+            ? SwordmanAnimState::GuardWalk
+            : SwordmanAnimState::Guard;
+    if (anim.clipFor(guard) >= 0)
+      return anim.select(guard, combat.getActionId());
+  }
 
   if (frame.moving) {
     SwordmanAnimState cycle = SwordmanAnimState::Walk;
@@ -153,6 +202,17 @@ SwordmanAnimator::resolve(const Frame &frame) const {
           cycle = SwordmanAnimState::StrafeRight;
         }
       }
+    }
+
+    // Not strafing: a straight approach fast enough to outrun the walk clip
+    // gets the run instead. Measured against that clip's OWN authored speed via
+    // locomotion_speed, so this does not need to know what the pack's walk was
+    // authored at -- the greatsword walk is 1.07 m/s and its run 4.03, and the
+    // player pack's differ again.
+    else if (locomotion_speed > 0.0f &&
+             frame.speed > locomotion_speed * RUN_SPEED_FACTOR &&
+             anim.clipFor(SwordmanAnimState::Run) >= 0) {
+      cycle = SwordmanAnimState::Run;
     }
 
     if (anim.clipFor(cycle) < 0) {

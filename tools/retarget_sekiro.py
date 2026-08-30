@@ -28,10 +28,11 @@ Phases:
      relative to; position is not).
   3. Rename the vertex groups to `mixamorig:*`, cap influences at 4, normalise,
      and rebind to `Armature`.
-  4. Hygiene: bind the katana, break up coincident garment/body surfaces, strip
-     colour attributes, drop the Paladin.
+  4. Hygiene: bind the rigid props (see PROPS), break up coincident garment/body
+     surfaces, strip colour attributes, drop the Paladin.
 
-Run against the LIVE session (the model import is not in pack.blend on disk):
+Run against the LIVE session (the model import is not in pack.blend on disk),
+after tools/add_katana.py has seated the katana in the right fist:
     exec(open("tools/retarget_sekiro.py").read())
     report = main()
 """
@@ -45,6 +46,18 @@ from mathutils.bvhtree import BVHTree
 SEKIRO_ARM = "SekiroCharacterLowPolyRigged"
 MAIN_ARM = "Armature"
 SWORD = " Sword.002"
+
+# Rigid props: object name -> (model bone, Mixamo bone). A prop carries no
+# armature modifier and no weights of its own, so every phase that walks the
+# SKINNED meshes has to skip it. phase0 above all: it strips arm influence from
+# any vertex more than ARM_CUT from an arm bone, and a katana blade tip is a
+# metre out, so the blade would be handed to whichever spine or thigh bone came
+# nearest. phase1b moves each prop by ITS OWN bone's pose delta; phase4a binds
+# it to the Mixamo counterpart at full weight.
+PROPS = {
+    SWORD: ("Spine2", "mixamorig:Spine2"),        # authored sword, rides the back
+    "Katana": ("hand.R", "mixamorig:RightHand"),  # low-poly-katana, right fist
+}
 
 # raylib's skinning shader reads exactly 4 bone indices/weights per vertex
 # (rmodels.c). Blender happily exports more; the surplus is dropped on load and
@@ -135,7 +148,7 @@ def _hierarchy(armature):
 
 def _skinned_meshes(armature):
     return [o for o in bpy.data.objects if o.type == "MESH" and o.parent is armature
-            and o.name != SWORD]
+            and o.name not in PROPS]
 
 
 def _segment_distance(p, a, b):
@@ -257,19 +270,26 @@ def phase1_align_to_mixamo_rest():
 def phase1b_bake_pose_into_meshes():
     """Freeze the aligned pose into the mesh data, then make it the rest pose.
 
-    The katana carries no armature modifier, so it is moved by hand with the
-    Spine2 delta -- the bone it is about to be bound to.
+    A prop carries no armature modifier, so it is moved by hand with the delta
+    of the bone it is about to be bound to. The move is applied to matrix_world
+    rather than the mesh data because a prop may sit on its own transform -- the
+    katana does. (For a prop whose matrix_world is identity the two are the same
+    thing, which is what the back-sword relied on.)
     """
     sek = bpy.data.objects[SEKIRO_ARM]
     meshes = _skinned_meshes(sek)
 
-    sword = bpy.data.objects.get(SWORD)
-    if sword is not None:
-        pb = sek.pose.bones["Spine2"]
-        rest = sek.data.bones["Spine2"].matrix_local
+    moved = []
+    for name, (model_bone, _) in PROPS.items():
+        prop = bpy.data.objects.get(name)
+        if prop is None:
+            continue
+        pb = sek.pose.bones[model_bone]
+        rest = sek.data.bones[model_bone].matrix_local
         delta = pb.matrix @ rest.inverted()
-        sword.data.transform(delta)
-        sword.data.update()
+        prop.matrix_world = delta @ prop.matrix_world
+        moved.append(name)
+    bpy.context.view_layer.update()
 
     baked = []
     for obj in meshes:
@@ -449,34 +469,41 @@ def phase3_rebind():
 # ---------------------------------------------------------------------------
 # Phase 4 -- hygiene
 # ---------------------------------------------------------------------------
-def phase4a_bind_sword():
-    """Rigid-bind the katana to Spine2 so it rides the back through every clip."""
+def phase4a_bind_props():
+    """Rigid-bind each prop to one bone so it rides that joint through every clip.
+
+    Every vertex gets full weight on a single bone, which is what makes the prop
+    STATIC in that joint's frame -- it cannot bend or stretch, it only follows.
+    """
     main = bpy.data.objects[MAIN_ARM]
-    sword = bpy.data.objects.get(SWORD)
-    if sword is None:
-        return {"sword": None}
-    world = sword.matrix_world.copy()
-    sword.parent = None
-    sword.matrix_world = world
+    report = {}
+    for name, (_, mixamo_bone) in PROPS.items():
+        prop = bpy.data.objects.get(name)
+        if prop is None:
+            report[name] = None
+            continue
+        world = prop.matrix_world.copy()
+        prop.parent = None
+        prop.matrix_world = world
 
-    for vg in list(sword.vertex_groups):
-        sword.vertex_groups.remove(vg)
-    vg = sword.vertex_groups.new(name="mixamorig:Spine2")
-    vg.add(range(len(sword.data.vertices)), 1.0, "REPLACE")
+        for vg in list(prop.vertex_groups):
+            prop.vertex_groups.remove(vg)
+        vg = prop.vertex_groups.new(name=mixamo_bone)
+        vg.add(range(len(prop.data.vertices)), 1.0, "REPLACE")
 
-    if not any(m.type == "ARMATURE" for m in sword.modifiers):
-        mod = sword.modifiers.new(name="Armature", type="ARMATURE")
-        mod.object = main
-    else:
-        for m in sword.modifiers:
-            if m.type == "ARMATURE":
-                m.object = main
+        if not any(m.type == "ARMATURE" for m in prop.modifiers):
+            mod = prop.modifiers.new(name="Armature", type="ARMATURE")
+            mod.object = main
+        else:
+            for m in prop.modifiers:
+                if m.type == "ARMATURE":
+                    m.object = main
 
-    sword.parent = main
-    sword.matrix_parent_inverse = main.matrix_world.inverted()
-    sword.matrix_world = world
-    return {"sword": sword.name, "bound_to": "mixamorig:Spine2",
-            "verts": len(sword.data.vertices)}
+        prop.parent = main
+        prop.matrix_parent_inverse = main.matrix_world.inverted()
+        prop.matrix_world = world
+        report[name] = {"bound_to": mixamo_bone, "verts": len(prop.data.vertices)}
+    return report
 
 
 def phase4b_break_coincident_surfaces():
@@ -655,7 +682,7 @@ def phase5_couple_garment_weights():
     objs = {o.name: o for o in bpy.data.objects
             if o.type == "MESH" and o.parent is main_arm}
     garments = [objs[n] for n in GARMENTS if n in objs]
-    bodies = [o for n, o in objs.items() if n not in GARMENTS and n != SWORD]
+    bodies = [o for n, o in objs.items() if n not in GARMENTS and n not in PROPS]
 
     baked = {}
     for obj in bodies:
@@ -748,7 +775,7 @@ def main():
     report["phase1b"] = phase1b_bake_pose_into_meshes()
     report["phase2"] = phase2_rebuild_rest()
     report["phase3"] = phase3_rebind()
-    report["phase4a"] = phase4a_bind_sword()
+    report["phase4a"] = phase4a_bind_props()
     # Prune BEFORE nudging: the Paladin occupies the same space as the new
     # model, so leaving it in makes phase4b push Sekiro vertices away from
     # Paladin surfaces that are about to be deleted.

@@ -15,7 +15,8 @@ void CombatComponent::startAttackPhase() {
     const AttackData& frame_data = AttackRegistry::instance().getAttackData(current_id);
     
     current_state = CombatState::AttackStartup;
-    state_timer = frame_data.getStartupDuration();
+    swing_index = 0;
+    state_timer = frame_data.getWindupDuration(0);
     action_id++;
 }
 
@@ -24,6 +25,7 @@ void CombatComponent::resetToIdle() {
     state_timer = 0.0f;
     active_combo_ptr = nullptr;
     combo_index = 0;
+    swing_index = 0;
     is_guard_held = false;
 }
 
@@ -80,11 +82,27 @@ void CombatComponent::update(float dt) {
 
         if (current_state == CombatState::AttackStartup) {
             current_state = CombatState::AttackActive;
-            state_timer = frame_data.getActiveDuration();
+            state_timer = frame_data.getActiveDuration(swing_index);
         } 
         else if (current_state == CombatState::AttackActive) {
-            current_state = CombatState::AttackRecovery;
-            state_timer = frame_data.getRecoveryDuration();
+            if (swing_index + 1 < frame_data.getSwingCount()) {
+                // Another swing inside the SAME clip: back to a wind-up rather
+                // than on to the recovery. Nothing else changes -- not the
+                // attack, not the combo index, and above all not `action_id`,
+                // which is what the animator would take as "a new swing" and
+                // rewind the combo animation to frame 0 for.
+                //
+                // Dropping out of AttackActive is also what lets the second and
+                // third swings land at all: CombatManager remembers who a swing
+                // has already hit and only forgets when the attacker's hitboxes
+                // go away, which is exactly this gap.
+                swing_index++;
+                current_state = CombatState::AttackStartup;
+                state_timer = frame_data.getWindupDuration(swing_index);
+            } else {
+                current_state = CombatState::AttackRecovery;
+                state_timer = frame_data.getRecoveryDuration();
+            }
         } 
         else if (current_state == CombatState::AttackRecovery) {
             if (is_auto_combo && combo_index + 1 < active_combo_ptr->getAttackCount()) {
@@ -115,23 +133,35 @@ void CombatComponent::initiateCombo(const Combo& combo, bool auto_advance) {
     }
 }
 
-void CombatComponent::startGuard() {
+void CombatComponent::startGuard(bool held) {
     if (!canGuard()) {
         is_guard_held = false;
         return;
     }
 
-    is_guard_held = true;
+    is_guard_held = held;
 
-    if (current_state == CombatState::AttackStartup) {
+    // Cancelling out of an attack, in either of the two phases canGuard()
+    // allows: the swing is abandoned, so the combo it belonged to must not
+    // survive the guard and be resumed by the next initiateCombo(). Never the
+    // active frames — those own a live hitbox, and canGuard() refuses them.
+    if (current_state == CombatState::AttackStartup ||
+        current_state == CombatState::AttackRecovery) {
         active_combo_ptr = nullptr;
         combo_index = 0;
+        swing_index = 0;
     }
 
     current_state = CombatState::Parrying;
     state_timer = (spam_timer > 0.0f) ? PARRY_PENALTY_WINDOW : DEFAULT_PARRY_WINDOW;
     spam_timer = PARRY_SPAM_COOLDOWN;
     action_id++;
+}
+
+void CombatComponent::notifyParrySuccess() {
+    // Armed by startGuard() before it can possibly be known whether the guard
+    // was going to catch anything. Landing the deflect is what retracts it.
+    spam_timer = 0.0f;
 }
 
 void CombatComponent::stopGuard() {
@@ -149,6 +179,7 @@ bool CombatComponent::startDodge(float duration) {
 
     active_combo_ptr = nullptr;
     combo_index = 0;
+    swing_index = 0;
     is_guard_held = false;
     current_state = CombatState::Dodging;
     state_timer = duration;
@@ -161,6 +192,7 @@ void CombatComponent::breakPosture(float duration) {
     
     active_combo_ptr = nullptr;
     combo_index = 0;
+    swing_index = 0;
     is_guard_held = false;
     current_state = CombatState::PostureBroken;
     state_timer = duration;
@@ -196,13 +228,20 @@ const AttackData* CombatComponent::getActiveAttack() const {
         active_combo_ptr->getAttackID(combo_index));
 }
 
+int CombatComponent::getActiveSwing() const { return swing_index; }
+
 unsigned CombatComponent::getActionId() const { return action_id; }
 
 bool CombatComponent::canGuard() const {
+    // Recovery is cancellable, matching canDodge(). A swing's recovery is the
+    // longest phase there is, so a guard that had to wait it out would be
+    // refused for most of the time the player spends attacking — which is
+    // exactly when the enemy is answering.
     return current_state == CombatState::Idle 
         || current_state == CombatState::Parrying
         || current_state == CombatState::Blocking
-        || current_state == CombatState::AttackStartup;
+        || current_state == CombatState::AttackStartup
+        || current_state == CombatState::AttackRecovery;
 }
 
 bool CombatComponent::isGuarding() const {

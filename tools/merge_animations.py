@@ -53,6 +53,11 @@ CLIP_NAMES = {
     "Armature.027": "Walk_2",           "Armature.028": "Jump_2",
     "Armature.029": "Strafe",           "Armature.030": "Casting_2",
     "Armature.031": "Attack_4",         "Armature.032": "SheathSword_2",
+    # Rebuilt by tools/make_katana_block.py: the stock clip absorbed the blow on
+    # a SHIELD with the sword arm hanging. Now the katana guard with a recoil --
+    # driven down and back on the blow, recovering over the rest of the clip.
+    # Still 22 frames: PlayerAnimator::updateFlinch takes the flinch's duration
+    # from the clip, so the length is the timing.
     "Armature.033": "Impact",           "Armature.034": "Impact_2",
     "Armature.035": "Turn_2",           "Armature.036": "Turn",
     "Armature.037": "DrawSword_2",      "Armature.038": "Crouching_2",
@@ -61,7 +66,12 @@ CLIP_NAMES = {
     "Armature.043": "CrouchBlock_2",    "Armature.044": "Impact_3",
     "Armature.045": "Run",              "Armature.046": "Strafe_4",
     "Armature.047": "Block_2",          "Armature.048": "Crouching_3",
-    "Armature.049": "Crouch",           "Armature.050": "Block",
+    "Armature.049": "Crouch",
+    # Rebuilt by tools/make_katana_block.py -- the stock Mixamo clip raised a
+    # SHIELD across the body and dropped the sword arm, which reads as nothing
+    # once the character is holding a katana. Now an Idle lower body under a
+    # two-handed level guard. Still 15 frames, so the runtime's timings hold.
+    "Armature.050": "Block",
     "Armature.051": "Run_2",
     # Added later, and not part of the sword-and-shield pack. Directions were
     # read off each clip's net hip travel in the character's own frame, with
@@ -75,13 +85,17 @@ CLIP_NAMES = {
     # every one of its frames, which is a fall. Told apart by foot height rather
     # than by clip length -- the two are within half a second of each other.
     "Armature.056": "Land",             "Armature.057": "Fall",
-    # Not from Mixamo: synthesised in pack.blend by layering the Block guard
-    # (Armature.050, last frame -- where the shield is fully up) onto Walk's
-    # (Armature.025) lower body. Legs, hips and net travel are Walk's untouched;
-    # the guard is blended in ARMATURE space, not by copying local rotations,
-    # because the Block stance is bladed ~65 deg out of the walk's heading and a
-    # local copy would carry that turn along and swing the shield off to the
-    # left instead of leading with it.
+    # Not from Mixamo. Rebuilt by tools/make_katana_block.py: a two-handed
+    # horizontal katana guard laid over Walk's (Armature.025) lower body. Legs,
+    # hips and net travel stay Walk's -- the script asserts the travel is
+    # bit-identical, because the runtime reads BlockWalk's displacement from the
+    # clip's root motion. The guard is blended against the CHEST rather than by
+    # copying local rotations, so it rides the torso instead of hanging fixed in
+    # space while the legs walk underneath.
+    #
+    # Superseded the shield version, which layered Armature.050's last frame the
+    # same way; that one had to fight the old Block's ~65 deg bladed stance,
+    # which the katana guard does not have.
     "Armature.058": "BlockWalk",
     # .059 and .060 arrived as two imports of the same idle, so .059 was once
     # skipped as the redundant one. `.060` was later reused for the kneel, which

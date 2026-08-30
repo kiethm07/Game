@@ -109,6 +109,22 @@ public:
   virtual std::vector<HitBox> getActiveHitBoxes() const = 0;
   virtual DamageResult takeDamage(float health_damage, float posture_damage, Character* attacker = nullptr) = 0;
 
+  /// Called on the ATTACKER when the swing that just landed was deflected.
+  ///
+  /// Separate from takeDamage() because a deflect is a weapon clash, not a
+  /// wound. Routed through the damage path it looked like one: the mini boss
+  /// queued the flinch it plays for a blade in the ribs, the animation ladder
+  /// held that back under the swing it was still committed to, and the flinch
+  /// then surfaced once the attack ended -- so deflecting made the boss finish
+  /// its swing and only afterwards double over at nothing.
+  ///
+  /// The posture cost is the same either way. What a deflect must NOT do is
+  /// interrupt the attacker's own action: in a combo, being deflected on the
+  /// first swing is not a reason for the second one to stop coming.
+  virtual void onAttackDeflected(float posture_damage) {
+    takeDamage(0.0f, posture_damage, nullptr);
+  }
+
 protected:
   unsigned int id;
   Faction faction;

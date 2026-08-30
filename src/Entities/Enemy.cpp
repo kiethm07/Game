@@ -123,7 +123,7 @@ std::vector<HitBox> Enemy::getActiveHitBoxes() const {
     Vector3 right = {-std::cos(yaw_rad), 0.0f, std::sin(yaw_rad)};
     Vector3 up = {0.0f, 1.0f, 0.0f};
 
-    for (const auto& def : active_attack->getHitBoxDefs()) {
+    for (const auto& def : active_attack->getHitBoxDefs(combat_component.getActiveSwing())) {
         if (def.type == HitBoxShapeType::Sphere) {
             Vector3 center = position;
             center = Vector3Add(center, Vector3Scale(forward, def.forward_offset));
@@ -495,4 +495,19 @@ DamageResult Enemy::takeDamage(float health_damage, float posture_damage, Charac
       return blocked ? DamageResult::BLOCKED : DamageResult::HIT;
   }
   return DamageResult::IGNORED;
+}
+
+void Enemy::onAttackDeflected(float posture_damage) {
+  // The posture-break rule is takeDamage's, restated for the one thing it does
+  // that a deflect still has to do. Everything else takeDamage does around it
+  // -- the auto-guard, the awareness bump, the onDamaged() flinch -- belongs to
+  // a blow that landed on this enemy, and this is a blow of theirs that did
+  // not.
+  const bool was_posture_broken = stats.isPostureBroken();
+  stats.applyDamage(0.0f, posture_damage);
+
+  if (!was_posture_broken && stats.isPostureBroken()) {
+    sword_trail.clear();
+    combat_component.breakPosture(3.0f);
+  }
 }

@@ -50,6 +50,11 @@ public:
   std::vector<HitBox> getActiveHitBoxes() const override;
   DamageResult takeDamage(float health_damage, float posture_damage, Character* attacker) override;
 
+  /// Posture damage from a deflected swing, and nothing else: no flinch, no
+  /// guard raised, no awareness bump (an enemy mid-swing at the player already
+  /// knows where they are). The swing carries on -- see Character's hook.
+  void onAttackDeflected(float posture_damage) override;
+
   CombatComponent &getCombatComponent() { return combat_component; }
 
   /// Where this enemy was authored, and facing where. Its post: the

@@ -1,8 +1,9 @@
 #pragma once
 
-enum class AssetID { 
-    PLAYER_WOLF, 
+enum class AssetID {
+    PLAYER_WOLF,
     ENEMY_ASHIGARU,
+    ENEMY_MINIBOSS,
     SFX_COIN,
     SFX_HIT,
     SFX_DASH,

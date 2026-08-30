@@ -17,7 +17,8 @@ namespace {
 // superseded by SwordmanAnimator::descTable() and never removed.
 } // namespace
 
-Swordman::Swordman(const EnemySpawn &spawn) : Enemy(spawn) {
+Swordman::Swordman(const EnemySpawn &spawn, AssetID asset)
+    : Enemy(spawn), animator(asset) {
   // Every literal below is this type's default, and the only place it lives.
   // An override that the overlay left out resolves back to it through value_or,
   // so retuning a swordman is an edit here and nowhere else -- not in the
@@ -25,7 +26,31 @@ Swordman::Swordman(const EnemySpawn &spawn) : Enemy(spawn) {
   const EnemyOverrides &o = spawn.overrides;
 
   stats = Stats(o.maxHealth.value_or(1000.0f), 100.0f, 10.0f);
-  combo = {AttackID::PlayerLight1};
+
+  // The rotation this enemy walks through: normal, first combo, second combo,
+  // back to normal. Keyed on the ASSET rather than on the spawn's EnemyType,
+  // because what decides whether these attacks can be played is whether the
+  // model carries the clips they name -- `Attack_H`, `Combo_3` and `Combo_2`
+  // exist in the greatsword pack and nowhere else. Anything on the player's
+  // borrowed set keeps the single light swing it always had.
+  if (asset == AssetID::ENEMY_MINIBOSS) {
+    attack_pattern = {Combo{AttackID::MiniBossSwing},
+                      Combo{AttackID::MiniBossDoubleSwing},
+                      Combo{AttackID::MiniBossTripleSwing}};
+
+    // The greatsword pack's Walk is authored at 1.06 m/s and its Run at 4.05,
+    // so SwordmanAnimator switches to the run above 1.70 (RUN_SPEED_FACTOR x
+    // the walk). The old single 2.0 sat just the wrong side of that line: it
+    // selected the run and then played it at 2.00/4.05 = 0.49x, a sprint in
+    // slow motion. Circling stays where it was -- walk_speed x 0.8 = 1.6, under
+    // the threshold, the walk cycle at 1.5x -- and the charge is now 6.5, which
+    // plays the run at 1.6x and is a shade quicker than the player's own walk,
+    // so the boss closes on anything but a sprint.
+    walk_speed = 2.0f;
+    run_speed = 6.5f;
+  } else {
+    attack_pattern = {Combo{AttackID::PlayerLight1}};
+  }
   stealth_component.addSensor(std::make_shared<VisionSensor>(
       o.visionRadius.value_or(20.0f), o.visionConeDegrees.value_or(70.0f)));
   stealth_component.addSensor(std::make_shared<SoundSensor>(6.0f));
@@ -121,6 +146,7 @@ void Swordman::update(const UpdateContext &ctx) {
   updateStrafing(velocity, in_direct_combat);
   frame.strafing = isStrafing();
   frame.localMoveDir = getLocalMoveDir();
+  frame.grounded = isGrounded();
 
   animator.update(frame, dt);
 
@@ -216,8 +242,13 @@ void Swordman::setupBehaviorTree() {
     // Enemy walks up to 1.8m to swing, then backs out to 4.0m on cooldown!
     if (distance < 1.8f && attack_cooldown_timer <= 0.0f) {
       this->setHorizontalVelocity({0, 0, 0});
-      
-      combat_component.initiateCombo(combo);
+
+      // Next in the rotation, then advance. The reference outlives this call:
+      // `attack_pattern` is fixed at construction, which is what makes it safe
+      // to hand initiateCombo a pointer into it.
+      const Combo &next = attack_pattern[next_attack];
+      next_attack = (next_attack + 1) % attack_pattern.size();
+      combat_component.initiateCombo(next);
       
       // Randomize cooldown completely for each turn (1.5s to 3.5s)
       attack_cooldown_timer = 1.5f + (rand() % 200) / 100.0f;
@@ -239,12 +270,20 @@ void Swordman::setupBehaviorTree() {
     // Only use direct movement if there are NO gaps or walls between enemy and player
     if (distance < 10.0f && std::abs(position.y - target_pos.y) < 3.0f && has_nav_los) {
       if (attack_cooldown_timer > 0.0f) {
-        updateCombatCircling(*current_ctx, target_pos, MOVEMENT_SPEED * 0.8f);
+        updateCombatCircling(*current_ctx, target_pos, walk_speed * 0.8f);
       } else {
         // Attack is ready: move directly towards player to get into attack reach
-        in_direct_combat = true;
+        //
+        // Not strafing, despite this being direct combat. `in_direct_combat` is
+        // what puts the animator on the strafe set, and the strafe set has no
+        // run in it: a head-on charge resolves to StrafeForward, which is the
+        // WALK clip time-scaled to whatever the charge speed is. That is why
+        // the mini boss only ever walked -- the Run rung is unreachable while
+        // this flag is up, however fast the character is actually travelling.
+        // Sidestepping is for the circle; closing the distance is a run.
+        in_direct_combat = false;
         Vector3 move_dir = to_player_norm;
-        Vector3 target_vel = {move_dir.x * MOVEMENT_SPEED, 0.0f, move_dir.z * MOVEMENT_SPEED};
+        Vector3 target_vel = {move_dir.x * run_speed, 0.0f, move_dir.z * run_speed};
         float lerp_alpha = 1.0f - std::exp(-15.0f * current_ctx->dt);
         Vector3 old_vel = this->getHorizontalVelocity();
         Vector3 smoothed_vel = Vector3Lerp(old_vel, target_vel, lerp_alpha);
@@ -275,7 +314,7 @@ void Swordman::setupBehaviorTree() {
       path_recalc_timer = 0.25f;
     }
     
-    moveAlongPath(MOVEMENT_SPEED);
+    moveAlongPath(run_speed);
     return NodeState::RUNNING;
   });
 
@@ -303,7 +342,7 @@ void Swordman::setupBehaviorTree() {
         }
         path_recalc_timer = 1.0f; // Recalculate less often when investigating
       }
-      moveAlongPath(MOVEMENT_SPEED * 0.6f); // Walk slowly
+      moveAlongPath(walk_speed * 0.6f); // Walk slowly
     } else {
       // Arrived at target, look around
       if (investigation_timer <= 0.0f) {
@@ -341,7 +380,7 @@ void Swordman::setupBehaviorTree() {
         }
         path_recalc_timer = 1.0f;
       }
-      moveAlongPath(MOVEMENT_SPEED * 0.5f); // Walk slowly back
+      moveAlongPath(walk_speed * 0.5f); // Walk slowly back
     } else {
       // At post, align to spawn yaw
       this->setHorizontalVelocity({0, 0, 0});

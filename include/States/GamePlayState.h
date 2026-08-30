@@ -254,6 +254,9 @@ private:
   /// F1: overlay the raw shadow depth map in the corner.
   bool show_shadow_map = false;
 
+  /// F9: hitbox (red) / hurtbox (green) wireframes from CombatManager::drawDebug.
+  bool show_hitboxes = false;
+
   /// Used strictly for debugging takedown mechanics across frames.
   Character *pending_aerial_target = nullptr;
 

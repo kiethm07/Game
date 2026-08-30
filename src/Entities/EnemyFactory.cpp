@@ -12,13 +12,15 @@ std::unique_ptr<Enemy> EnemyFactory::createEnemy(const EnemySpawn &spawn) {
     case EnemyType::Swordman:
         return std::make_unique<Swordman>(spawn);
 
-    // Both bosses are a Swordman for now: same model, same animator, same
-    // attack data, by request. They are not indistinguishable, though --
-    // Enemy stores the spawn's type, so `getType()` still answers MiniBoss
-    // here and the phase-2 campfire gate reads that rather than guessing from
-    // stats or position. Giving them their own class later is a change to
-    // these two lines.
+    // Both bosses are a Swordman for now: same animator, same attack data, by
+    // request. They are not indistinguishable, though -- Enemy stores the
+    // spawn's type, so `getType()` still answers MiniBoss here and the
+    // phase-2 campfire gate reads that rather than guessing from stats or
+    // position. MiniBoss also draws its own model (AssetID::ENEMY_MINIBOSS,
+    // see AssetManifest.h) rather than the player's borrowed by everything
+    // else built as a Swordman; FinalBoss has none of its own yet.
     case EnemyType::MiniBoss:
+        return std::make_unique<Swordman>(spawn, AssetID::ENEMY_MINIBOSS);
     case EnemyType::FinalBoss:
         return std::make_unique<Swordman>(spawn);
     }

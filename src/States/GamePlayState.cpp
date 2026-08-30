@@ -762,6 +762,13 @@ StateAction GameplayState::update(float dt) {
     renderer->cycleShadowMode();
   }
 
+  // F9: hitbox/hurtbox wireframes, off by default — combat_manager.drawDebug
+  // draws over every character every frame, which is noise once you are not
+  // actively checking an attack's reach.
+  if (IsKeyPressed(KEY_F9)) {
+    show_hitboxes = !show_hitboxes;
+  }
+
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
     return StateAction::ChangeToMenu;
   }
@@ -1271,7 +1278,9 @@ void GameplayState::draw() {
 
   // Collision debug wireframes — must stay inside the 3D scope.
   physics_manager.drawDebug(active_characters, level.obstacles);
-  combat_manager.drawDebug(active_characters);
+  if (show_hitboxes) {
+    combat_manager.drawDebug(active_characters);
+  }
   stealth_manager.drawDebug(active_characters);
 
   // Deathblow markers. Before the lock-on dot so that on an enemy who is both
