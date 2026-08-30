@@ -142,14 +142,28 @@ public:
         float dist = distance_to_target;
         float normalized_dist = dist / radius;
         
-        // Logarithmic scale: Drops rapidly at first, then tails off.
-        // Strength scales from 5.0x (point blank) down to 0.25x (farthest).
-        float strength = 5.0f - 4.75f * std::log10(1.0f + normalized_dist * 9.0f);
+        // Logarithmic scale: drops rapidly at first, then tails off.
+        // Strength scales from 5.75x (point blank) down to 1.70x (farthest).
+        //
+        // The far end used to bottom out at 0.25x, which combined with the
+        // angle factor's 0.5x gave the cone a 60x spread between its best and
+        // worst corner. An enemy needs 200 awareness points at build_rate 50 to
+        // reach DETECTED, so that corner cost 28 seconds -- the player could
+        // stand upright, unobstructed, well inside a 20 m vision radius and
+        // watch the bar crawl. The radius is the design statement about how far
+        // this enemy can see; anywhere inside it should resolve in seconds, and
+        // the falloff should say "sooner when closer", not "never when far".
+        // Point blank is untouched; the floor is lifted ~7x, leaving a 6x
+        // spread across the whole cone.
+        float strength = 5.75f - 4.05f * std::log10(1.0f + normalized_dist * 9.0f);
         
-        // Scale by angle logarithmically: 1.5x directly in front, dropping to 0.5x at the edge
+        // Scale by angle logarithmically: 1.4x directly in front, dropping to
+        // 0.8x at the edge -- flattened alongside the distance curve above, and
+        // for the same reason. Peripheral vision should be a touch slower than
+        // a dead-on stare, not effectively blind.
         float max_angle = cone_angle_degrees / 2.0f;
         float normalized_angle = angle_to_target / max_angle;
-        float angle_factor = 1.5f - std::log10(1.0f + 9.0f * normalized_angle);
+        float angle_factor = 1.4f - 0.6f * std::log10(1.0f + 9.0f * normalized_angle);
         strength *= angle_factor;
 
         if (target->isCrouching()) {

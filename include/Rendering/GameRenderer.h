@@ -110,6 +110,31 @@ private:
   /// still rather than the frame erroring.
   int grassTimeLoc = -1;
 
+  /// Where mood_common.glsl's three fog uniforms live in one shader, resolved
+  /// once at load for the same reason grassTimeLoc is.
+  ///
+  /// A struct per shader rather than three parallel arrays: every shader that
+  /// includes mood_common.glsl needs the same three, and pushing them is one
+  /// call site (applyFog), so keeping them together is what stops a shader
+  /// being given a camera position and no fog colour.
+  struct FogLocs {
+    int color = -1;
+    int density = -1;
+    int camPos = -1;
+  };
+  FogLocs worldFog, levelFog, grassFog, skinningFog;
+
+  /// Resolve one shader's fog uniform locations. Safe on a shader that does not
+  /// include mood_common.glsl -- every location comes back -1 and the pushes
+  /// below become no-ops.
+  static FogLocs resolveFogLocs(const Shader &shader);
+
+  /// Push this frame's fog to one shader. The camera position is the only part
+  /// that changes per frame; the other two are constant, but are sent alongside
+  /// it because a shader reloaded mid-session would otherwise keep whatever the
+  /// driver zero-initialised them to.
+  static void applyFog(const Shader &shader, const FogLocs &locs, Vector3 cameraPos);
+
   /// Unlit shader for the campfire flame. Unlit because fire produces light
   /// rather than receiving it — run through levelShader the flame would dim in
   /// shade. See flame.fs.

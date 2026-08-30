@@ -18,14 +18,14 @@ out vec4 finalColor;
 uniform sampler2D texture0;
 uniform vec4 colDiffuse;
 
-// Kept in step with world.fs deliberately. If these two disagree, a wall in the
-// level mesh and a collision proxy standing against it shade differently, and
-// the greybox stops being a usable reference for the real art.
-const float AMBIENT = 0.60;
-const float KEY = 0.55;
-const float SHADOW_AMBIENT_SCALE = 0.62;
+// The lighting constants are in mood_common.glsl, shared with world.fs and
+// grass.fs. If these three ever disagree, a wall in the level mesh and a
+// collision proxy standing against it shade differently, and the greybox stops
+// being a usable reference for the real art -- which is why they are no longer
+// three separate copies.
 
 #include "shadow_common.glsl"
+#include "mood_common.glsl"
 
 void main()
 {
@@ -41,7 +41,13 @@ void main()
     float key = max(dot(normal, lightVec), 0.0);
     float shadow = shadowFactor(fragPosition, normal, lightVec);
 
-    float light = AMBIENT*mix(1.0, SHADOW_AMBIENT_SCALE, shadow) + KEY*key*(1.0 - shadow);
+    vec3 light = MOOD_AMBIENT_TINT*MOOD_AMBIENT*mix(1.0, MOOD_SHADOW_AMBIENT_SCALE, shadow)
+               + MOOD_KEY_TINT*MOOD_KEY*key*(1.0 - shadow);
 
-    finalColor = vec4(texelColor.rgb*light, texelColor.a)*colDiffuse*fragColor;
+    vec4 lit = vec4(texelColor.rgb*light, texelColor.a)*colDiffuse*fragColor;
+
+    // Fogged after colDiffuse and the vertex colour, not before: fog is what
+    // the air between the camera and this surface does to it, so everything
+    // that decides the surface's own colour has to have happened first.
+    finalColor = vec4(applyFog(lit.rgb, fragPosition), lit.a);
 }

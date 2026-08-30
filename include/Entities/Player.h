@@ -143,6 +143,18 @@ private:
   /// a mistimed jump unrecoverable.
   static constexpr float AIR_ACCELERATION = 13.0f;
 
+  /// How long a guard press stays latched waiting for a frame that will take
+  /// it. handleCombatAndUtilityInputs never acts on the press directly: it arms
+  /// this timer, and spends it on the first frame where both the ActionGate and
+  /// CombatComponent::canGuard() will accept a guard.
+  ///
+  /// Sized to the longest thing that refuses one and is over quickly -- an
+  /// attack's 0.20s active frames -- so mashing deflect through your own swing
+  /// puts the guard up the instant the hitbox retires. Deliberately NOT long
+  /// enough to survive a dodge or a posture break: a guard that finally fires a
+  /// second after it was asked for is one the player has stopped wanting.
+  static constexpr float GUARD_BUFFER_WINDOW = 0.20f;
+
   bool in_smoke_flag = false;
   int money = 0;
 
@@ -177,6 +189,11 @@ private:
   std::vector<std::unique_ptr<Item>> inventory;
   int active_item_index = 0;
   float item_use_timer = 0.0f;
+
+  /// Seconds left on a latched guard press, or 0 for none. Decayed at the top
+  /// of handleCombatAndUtilityInputs -- ahead of the item-use early return, so
+  /// a press cannot sit latched through a heal and fire when it ends.
+  float guard_buffer_timer = 0.0f;
   std::vector<SmokeCloud> pending_smoke_clouds;
   SwordTrail sword_trail;
 

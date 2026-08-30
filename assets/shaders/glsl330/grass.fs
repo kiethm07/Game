@@ -12,14 +12,11 @@ out vec4 finalColor;
 
 uniform vec4 colDiffuse;
 
-// Copied verbatim from level.fs, and they have to stay copied. The whole point
-// of this shader is that a lit blade tip on flat ground comes out the same
-// colour as the terrain pixel beside it: same baseColorFactor, same lighting
-// arithmetic. Let these three drift and the grass separates from the ground
-// again, which is the fault this replaced a photographic grass texture to fix.
-const float AMBIENT = 0.60;
-const float KEY = 0.55;
-const float SHADOW_AMBIENT_SCALE = 0.62;
+// The lighting constants come from mood_common.glsl, which level.fs includes
+// too. The whole point of this shader is that a lit blade tip on flat ground
+// comes out the same colour as the terrain pixel beside it: same
+// baseColorFactor, same lighting arithmetic. They were three copied constants
+// and had to stay copied; now they cannot drift at all.
 
 // Blades are a few centimetres wide, so past ~30 m they are thinner than a
 // pixel and crawl as the camera moves. Fading their vertex shading out to 1.0
@@ -30,6 +27,7 @@ const float FADE_START = 30.0;
 const float FADE_END = 70.0;
 
 #include "shadow_common.glsl"
+#include "mood_common.glsl"
 
 void main()
 {
@@ -48,7 +46,8 @@ void main()
     float key = max(dot(normal, lightVec), 0.0);
     float shadow = shadowFactor(fragPosition, normal, lightVec);
 
-    float light = AMBIENT*mix(1.0, SHADOW_AMBIENT_SCALE, shadow) + KEY*key*(1.0 - shadow);
+    vec3 light = MOOD_AMBIENT_TINT*MOOD_AMBIENT*mix(1.0, MOOD_SHADOW_AMBIENT_SCALE, shadow)
+               + MOOD_KEY_TINT*MOOD_KEY*key*(1.0 - shadow);
 
     // fragColor is downward modulation only -- dark at the blade's base for
     // contact shading, 1.0 at the tip -- never the colour itself. The colour is
@@ -56,5 +55,5 @@ void main()
     float fade = 1.0 - smoothstep(FADE_START, FADE_END, fragViewDepth);
     vec3 shade = mix(vec3(1.0), fragColor.rgb, fade);
 
-    finalColor = vec4(colDiffuse.rgb*shade*light, 1.0);
+    finalColor = vec4(applyFog(colDiffuse.rgb*shade*light, fragPosition), 1.0);
 }

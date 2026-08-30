@@ -1,6 +1,7 @@
 #include <Rendering/DebugCubeRenderer.h>
 #include <Core/AssetPaths.h>
 #include <Rendering/GameRenderer.h>
+#include <Rendering/Lighting.h>
 #include <Rendering/ScopedMaterialShader.h>
 #include <Rendering/ShaderLibrary.h>
 #include <Rendering/SkinnedEntityRenderer.h>
@@ -342,6 +343,38 @@ void GameRenderer::initializeAssets() {
   } else {
     grassTimeLoc = GetShaderLocation(grassShader, "time");
   }
+
+  // Fog uniform locations, once. The skinning shader belongs to AssetManager
+  // but includes the same mood_common.glsl, so it is resolved here too --
+  // otherwise characters would be the one thing in the frame the mist does not
+  // touch, and they would read as stickers on the background.
+  worldFog = resolveFogLocs(worldShader);
+  levelFog = resolveFogLocs(levelShader);
+  grassFog = resolveFogLocs(grassShader);
+  skinningFog = resolveFogLocs(assetManager.getSkinningShader());
+}
+
+GameRenderer::FogLocs GameRenderer::resolveFogLocs(const Shader &shader) {
+  FogLocs locs;
+  if (shader.id == 0) return locs;
+  locs.color = GetShaderLocation(shader, "fogColor");
+  locs.density = GetShaderLocation(shader, "fogDensity");
+  locs.camPos = GetShaderLocation(shader, "camPos");
+  return locs;
+}
+
+void GameRenderer::applyFog(const Shader &shader, const FogLocs &locs,
+                            Vector3 cameraPos) {
+  if (shader.id == 0) return;
+
+  const Vector3 sky = Lighting::skyAsVec3();
+  const float density = Lighting::kFogDensity;
+
+  // SetShaderValue ignores a -1 location, so a shader without these uniforms
+  // needs no guard of its own.
+  SetShaderValue(shader, locs.color, &sky, SHADER_UNIFORM_VEC3);
+  SetShaderValue(shader, locs.density, &density, SHADER_UNIFORM_FLOAT);
+  SetShaderValue(shader, locs.camPos, &cameraPos, SHADER_UNIFORM_VEC3);
 }
 
 ShadowMode GameRenderer::cycleShadowMode() {
@@ -501,6 +534,15 @@ void GameRenderer::drawWorld(
     SetShaderValue(grassShader, grassTimeLoc, &elapsed, SHADER_UNIFORM_FLOAT);
   }
   shadowMap.applyTo(assetManager.getSkinningShader());
+
+  // Fog, alongside the shadow uniforms and for the same reason: once per frame,
+  // before anything is drawn with them. The camera position is what the falloff
+  // is measured from, so it has to be this frame's.
+  const Vector3 eye = camera.getCamera().position;
+  applyFog(worldShader, worldFog, eye);
+  applyFog(levelShader, levelFog, eye);
+  applyFog(grassShader, grassFog, eye);
+  applyFog(assetManager.getSkinningShader(), skinningFog, eye);
 
   drawEnvironment(camera, obstacles);
 

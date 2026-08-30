@@ -32,28 +32,19 @@ float noise(vec3 x) {
 }
 
 // The albedo maps on this armour set are dark steel, and sampling them straight
-// reads flat and murky. AMBIENT is the floor every fragment gets, so nothing
-// lands darker than the unlit look this replaced; KEY is what the lit side adds
-// on top. Raise AMBIENT alone to brighten uniformly.
+// reads flat and murky, so the character rig runs a higher ambient and a
+// midtone lift than the environment does. Both live in mood_common.glsl as
+// MOOD_CHAR_*, next to the environment values they have to stay in balance
+// with: a character lit for a bright scene stands out as a cutout once the
+// world around them goes overcast.
 //
 // The key direction used to be a constant here. It is a uniform (declared with
 // the shadow block below) because the shadow pass has to render from that exact
 // direction -- see ShadowMap, which owns the value and pushes it into this
 // shader and into world.fs.
-const float AMBIENT = 1.15;
-const float KEY = 0.60;
-
-// How far the ambient floor drops in shadow. AMBIENT above 1.0 means a fragment
-// in shadow would otherwise still be brighter than the original unlit look, so
-// without this a character standing in the pillar's shadow barely changes.
-const float SHADOW_AMBIENT_SCALE = 0.72;
-
-// Midtone lift, applied after the light term. A plain multiply bright enough to
-// rescue the armour also clips the gold trim to a flat yellow; an exponent
-// below 1 raises the middle of the range and leaves the highlights alone.
-const float LIFT = 0.78;
 
 #include "shadow_common.glsl"
+#include "mood_common.glsl"
 
 void main()
 {
@@ -99,9 +90,16 @@ void main()
     float key = max(dot(normal, lightVec), 0.0);
     float shadow = shadowFactor(fragPosition, normal, lightVec);
 
-    float light = AMBIENT*mix(1.0, SHADOW_AMBIENT_SCALE, shadow) + KEY*key*(1.0 - shadow);
+    vec3 light = MOOD_AMBIENT_TINT*MOOD_CHAR_AMBIENT*mix(1.0, MOOD_CHAR_SHADOW_AMBIENT_SCALE, shadow)
+               + MOOD_KEY_TINT*MOOD_CHAR_KEY*key*(1.0 - shadow);
 
-    vec3 shaded = pow(texelColor.rgb*light, vec3(LIFT));
+    vec3 shaded = pow(texelColor.rgb*light, vec3(MOOD_CHAR_LIFT));
 
-    finalColor = vec4(shaded, texelColor.a)*colDiffuse*fragColor;
+    vec4 lit = vec4(shaded, texelColor.a)*colDiffuse*fragColor;
+
+    // Fogged like everything else, so a distant enemy fades into the mist at
+    // the same rate the ground under them does. The dissolve branches above
+    // return early and stay unfogged on purpose: those are emissive embers, not
+    // surfaces the air is in front of.
+    finalColor = vec4(applyFog(lit.rgb, fragPosition), lit.a);
 }

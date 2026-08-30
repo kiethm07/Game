@@ -119,6 +119,14 @@ void AssetManager::loadSound(AssetID id, const std::string &filePath) {
   // is the expected case for this call, not a mistake worth reporting.
   if (sounds.find(id) != sounds.end()) return;
   Sound sound = LoadSound(filePath.c_str());
+  // raylib returns a zeroed Sound for a file it could not open, and
+  // SoundController::playSFX skips those without a word -- so a missing or
+  // misnamed SFX file is otherwise completely silent in both senses. Say so
+  // once, at load, where the path is still in hand.
+  if (sound.stream.buffer == nullptr) {
+    TraceLog(LOG_WARNING, "AssetManager: sound '%s' failed to load; it will be silent.",
+             filePath.c_str());
+  }
   sounds[id] = sound;
 }
 

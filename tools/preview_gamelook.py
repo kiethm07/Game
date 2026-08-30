@@ -12,7 +12,7 @@ So this builds an emission material that runs the same arithmetic, disables
 Blender's view transform (the game tonemaps nothing), and renders. What comes
 out is what the engine will draw, minus shadows.
 
-Kept deliberately in sync with assets/shaders/glsl330/skinning.fs and with
+Kept deliberately in sync with assets/shaders/glsl330/mood_common.glsl and with
 kLightDirection in src/Rendering/ShadowMap.cpp -- the constants below are
 copies, and if either moves this preview quietly starts lying.
 
@@ -39,10 +39,17 @@ import sys
 import bpy
 from mathutils import Vector
 
-# --- copies of assets/shaders/glsl330/skinning.fs ---
-AMBIENT = 1.15
-KEY = 0.60
-LIFT = 0.78
+# --- copies of assets/shaders/glsl330/mood_common.glsl ---
+#
+# The character half of it: MOOD_CHAR_*, plus the two tints the whole scene
+# shares. Shadowing is not modelled here (this preview has no depth map), so
+# the ambient term is always at full strength -- which is the lit case, and the
+# one worth judging a texture in.
+AMBIENT = 0.62          # MOOD_CHAR_AMBIENT
+KEY = 0.34              # MOOD_CHAR_KEY
+LIFT = 0.90             # MOOD_CHAR_LIFT
+AMBIENT_TINT = (0.78, 0.94, 0.90)   # MOOD_AMBIENT_TINT
+KEY_TINT = (0.90, 0.96, 1.00)       # MOOD_KEY_TINT
 
 # src/Rendering/ShadowMap.cpp kLightDirection, converted from the game's Y-up
 # (x, y, z) to Blender's Z-up (x, -z, y).
@@ -61,6 +68,14 @@ def build_game_material(mat):
 
     light = -Vector(GAME_LIGHT_DIR).normalized()
 
+    # The light term is a COLOUR, not a scalar: the shader tints ambient and key
+    # separately, and a single grey multiply would hide exactly the thing this
+    # preview exists to show -- what the cool cast does to a warm texture.
+    #
+    # Ambient carries no shadow term here, so it is constant and folds into one
+    # precomputed colour. Only the key varies across the surface.
+    amb_col = tuple(AMBIENT * c for c in AMBIENT_TINT)
+
     geo = nt.nodes.new("ShaderNodeNewGeometry")
     dot = nt.nodes.new("ShaderNodeVectorMath")
     dot.operation = "DOT_PRODUCT"
@@ -71,9 +86,19 @@ def build_game_material(mat):
     key = nt.nodes.new("ShaderNodeMath")
     key.operation = "MULTIPLY"
     key.inputs[1].default_value = KEY
-    amb = nt.nodes.new("ShaderNodeMath")
-    amb.operation = "ADD"
-    amb.inputs[1].default_value = AMBIENT
+
+    # key scalar -> key colour. Linking a Value socket into a Color socket
+    # broadcasts it to grey, which is what makes this a plain tint multiply.
+    key_col = nt.nodes.new("ShaderNodeMixRGB")
+    key_col.blend_type = "MULTIPLY"
+    key_col.inputs["Fac"].default_value = 1.0
+    key_col.inputs["Color1"].default_value = (KEY_TINT[0], KEY_TINT[1], KEY_TINT[2], 1.0)
+
+    light_col = nt.nodes.new("ShaderNodeMixRGB")
+    light_col.blend_type = "ADD"
+    light_col.inputs["Fac"].default_value = 1.0
+    light_col.inputs["Color1"].default_value = (amb_col[0], amb_col[1], amb_col[2], 1.0)
+
     shade = nt.nodes.new("ShaderNodeMixRGB")
     shade.blend_type = "MULTIPLY"
     shade.inputs["Fac"].default_value = 1.0
@@ -84,9 +109,10 @@ def build_game_material(mat):
     nt.links.new(geo.outputs["Normal"], dot.inputs[0])
     nt.links.new(dot.outputs["Value"], clamp.inputs[0])
     nt.links.new(clamp.outputs["Value"], key.inputs[0])
-    nt.links.new(key.outputs["Value"], amb.inputs[0])
+    nt.links.new(key.outputs["Value"], key_col.inputs["Color2"])
+    nt.links.new(key_col.outputs["Color"], light_col.inputs["Color2"])
     nt.links.new(tex.outputs["Color"], shade.inputs["Color1"])
-    nt.links.new(amb.outputs["Value"], shade.inputs["Color2"])
+    nt.links.new(light_col.outputs["Color"], shade.inputs["Color2"])
     nt.links.new(shade.outputs["Color"], lift.inputs["Color"])
     nt.links.new(lift.outputs["Color"], emit.inputs["Color"])
     nt.links.new(emit.outputs["Emission"], out_node.inputs["Surface"])

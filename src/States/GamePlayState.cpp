@@ -7,6 +7,7 @@
 #include <Physics/CollisionMeshLoader.h>
 #include <Stealth/Sensor.h>
 #include <Rendering/BoneSocketHelper.h>
+#include <Rendering/Lighting.h>
 #include <Rendering/PostureMeter.h>
 #include <cassert>
 #include <cmath>
@@ -135,7 +136,7 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
 
   // Load test SFX
   asset_manager.loadSound(AssetID::SFX_COIN, assets::path("audio/coin.wav"));
-  asset_manager.loadSound(AssetID::SFX_HIT, assets::path("audio/hit.mp3"));
+  asset_manager.loadSound(AssetID::SFX_HIT, assets::path("audio/hit.MP3"));
   asset_manager.loadSound(AssetID::SFX_DEFLECT_1, assets::path("audio/deflect_1.MP3"));
   asset_manager.loadSound(AssetID::SFX_DEFLECT_2, assets::path("audio/Deflect_2.MP3"));
   asset_manager.loadSound(AssetID::SFX_DEFLECT_NPC, assets::path("audio/deflect_NPC.MP3"));
@@ -1246,7 +1247,11 @@ void GameplayState::draw() {
   renderer->renderShadowPass(level.obstacles, renderList, player->getPosition());
 
   // PASS 2 — the scene.
-  ClearBackground(RAYWHITE);
+  //
+  // Cleared to the fog colour, not to white. Distance fades toward this exact
+  // value (Lighting::kSky, which mood_common.glsl fogs to), so the far edge of
+  // the terrain dissolves into the sky instead of ending against it.
+  ClearBackground(Lighting::kSky);
   BeginMode3D(camera_controller->getCamera());
 
   // Level mesh, obstacles and entities, drawn into the 3D scope opened above.
