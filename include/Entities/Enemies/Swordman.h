@@ -65,6 +65,31 @@ private:
   /// constructor.
   float walk_speed = 2.0f;
   float run_speed = 2.0f;
+
+  /// The SoundSensor's radius, and the gait switch below. One constant because
+  /// they are the same circle: the blue ring the sensor debug draws is exactly
+  /// the line this enemy starts running outside of, so moving one moves both.
+  static constexpr float HEARING_RADIUS = 6.0f;
+
+  /// Where an approach changes gait: run outside this, walk inside it. 0
+  /// disables the switch and approaches always run, which is what the mini
+  /// boss does -- its 6.5 charge is tuned to close relentlessly and is not a
+  /// two-gait approach.
+  float gait_switch_distance = HEARING_RADIUS;
+
+  /// Latched so the gait switch has hysteresis. Without it a player sitting on
+  /// the boundary flips the gait -- and therefore the CLIP -- every frame, and
+  /// the 0.15 s blend never resolves.
+  bool chase_running = false;
+
+  /// walk_speed or run_speed for an approach at `distance`, latching
+  /// `chase_running` across the GAIT_SWITCH_HYSTERESIS band.
+  float chaseSpeed(float distance);
+
+  /// Half-width of the band around `gait_switch_distance` the switch must be
+  /// crossed by before the gait actually changes.
+  static constexpr float GAIT_SWITCH_HYSTERESIS = 0.5f;
+
   void setupBehaviorTree();
 
   // spawn_position and spawn_yaw are Enemy's now, set from the spawn in one

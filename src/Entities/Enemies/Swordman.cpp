@@ -48,12 +48,28 @@ Swordman::Swordman(const EnemySpawn &spawn, AssetID asset)
     // so the boss closes on anything but a sprint.
     walk_speed = 2.0f;
     run_speed = 6.5f;
+
+    // No gait switch for the boss. The 6.5 above is a charge that is meant to
+    // stay a charge all the way in; dropping it to a walk at the hearing radius
+    // would take the pressure off exactly where the fight starts.
+    gait_switch_distance = 0.0f;
   } else {
     attack_pattern = {Combo{AttackID::PlayerLight1}};
+
+    // The player's borrowed pack authors Walk at 1.36 m/s and Run at 3.69, so
+    // SwordmanAnimator takes Run over Walk above 2.18 (RUN_SPEED_FACTOR x the
+    // walk). run_speed defaulted to 2.0 -- just under that line -- so an
+    // approach selected the WALK clip and merely time-scaled it to 1.47x, which
+    // is why this enemy strolled at the player from across the map however far
+    // away it was. 5.0 clears the threshold, plays the run at a 1.35x jog, and
+    // sits inside the band the mini boss is tuned against: quicker than the
+    // player's walk (1.85) so walking away does not work, slower than their
+    // sprint (7.38) so sprinting away does.
+    run_speed = 5.0f;
   }
   stealth_component.addSensor(std::make_shared<VisionSensor>(
       o.visionRadius.value_or(20.0f), o.visionConeDegrees.value_or(70.0f)));
-  stealth_component.addSensor(std::make_shared<SoundSensor>(6.0f));
+  stealth_component.addSensor(std::make_shared<SoundSensor>(HEARING_RADIUS));
   stealth_component.addSensor(std::make_shared<ProximitySensor>(1.2f));
   stealth_component.addSensor(std::make_shared<CombatSenseSensor>(10.0f));
 
@@ -64,6 +80,25 @@ Swordman::Swordman(const EnemySpawn &spawn, AssetID asset)
   attack_cooldown_timer = (getId() % 4) * 0.8f + ((rand() % 100) / 100.0f);
   
   setupBehaviorTree();
+}
+
+/// Run when the player is outside the hearing radius, walk once inside it.
+///
+/// The switch is latched rather than a bare comparison. Both characters are
+/// moving, so the distance crosses the boundary repeatedly at walking pace, and
+/// an unlatched test would alternate walk_speed and run_speed frame to frame --
+/// which SwordmanAnimator reads as alternating CLIPS, restarting the 0.15 s
+/// blend before it can ever finish and leaving the enemy twitching on the spot.
+float Swordman::chaseSpeed(float distance) {
+  if (gait_switch_distance <= 0.0f) return run_speed;
+
+  if (chase_running) {
+    if (distance < gait_switch_distance - GAIT_SWITCH_HYSTERESIS)
+      chase_running = false;
+  } else if (distance > gait_switch_distance + GAIT_SWITCH_HYSTERESIS) {
+    chase_running = true;
+  }
+  return chase_running ? run_speed : walk_speed;
 }
 
 void Swordman::update(const UpdateContext &ctx) {
@@ -283,7 +318,9 @@ void Swordman::setupBehaviorTree() {
         // Sidestepping is for the circle; closing the distance is a run.
         in_direct_combat = false;
         Vector3 move_dir = to_player_norm;
-        Vector3 target_vel = {move_dir.x * run_speed, 0.0f, move_dir.z * run_speed};
+        const float approach_speed = chaseSpeed(distance);
+        Vector3 target_vel = {move_dir.x * approach_speed, 0.0f,
+                              move_dir.z * approach_speed};
         float lerp_alpha = 1.0f - std::exp(-15.0f * current_ctx->dt);
         Vector3 old_vel = this->getHorizontalVelocity();
         Vector3 smoothed_vel = Vector3Lerp(old_vel, target_vel, lerp_alpha);
@@ -314,7 +351,7 @@ void Swordman::setupBehaviorTree() {
       path_recalc_timer = 0.25f;
     }
     
-    moveAlongPath(run_speed);
+    moveAlongPath(chaseSpeed(distance));
     return NodeState::RUNNING;
   });
 
