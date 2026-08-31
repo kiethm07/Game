@@ -5,6 +5,7 @@ enum class AssetID {
     ENEMY_ASHIGARU,
     ENEMY_MINIBOSS,
     ENEMY_FINALBOSS,
+    ENEMY_KIMONO,
     SFX_COIN,
     SFX_HIT,
     SFX_DASH,

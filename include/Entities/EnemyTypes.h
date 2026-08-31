@@ -41,6 +41,7 @@ inline constexpr bool isBossType(EnemyType type) {
     return false;
   case EnemyType::MiniBoss:
   case EnemyType::FinalBoss:
+  case EnemyType::Kimono_enemy:
     return true;
   }
   return false;

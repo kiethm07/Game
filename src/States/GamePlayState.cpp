@@ -387,14 +387,34 @@ GameplayState::availableTakedown(const Enemy &enemy) const {
   const bool off_guard = (s_state == StealthState::Unaware ||
                           s_state == StealthState::Suspicious || in_smoke);
 
+  // A boss is never a stealth kill, from behind or from the air. Both routes
+  // end the fight on contact, and a fight the whole phase is gated on cannot be
+  // skippable by walking up behind it -- which is exactly what happened, since
+  // a boss standing at its post has never seen the player and so is Unaware,
+  // the same state that makes a patrolling mook backstabbable.
+  //
+  // Answered here rather than at the Takedown key because the chest marker asks
+  // the same question: gating only the key would leave a deathblow cue lit over
+  // a boss that F then refuses.
+  const bool is_boss = isBossType(enemy.getType());
+
   // The order is a chain, not three independent tests, and it stays one: an
   // enemy who is off guard is a stealth kill or nothing, even if their posture
   // also happens to be broken. Flattening this into three ORs would quietly
   // let you combat-deathblow someone from the front because they were unaware.
+  //
+  // A boss therefore returns None while off guard rather than falling through
+  // to the posture test below. That is the same rule, not an exception to it:
+  // the combat deathblow is meant to be the reward for breaking a guard that
+  // was actually up, and letting an unaware boss be executed from the front
+  // because its posture happened to still be high is the very hole the chain
+  // exists to close.
   if (is_aerial && off_guard) {
-    return TakedownKind::Aerial;
+    return is_boss ? TakedownKind::None : TakedownKind::Aerial;
   }
   if (off_guard) {
+    if (is_boss) return TakedownKind::None;
+
     // Must be closely behind them -- roughly a 74 degree cone off their back.
     const Vector3 enemy_fwd = {std::sin(enemy.getRotation().y * DEG2RAD), 0.0f,
                                std::cos(enemy.getRotation().y * DEG2RAD)};

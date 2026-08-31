@@ -87,6 +87,44 @@ Swordman::Swordman(const EnemySpawn &spawn, AssetID asset)
     // stay a charge all the way in; dropping it to a walk at the hearing radius
     // would take the pressure off exactly where the fight starts.
     gait_switch_distance = 0.0f;
+  } else if (asset == AssetID::ENEMY_KIMONO) {
+    attack_pattern = {Combo{AttackID::KimonoSwing},
+                      Combo{AttackID::KimonoCleave},
+                      Combo{AttackID::KimonoLunge}};
+
+    // Mini-boss tier, and set here rather than left to an enemies.json override
+    // so the type carries its own difficulty: a spawn that names nothing still
+    // gets the boss, not a swordman wearing its model. More posture and a
+    // slower rebuild than a mook, because the whole fight is the posture bar.
+    stats = Stats(o.maxHealth.value_or(1600.0f), 140.0f, 8.0f);
+
+    // 1.65 m -- the shortest character in the game, against the player's 1.8
+    // and the mini boss's 2.63. Left at Enemy's 2.0/0.5 defaults the capsule
+    // would stand a head taller than the model, so shots over the shoulder
+    // would connect and the posture bar would float clear of the head.
+    body_height = 1.8f;
+    body_radius = 0.45f;
+
+    // The greatsword pack authors Walk at 1.09 m/s and Run at 4.03, and
+    // tools/retarget_kimono.py scaled every clip's hip travel by 0.9204 (this
+    // character's hips sit at 0.880 against the clip rig's 0.956), so on THIS
+    // rig they are 1.00 and 3.71. SwordmanAnimator takes Run over Walk above
+    // 1.60 -- RUN_SPEED_FACTOR x the walk -- and both numbers are set against
+    // those, not copied from the mini boss, whose pack is authored at a
+    // different scale again:
+    //   * 1.40 stays under the threshold and plays the walk at 1.40x, and
+    //     circling (walk_speed x 0.8 = 1.12) at 1.12x. That is the brief's
+    //     "slow intimidating forward advance" and not a scurry.
+    //   * 4.80 plays the run at 1.29x. Quicker than the player's walk (1.85),
+    //     so backing away does not work, and slower than their sprint (7.38),
+    //     so committing to a sprint still breaks contact.
+    walk_speed = 1.4f;
+    run_speed = 4.8f;
+
+    // Unlike the other two bosses this one KEEPS the gait switch. Both of those
+    // charge from any distance on purpose; this character's brief is a measured
+    // advance, and the switch is what gives it one -- a run to close, dropping
+    // to that 1.40 walk inside the hearing radius.
   } else {
     attack_pattern = {Combo{AttackID::PlayerLight1}};
 

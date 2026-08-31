@@ -23,3 +23,11 @@ ENEMY_TYPE(Swordman)
 // case and nothing else.
 ENEMY_TYPE(MiniBoss)
 ENEMY_TYPE(FinalBoss)
+
+// The kimono swordsman. Unlike the two above this one is NOT a Swordman
+// wearing the player's model -- it has an asset of its own, built by
+// tools/rebuild_kimono.sh, and a nodachi clip pack named for the states it
+// serves. Still a Swordman class, because the behaviour tree, the guard and
+// the deathblow rules are the same; what differs is the asset and the moveset,
+// and both are selected by the AssetID handed to that constructor.
+ENEMY_TYPE(Kimono_enemy)

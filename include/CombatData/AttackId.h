@@ -23,5 +23,13 @@ enum class AttackID {
     /// because this character has no weapon.
     FinalBossPunch,      ///< `Attack`, a right jab and a left club swing.
     FinalBossFlurry,     ///< `Attack_Rapid`, five alternating swipes.
-    FinalBossLeap        ///< `Attack_Jump`, a 2.56 m leap, a slam and two swings.
+    FinalBossLeap,       ///< `Attack_Jump`, a 2.56 m leap, a slam and two swings.
+
+    /// The kimono swordsman's rotation. Same shape again -- one AttackData per
+    /// clip, multi-hit clips carrying their swings through SwingWindow -- timed
+    /// off the KATANA TIP tracked through each clip, which is what the brief's
+    /// two combo strings turned into once measured.
+    KimonoSwing,         ///< `Attack`, one downward diagonal cut.
+    KimonoCleave,        ///< `Combo_1`, two cuts and an overhead into the ground.
+    KimonoLunge          ///< `Combo_2`, a step-in cut, a sweep and a rising slash.
 };

@@ -69,6 +69,12 @@ void AttackRegistry::InitializeCatalog() {
   const Vector3 kMiniBossBlade = {1.73f, 1.17f, -0.24f};
   const Vector3 kMiniBossHilt = {0.14f, 0.15f, 0.03f};
 
+  // The katana in hand-bone space. 0.83 m of blade -- half the miniboss's
+  // greatsword -- lying along the hand's +Y with the tip a little forward,
+  // which is the ordinary katana grip rather than the greatsword's +X.
+  const Vector3 kKimonoBlade = {0.05f, 0.83f, 0.10f};
+  const Vector3 kKimonoHilt = {0.01f, 0.06f, 0.01f};
+
   // Attack_H ("standing melee attack horizontal"): 147 keyframes, 2.417s
   // playable, in place. One cut, blade crossing the front t=0.90-1.10 (the tip
   // peaks 3.18 forward at t=0.98). 0.90 + 0.20 + 1.31 = 2.41. The long tail is
@@ -215,4 +221,72 @@ void AttackRegistry::InitializeCatalog() {
   fb_leap.addHitBoxDef(HitBoxDefinition::createCapsule(
       {-1.950f, 2.550f, 1.350f}, {1.950f, 1.950f, 1.350f}, 0.900f, 32.0f, 20.0f));
   attack_catalog.emplace(AttackID::FinalBossLeap, fb_leap);
+
+  // ---------------------------------------------------------------------
+  // The kimono swordsman.
+  //
+  // Every window below is where the KATANA TIP actually is, tracked frame by
+  // frame through the clip on this character's own rig -- the blade is one
+  // rigid bone (`L_Katana`) off the hand, so the tip is a real position and not
+  // an estimate. Reported as (t, forward, height, lateral) at 30 fps.
+  //
+  // The capsules are (right, up, forward), and each is drawn along the sweep
+  // the tip measured: a cut that travels left-to-right gets a capsule from -x
+  // to +x at the height the blade held. This character is 1.65 m, so these are
+  // noticeably tighter than the miniboss's 2.5 m greatsword boxes.
+  // ---------------------------------------------------------------------
+
+  // `Attack` ("great sword slash"): 39 frames, 1.267 s, in place. One cut, the
+  // tip crossing the front t=0.63-0.80 and falling 1.51 -> 0.41 in height as it
+  // goes -- a downward diagonal from high-left to low-right.
+  // 0.60 + 0.20 + 0.47 = 1.27.
+  AttackData km_swing(0.60f, 0.20f, 0.47f, "Attack", false);
+  km_swing.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {-0.35f, 1.45f, 1.10f}, {0.80f, 0.45f, 1.10f}, 0.55f, 30.0f, 18.0f));
+  attack_catalog.emplace(AttackID::KimonoSwing, km_swing);
+
+  // `Combo_1` ("standing melee combo attack ver. 2"): 127 frames, 4.200 s, in
+  // place. The brief's heavy cleave string, and it measures as one:
+  //   1. t=0.98-1.10  fwd 1.03-1.11, h 0.83-0.92, x -0.40 -> +0.63  (L to R)
+  //   2. t=1.60-1.72  fwd 0.99-1.06, h 0.74,      x +0.03 -> -0.63  (R to L)
+  //   3. t=2.56-2.74  fwd 1.05 -> 1.85, h 1.77 -> 0.08              (overhead,
+  //      driving into the ground, which is what the brief asked hit 1 to do and
+  //      what this clip in fact does last)
+  // 0.98 + 0.12 + 0.50 + 0.12 + 0.84 + 0.18 + 1.46 = 4.20.
+  AttackData km_cleave(0.98f, 0.12f, 1.46f, "Combo_1", false);
+  km_cleave.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {-1.20f, 0.90f, 1.05f}, {1.20f, 0.90f, 1.05f}, 0.55f, 26.0f, 14.0f));
+  km_cleave.addSwing(0.50f, 0.12f);
+  km_cleave.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {1.20f, 0.78f, 1.05f}, {-1.20f, 0.78f, 1.05f}, 0.55f, 26.0f, 14.0f));
+  // The finisher. A near-vertical capsule, because the tip covers 1.7 m of
+  // height in 0.18 s: a horizontal bar at any one height would miss most of it.
+  km_cleave.addSwing(0.84f, 0.18f);
+  km_cleave.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {0.0f, 1.70f, 1.15f}, {0.0f, 0.15f, 1.60f}, 0.62f, 38.0f, 22.0f));
+  km_cleave.setTrail(true, 0.26f, kKimonoBlade, kKimonoHilt);
+  attack_catalog.emplace(AttackID::KimonoCleave, km_cleave);
+
+  // `Combo_2` ("standing melee combo attack ver. 1"): 141 frames, 4.667 s, and
+  // the only kimono attack that TRAVELS -- 1.53 m forward, which is the brief's
+  // lunge. Root motion is on, so that advance is gameplay and not just picture.
+  //   1. t=0.45-0.71  fwd 0.81-0.92, h ~0.75, x -0.32 -> +0.60  (step-in cut,
+  //      slower than the other two: tip speed 3.7-4.9 against 11-19)
+  //   2. t=1.90-2.12  fwd 0.90 -> 1.72, h ~1.02, x -1.01 -> +1.25  (the sweep)
+  //   3. t=2.83-3.05  fwd 0.93 -> 2.08, h 0.76 -> 1.88, x +0.73 -> -1.10
+  //      (rising diagonal, the deepest reach of any clip in the pack)
+  // The tip moves again at t=3.60-3.90 but at 3-6 rather than 13-19; that is
+  // the blade being carried back down into the stance, not a fourth hit.
+  // 0.45 + 0.26 + 1.19 + 0.22 + 0.71 + 0.22 + 1.62 = 4.67.
+  AttackData km_lunge(0.45f, 0.26f, 1.62f, "Combo_2", true);
+  km_lunge.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {-1.00f, 0.85f, 0.95f}, {1.00f, 0.85f, 0.95f}, 0.50f, 22.0f, 12.0f));
+  km_lunge.addSwing(1.19f, 0.22f);
+  km_lunge.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {-1.30f, 1.00f, 1.25f}, {1.30f, 1.00f, 1.25f}, 0.55f, 30.0f, 16.0f));
+  km_lunge.addSwing(0.71f, 0.22f);
+  km_lunge.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {1.00f, 0.78f, 1.15f}, {-1.10f, 1.75f, 1.50f}, 0.60f, 34.0f, 20.0f));
+  km_lunge.setTrail(true, 0.26f, kKimonoBlade, kKimonoHilt);
+  attack_catalog.emplace(AttackID::KimonoLunge, km_lunge);
 }

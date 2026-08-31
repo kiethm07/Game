@@ -88,6 +88,13 @@ private:
   /// Per-enemy only. The global gates -- already executing, an aerial drop
   /// already committed -- belong to the callers, which is why they are not
   /// tested here.
+  ///
+  /// Never answers Aerial or Stealth for a boss type. Both routes kill on
+  /// contact, and a boss a phase's campfire is gated on cannot be skippable by
+  /// creeping up behind it -- which it was, because a boss standing at its post
+  /// has never seen the player and is therefore Unaware, the same state that
+  /// makes a patrolling mook backstabbable. A boss is Combat or nothing, and
+  /// Combat still requires its guard to have been broken in a real fight.
   TakedownKind availableTakedown(const Enemy &enemy) const;
 
   /// One clickable row on the defeat screen: where it is, what it says, and

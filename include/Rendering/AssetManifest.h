@@ -144,6 +144,48 @@ static const AssetID kAshigaruSource = AssetID::PLAYER_WOLF;
 // are all four strafes -- nothing reads a strafe's travel, and carrying any
 // made every direction change fade a root cancellation against a fresh zero.
 
+// The kimono swordsman. The only character here whose model was NOT already on
+// a Mixamo rig and did not come from a Mixamo pack -- it arrived as a 105-bone
+// 3ds Max Biped with a hidden duplicate of itself in the file. So it has a
+// pipeline of its own, run end to end by tools/rebuild_kimono.sh:
+//   1. tools/make_kimono_source.py reduces GH10_textured.blend to one clean
+//      character: deletes the `Backup` collection (a complete second copy that
+//      a hidden LayerCollection does NOT keep out of an export), joins the 183
+//      loose head and hair pieces into one mesh and RIGID-binds them to `Head`
+//      -- they arrived parented to nothing, which looks right in the bind pose
+//      and detaches the moment anything animates -- and drops the second of the
+//      two katanas. Writes kimono.blend.
+//   2. tools/retarget_kimono.py moves it onto the Mixamo rig. Two things make
+//      this one different from the other two retargets:
+//        * THE SIDE NAMES ARE MIRRORED. Both rigs face -Y, but Mixamo's
+//          LeftFoot is at x=+0.098 and this rig's L_Foot at x=-0.074, so `L_`
+//          maps to `Right*`. Mapping by name would have built a mirrored
+//          character -- every clip reversed, sword in the wrong fist -- which
+//          reads as bad animation rather than as a bad table, so the script
+//          asserts the measurement before it runs.
+//        * 47 of its bones have no Mixamo counterpart and carry real weight
+//          (the hakama, the haori panels, the blade). They are rebuilt onto
+//          the Mixamo rig at their own rest positions rather than dropped.
+//          Nothing animates them; they follow their parents through FK.
+//      69 + 47 = 116 joints against MAX_BONE_NUM 128 in skinning.vs, and the
+//      script refuses to exceed it.
+//   3. tools/build_kimono_pack.py swaps the borrowed player clips for Mixamo's
+//      Great Sword pack, every file chosen off a measurement of what it does
+//      rather than off its name -- see SOURCES there.
+//   4. tools/merge_animations.py -> KimonoEnemy.glb
+//   5. tools/bake_root_motion.py -> KimonoEnemy.rootmotion.glb
+//
+// 16 clips, named for the states they serve, so descTable() hands it a table of
+// its own -- the fourth. Two of the states in the brief this was built to have
+// no clip and fall back the way the ashigaru's do: GuardWalk resolves to Guard
+// and StrafeForward to Walk, because the greatsword pack ships neither a
+// guarded walk nor a forward dash and neither is worth faking.
+//
+// The blade is `L_Katana`, one rigid bone off the hand -- the same arrangement
+// as the miniboss's greatsword, so the runtime needs nothing for it. Its
+// attacks in AttackRegistry.cpp are timed off the tip measured through the
+// clips, not off the clip's length.
+
 static const AssetEntry kAssets[] = {
     {AssetID::PLAYER_WOLF, "Sekiro.rootmotion.glb", "Sekiro.rootmotion.glb",
      RendererKind::SkinnedCharacter},
@@ -152,5 +194,7 @@ static const AssetEntry kAssets[] = {
     {AssetID::ENEMY_MINIBOSS, "MiniBoss.rootmotion.glb", "MiniBoss.rootmotion.glb",
      RendererKind::SkinnedCharacter},
     {AssetID::ENEMY_FINALBOSS, "FinalBoss.rootmotion.glb", "FinalBoss.rootmotion.glb",
+     RendererKind::SkinnedCharacter},
+    {AssetID::ENEMY_KIMONO, "KimonoEnemy.rootmotion.glb", "KimonoEnemy.rootmotion.glb",
      RendererKind::SkinnedCharacter},
 };

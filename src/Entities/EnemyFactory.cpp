@@ -24,6 +24,13 @@ std::unique_ptr<Enemy> EnemyFactory::createEnemy(const EnemySpawn &spawn) {
         return std::make_unique<Swordman>(spawn, AssetID::ENEMY_MINIBOSS);
     case EnemyType::FinalBoss:
         return std::make_unique<Swordman>(spawn, AssetID::ENEMY_FINALBOSS);
+
+    // Same shape as the two above, and for the same reason: a Swordman whose
+    // AssetID is the whole of the difference. That one argument selects the
+    // model, the clip-name table in SwordmanAnimator::descTable and, through
+    // Swordman's constructor, the attack rotation.
+    case EnemyType::Kimono_enemy:
+        return std::make_unique<Swordman>(spawn, AssetID::ENEMY_KIMONO);
     }
     throw std::runtime_error("Unknown EnemyType in EnemyFactory");
 }

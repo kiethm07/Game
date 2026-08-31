@@ -96,11 +96,48 @@ const SwordmanAnimator::Machine::Desc *SwordmanAnimator::descTable(AssetID asset
       /* GuardWalk   */ {"GuardWalk", true, 1.0f, false, 0.10f},
   };
 
+  // The nodachi pack, built by tools/build_kimono_pack.py. 16 clips, named for
+  // the state they serve.
+  //
+  // Two rows point somewhere else, and it is worth saying which and why rather
+  // than leaving them looking like copy-paste. The greatsword pack ships no
+  // guarded walk and no forward dash, so GuardWalk holds the standing Guard and
+  // StrafeFwd plays Walk -- the same two fallbacks the ashigaru has always
+  // shipped. Both are one clip away from being real if the pack ever grows one.
+  static const Machine::Desc kimono[Machine::STATE_COUNT] = {
+      //                clip          loop   rate   root   fadeIn
+      /* Idle        */ {"Idle", true, 1.0f, false, 0.15f},
+      /* Walk        */ {"Walk", true, 1.0f, false, 0.15f},
+      /* Run         */ {"Run", true, 1.0f, false, 0.15f},
+      /* StrafeFwd   */ {"Walk", true, 1.0f, false, 0.15f},
+      /* StrafeBack  */ {"StrafeBack", true, 1.0f, false, 0.15f},
+      /* StrafeLeft  */ {"StrafeLeft", true, 1.0f, false, 0.15f},
+      /* StrafeRight */ {"StrafeRight", true, 1.0f, false, 0.15f},
+      /* Fall        */ {"Fall", true, 1.0f, false, 0.15f},
+      // Both guard clips are real mocap here rather than authored: `great sword
+      // blocking (2)` is the only one of the three blockings that HOLDS (30
+      // frames with the hips flat at 0.762-0.766, where the other two run
+      // 0.764 -> 0.994 and are the transitions into and out of it), and `great
+      // sword impact` is the only impact that keeps the hips at that same guard
+      // height, which makes it the flinch that belongs on a raised guard rather
+      // than one played from standing.
+      /* GuardImpact */ {"GuardImpact", false, 1.0f, false, 0.05f},
+      /* HitReact    */ {"HitReact", false, 1.0f, false, 0.05f},
+      // Fallback swing; all three of this character's attacks name their own.
+      /* Attack      */ {"Attack", false, 1.0f, false, 0.05f},
+      /* PostureBreak*/ {"PostureBreak", false, 1.0f, false, 0.08f},
+      /* Death       */ {"Death", false, 1.0f, false, 0.10f},
+      /* Guard       */ {"Guard", false, 1.0f, false, 0.08f},
+      /* GuardWalk   */ {"Guard", true, 1.0f, false, 0.10f},
+  };
+
   switch (asset) {
   case AssetID::ENEMY_MINIBOSS:
     return miniboss;
   case AssetID::ENEMY_FINALBOSS:
     return finalboss;
+  case AssetID::ENEMY_KIMONO:
+    return kimono;
   default:
     return ashigaru;
   }
