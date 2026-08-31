@@ -22,8 +22,12 @@ public:
     void resumeMusic();
     void updateMusic();
     void setMusicVolume(float volume);
+    void toggleMusicMute();
+    void setMusicMuted(bool muted);
+    bool isMusicMuted() const;
 
 private:
+    float effectiveMusicVolume(float scale) const;
     const AssetManager& asset_manager;
 
     float sfx_volume = 1.0f;
@@ -34,6 +38,7 @@ private:
     bool is_music_playing = false;
     bool has_current_music = false;
     bool is_fading = false;
+    bool is_music_muted = false;
     float current_volume_scale = 1.0f;
     float previous_volume_scale = 0.0f;
     AssetID current_music_id = AssetID::BGM_EXPLORE;

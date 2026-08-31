@@ -96,6 +96,13 @@ void SoundController::resumeMusic() {
     }
 }
 
+float SoundController::effectiveMusicVolume(float scale) const {
+    if (is_music_muted) {
+        return 0.0f;
+    }
+    return music_volume * scale;
+}
+
 void SoundController::updateMusic() {
     float dt = GetFrameTime();
     if (dt <= 0.0f || dt > 0.1f) {
@@ -125,21 +132,45 @@ void SoundController::updateMusic() {
 
     if (is_music_playing && current_music.stream.buffer != nullptr) {
         UpdateMusicStream(current_music);
-        SetMusicVolume(current_music, music_volume * current_volume_scale);
+        SetMusicVolume(current_music, effectiveMusicVolume(current_volume_scale));
     }
 
     if (previous_music.stream.buffer != nullptr) {
         UpdateMusicStream(previous_music);
-        SetMusicVolume(previous_music, music_volume * previous_volume_scale);
+        SetMusicVolume(previous_music, effectiveMusicVolume(previous_volume_scale));
     }
 }
 
 void SoundController::setMusicVolume(float volume) {
     music_volume = volume;
     if (current_music.stream.buffer != nullptr) {
-        SetMusicVolume(current_music, music_volume * current_volume_scale);
+        SetMusicVolume(current_music, effectiveMusicVolume(current_volume_scale));
     }
     if (previous_music.stream.buffer != nullptr) {
-        SetMusicVolume(previous_music, music_volume * previous_volume_scale);
+        SetMusicVolume(previous_music, effectiveMusicVolume(previous_volume_scale));
     }
+}
+
+void SoundController::toggleMusicMute() {
+    is_music_muted = !is_music_muted;
+    if (current_music.stream.buffer != nullptr) {
+        SetMusicVolume(current_music, effectiveMusicVolume(current_volume_scale));
+    }
+    if (previous_music.stream.buffer != nullptr) {
+        SetMusicVolume(previous_music, effectiveMusicVolume(previous_volume_scale));
+    }
+}
+
+void SoundController::setMusicMuted(bool muted) {
+    is_music_muted = muted;
+    if (current_music.stream.buffer != nullptr) {
+        SetMusicVolume(current_music, effectiveMusicVolume(current_volume_scale));
+    }
+    if (previous_music.stream.buffer != nullptr) {
+        SetMusicVolume(previous_music, effectiveMusicVolume(previous_volume_scale));
+    }
+}
+
+bool SoundController::isMusicMuted() const {
+    return is_music_muted;
 }

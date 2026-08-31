@@ -23,6 +23,10 @@ void Game::update() {
         input_manager.update();
         sound_controller.updateMusic();
 
+        if (IsKeyPressed(KEY_M)) {
+            sound_controller.toggleMusicMute();
+        }
+
         float dt = time_manager.getDeltaTime();
         StateAction action = states.back()->update(dt);
         // // Handle state actions if needed
@@ -95,6 +99,25 @@ void Game::draw() {
     if (!states.empty()) {
         states.back()->draw();
     }
+
+    // Down-right corner BGM mute notation
+    const int screen_w = GetScreenWidth();
+    const int screen_h = GetScreenHeight();
+    const int font_size = 15;
+
+    const char *mute_text = "[M] Mute BGM";
+    Color text_color = Fade(Color{235, 232, 225, 255}, 0.55f);
+    if (sound_controller.isMusicMuted()) {
+        mute_text = "[M] BGM: MUTED";
+        text_color = Fade(Color{230, 80, 80, 255}, 0.9f);
+    }
+
+    const int text_w = MeasureText(mute_text, font_size);
+    const int text_x = screen_w - text_w - 18;
+    const int text_y = screen_h - font_size - 12;
+
+    DrawRectangle(text_x - 6, text_y - 3, text_w + 12, font_size + 6, Fade(BLACK, 0.45f));
+    DrawText(mute_text, text_x, text_y, font_size, text_color);
 }
 
 void Game::pushState(std::unique_ptr<GameState> state) {
