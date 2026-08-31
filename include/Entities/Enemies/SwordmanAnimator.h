@@ -112,6 +112,21 @@ public:
   /// when locomotionSpeed() becomes meaningful.
   bool resolveClips(const AssetManager &assets);
 
+  /// True while the swing rung is what is on screen. Attack root motion is
+  /// gated on this rather than on the combat state alone: a flinch or a posture
+  /// break outranks the swing in resolve(), and a clip that is no longer
+  /// playing must not still be driving the character forward.
+  bool playingAttack() const { return last_state == SwordmanAnimState::Attack; }
+
+  /// The root track of the clip currently playing, or nullptr before the first
+  /// update.
+  const RootMotion::Track *activeTrack() const { return last_track; }
+
+  /// This frame's root translation, in the model's local space.
+  Vector3 sampleRootDelta(const RootMotion::Track &track) const {
+    return anim.sampleRootDelta(track);
+  }
+
   /// The speed the character would have to travel to keep the walk clip's feet
   /// planted, or 0 when that clip has no authored travel. Nothing consumes it
   /// yet; it is what an AI that chases should move at.
@@ -163,6 +178,11 @@ private:
   /// -- best frame 0.575 m against frame 0's 0.577 m, which is no improvement
   /// worth cutting a second off the clip for.
   float death_from_bow_start = 0.0f;
+
+  /// The root track of the clip the last update() actually played, and the
+  /// state it played it for. Null until the first update.
+  const RootMotion::Track *last_track = nullptr;
+  SwordmanAnimState last_state = SwordmanAnimState::Idle;
 
   /// The flinch queueReaction() left for the next updateFlinch() to start, or
   /// Count for none.

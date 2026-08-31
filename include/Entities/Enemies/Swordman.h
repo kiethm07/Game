@@ -14,6 +14,10 @@ public:
   /// draws its own model without a class of its own. Default matches
   /// SwordmanAnimator's -- the ashigaru borrowing the player's asset.
   Swordman(const EnemySpawn &spawn, AssetID asset = AssetID::ENEMY_ASHIGARU);
+
+  /// Ceiling on the speed an attack's authored travel may produce, in m/s.
+  /// Only a dt spike can reach it; the final boss's leap peaks near 6.
+  static constexpr float MAX_ATTACK_ROOT_SPEED = 20.0f;
   ~Swordman() override = default;
 
   void update(const UpdateContext &ctx) override;
@@ -25,6 +29,16 @@ protected:
   void onDamaged(bool blocked, bool parried) override;
 
 private:
+  /// Drives the character from the playing attack clip's own travel, for
+  /// attacks whose AttackData asks for it. Enemies were in place by
+  /// construction before this: the flag existed on AttackData but only the
+  /// player ever read it.
+  void applyAttackRootMotion(float dt);
+
+  /// Whether applyAttackRootMotion wrote the horizontal velocity last frame,
+  /// and therefore owes a release when it stops.
+  bool root_motion_driving = false;
+
   /// The attacks this enemy throws, in the order it throws them, wrapping at
   /// the end. One entry for an ashigaru -- it has exactly one swing, so the
   /// rotation is a rotation of one and behaves as it always did. Three for the

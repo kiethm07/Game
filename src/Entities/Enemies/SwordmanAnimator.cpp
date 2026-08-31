@@ -57,7 +57,53 @@ const SwordmanAnimator::Machine::Desc *SwordmanAnimator::descTable(AssetID asset
       /* GuardWalk   */ {"GuardWalk", true, 1.0f, false, 0.10f},
   };
 
-  return asset == AssetID::ENEMY_MINIBOSS ? miniboss : ashigaru;
+  // The Mutant pack. 17 clips, all named for the state they serve, and the
+  // only one of the three sets with a strafe for every direction -- the four
+  // are generated from Walk by tools/make_finalboss_moves.py, so StrafeFwd is
+  // a clip of its own here rather than an alias for Walk the way it is above.
+  static const Machine::Desc finalboss[Machine::STATE_COUNT] = {
+      //                clip          loop   rate   root   fadeIn
+      /* Idle        */ {"Idle", true, 1.0f, false, 0.15f},
+      /* Walk        */ {"Walk", true, 1.0f, false, 0.15f},
+      /* Run         */ {"Run", true, 1.0f, false, 0.15f},
+      /* StrafeFwd   */ {"StrafeFwd", true, 1.0f, false, 0.15f},
+      /* StrafeBack  */ {"StrafeBack", true, 1.0f, false, 0.15f},
+      /* StrafeLeft  */ {"StrafeLeft", true, 1.0f, false, 0.15f},
+      /* StrafeRight */ {"StrafeRight", true, 1.0f, false, 0.15f},
+      // No Fall clip in this pack. The rung falls through to locomotion, which
+      // is what every optional state does and what the ashigaru does here too.
+      /* Fall        */ {nullptr, true, 1.0f, false, 0.15f},
+      // The crossed-arm block, authored by tools/make_finalboss_guard.py: both
+      // forearms brought up into an X in front of the face. GuardImpact is that
+      // same hold driven back into the body, laid over HitReact, so the flinch
+      // and the hold share one pose.
+      /* GuardImpact */ {"GuardImpact", false, 1.0f, false, 0.05f},
+      /* HitReact    */ {"HitReact", false, 1.0f, false, 0.05f},
+      // Fallback swing. Every attack this boss throws names its own clip, so
+      // this is only reached if one names a clip the pack does not carry.
+      //
+      // 0.10 s of fade, twice the other two packs'. This character is 1.85 m of
+      // heavy limbs and it enters the swing from a strafe -- a mid-stride pose
+      // roughly 0.4 m of mean joint travel away from the swing's opening stance
+      // -- and 0.05 s is three frames to cover that, which reads as a snap. The
+      // extra 0.05 s costs nothing that matters: the earliest hitbox of the
+      // three attacks opens at 0.17 s (the jab), and the other two at 0.83 and
+      // 1.33, so the fade is always finished well before anything can connect.
+      /* Attack      */ {"Attack", false, 1.0f, false, 0.10f},
+      /* PostureBreak*/ {"PostureBreak", false, 1.0f, false, 0.08f},
+      /* Death       */ {"Death", false, 1.0f, false, 0.10f},
+      /* Guard       */ {"Guard", false, 1.0f, false, 0.08f},
+      /* GuardWalk   */ {"GuardWalk", true, 1.0f, false, 0.10f},
+  };
+
+  switch (asset) {
+  case AssetID::ENEMY_MINIBOSS:
+    return miniboss;
+  case AssetID::ENEMY_FINALBOSS:
+    return finalboss;
+  default:
+    return ashigaru;
+  }
 }
 
 SwordmanAnimator::SwordmanAnimator(AssetID asset)
@@ -66,6 +112,19 @@ SwordmanAnimator::SwordmanAnimator(AssetID asset)
   // close enough to its own broken-posture pose for the entry point to be
   // worth moving.
   if (asset == AssetID::ENEMY_MINIBOSS) death_from_bow_start = 1.08f;
+
+  // The final boss's Death is `mutant dying` trimmed, so it opens standing and
+  // staggers before it falls -- 0.369 m above the pose PostureBreak leaves the
+  // body in. Frame 56 (1.833 s) is where the fall has come down to the kneel's
+  // own hip height, within 0.043 m.
+  //
+  // Measured and NOT chosen on the miniboss's criterion. Mean joint distance
+  // actually prefers frame 0 here (0.356 m against frame 56's 0.404), because
+  // the kneel's limbs happen to sit more like a standing stagger than like a
+  // body mid-fall. Height wins anyway: a corpse jumping a third of a metre
+  // upward is what an eye catches, while a limb arranged differently at the
+  // same height is covered by this state's own 0.10 s cross-fade.
+  if (asset == AssetID::ENEMY_FINALBOSS) death_from_bow_start = 1.833f;
 }
 
 bool SwordmanAnimator::resolveClips(const AssetManager &assets) {
@@ -270,5 +329,10 @@ SwordmanAnimator::resolve(const Frame &frame) const {
 }
 
 void SwordmanAnimator::update(const Frame &frame, float dt) {
-  anim.apply(frame.assets, dt, resolve(frame));
+  const Machine::Selection selection = resolve(frame);
+  // Kept so the caller can consume an attack's authored travel. apply() already
+  // returns the track of whatever ended up playing, and throwing it away was
+  // what made every enemy clip in-place by construction rather than by choice.
+  last_track = &anim.apply(frame.assets, dt, selection);
+  last_state = selection.state;
 }

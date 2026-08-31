@@ -115,4 +115,104 @@ void AttackRegistry::InitializeCatalog() {
       {0.0f, 1.60f, 0.90f}, {0.0f, 0.35f, 1.90f}, 0.70f, 45.0f, 25.0f));
   mb_triple.setTrail(true, 0.28f, kMiniBossBlade, kMiniBossHilt);
   attack_catalog.emplace(AttackID::MiniBossTripleSwing, mb_triple);
+
+  // ---------------------------------------------------------------------
+  // The final boss, on the Mutant pack (assets/FinalBoss.rootmotion.glb).
+  //
+  // Timed off the FISTS, not a blade: this character carries no weapon, so the
+  // trajectory that matters is its own hands. Both are carried through each
+  // clip's joint hierarchy the way the miniboss's sword tip is -- and on this
+  // rig that is not the hand BONE. The Mutant has no `mixamorig:LeftHand`
+  // vertex group at all; its oversized left arm is one rigid club weighted to
+  // the forearm and reaching 0.953 m past the elbow, so the visible left fist
+  // is measured out along the FOREARM (tools/finalboss_rig.py, LIMB_TIP). The
+  // right arm is ordinary.
+  //
+  // A window is a frame range where a fist is both forward of the body and
+  // moving faster than 6 m/s. The times quoted per swing are those frames.
+  //
+  // REACHES BELOW ARE QUOTED AT AUTHORING SCALE, and the capsules are those
+  // figures times 1.5 -- tools/scale_finalboss.py takes the whole rig to
+  // 2.792 m as the last step before export, so every measurement taken in the
+  // .blend is 1/1.5 of what the shipped asset does. Times are unaffected:
+  // scaling a rig does not change when a fist crosses the body.
+  // Every clip's playable length is one frame shorter than its authored length
+  // (RootMotion::Track::duration), and the phase sums below are against the
+  // playable figure.
+  //
+  // No trails. setTrail draws a weapon arc between a hilt and a tip, which is
+  // a thing this character does not have.
+
+  // `Attack` (a right jab, then a left club swing): 60 frames, 1.967 s
+  // playable, in place to 0.000 m. Two hits:
+  //   1. t=0.17-0.30, the jab, fist reaching 0.91 m forward at 0.59 high
+  //   2. t=1.47-1.60, the club coming across low, 1.31 m out at 0.48
+  // 0.17 + 0.13 + 1.17 + 0.13 + 0.37 = 1.97. The long gap between them is the
+  // punch's own recovery, which the swing is appended after rather than into.
+  AttackData fb_punch(0.17f, 0.13f, 0.37f, "Attack", false);
+  fb_punch.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {0.000f, 1.125f, 0.450f}, {0.000f, 0.900f, 1.950f}, 0.825f, 30.0f, 18.0f));
+  fb_punch.addSwing(1.17f, 0.13f);
+  fb_punch.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {2.250f, 0.825f, 1.425f}, {-2.250f, 0.825f, 1.425f}, 0.900f, 35.0f, 20.0f));
+  attack_catalog.emplace(AttackID::FinalBossPunch, fb_punch);
+
+  // `Attack_Rapid` (five alternating swipes): 97 frames, 3.200 s playable, in
+  // place to 0.000 m. Five hits, alternating arms -- the odd ones are the left
+  // club sweeping low and wide, the even ones the shorter right arm coming over
+  // the top, which is why their reaches and heights differ:
+  //   1. t=0.83-1.00, left,  1.52 m out at 1.13
+  //   2. t=1.13-1.40, right, 0.95 m out at 1.89
+  //   3. t=1.77-1.93, left,  1.52 m out at 1.13
+  //   4. t=2.07-2.33, right, 0.95 m out at 1.89
+  //   5. t=2.70-2.83, left,  1.31 m out at 0.49
+  // 0.83 + 0.17 + 0.13 + 0.27 + 0.37 + 0.17 + 0.14 + 0.26 + 0.37 + 0.13 + 0.36
+  // = 3.20. Per-hit damage is deliberately low: five of these landing in full
+  // is 110, which is more than any single miniboss combo and is meant to be the
+  // punish for standing in it.
+  AttackData fb_flurry(0.83f, 0.17f, 0.36f, "Attack_Rapid", false);
+  fb_flurry.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {2.400f, 1.650f, 1.650f}, {-2.400f, 1.650f, 1.650f}, 0.900f, 22.0f, 14.0f));
+  fb_flurry.addSwing(0.13f, 0.27f);
+  fb_flurry.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {-1.800f, 2.625f, 1.275f}, {1.800f, 2.025f, 1.275f}, 0.825f, 22.0f, 14.0f));
+  fb_flurry.addSwing(0.37f, 0.17f);
+  fb_flurry.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {2.400f, 1.650f, 1.650f}, {-2.400f, 1.650f, 1.650f}, 0.900f, 22.0f, 14.0f));
+  fb_flurry.addSwing(0.14f, 0.26f);
+  fb_flurry.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {-1.800f, 2.625f, 1.275f}, {1.800f, 2.025f, 1.275f}, 0.825f, 22.0f, 14.0f));
+  fb_flurry.addSwing(0.37f, 0.13f);
+  fb_flurry.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {2.250f, 0.825f, 1.425f}, {-2.250f, 0.825f, 1.425f}, 0.900f, 22.0f, 14.0f));
+  attack_catalog.emplace(AttackID::FinalBossFlurry, fb_flurry);
+
+  // `Attack_Jump` (the leap, a landing slam, then two swings): 102 frames,
+  // 3.367 s playable, and the ONE enemy attack in the game that travels --
+  // 2.556 m forward (1.704 at authoring scale), consumed through
+  // usesRootMotion() below. Three hits:
+  //   1. t=1.33-1.67, the landing slam, both fists coming down
+  //   2. t=2.27-2.57, left club across
+  //   3. t=2.70-3.00, right arm over the top
+  // 1.33 + 0.34 + 0.60 + 0.30 + 0.13 + 0.30 + 0.37 = 3.37.
+  //
+  // The airborne window at t=0.33-0.67 is NOT a hit: it is the arms coming up
+  // as the character leaves the ground, and a hitbox there would catch a player
+  // standing where the boss started rather than where it lands.
+  //
+  // Capsule reach is quoted from the body, not from the clip. The measured fist
+  // positions run to 3.2 m forward, but 1.70 of that is the leap itself, and
+  // the capsule is placed in the character's own space AFTER root motion has
+  // moved it -- so counting the travel twice would give the slam nearly double
+  // the reach it looks like it has.
+  AttackData fb_leap(1.33f, 0.34f, 0.37f, "Attack_Jump", true);
+  fb_leap.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {1.350f, 2.100f, 0.600f}, {-1.350f, 0.300f, 2.250f}, 1.125f, 55.0f, 32.0f));
+  fb_leap.addSwing(0.60f, 0.30f);
+  fb_leap.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {2.550f, 1.350f, 1.650f}, {-2.550f, 1.350f, 1.650f}, 0.975f, 32.0f, 20.0f));
+  fb_leap.addSwing(0.13f, 0.30f);
+  fb_leap.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {-1.950f, 2.550f, 1.350f}, {1.950f, 1.950f, 1.350f}, 0.900f, 32.0f, 20.0f));
+  attack_catalog.emplace(AttackID::FinalBossLeap, fb_leap);
 }

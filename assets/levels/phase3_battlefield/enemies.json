@@ -2,24 +2,6 @@
   "format": 1,
   "spawns": [
     {
-      "type": "Swordman",
-      "x": -22.71,
-      "z": 9.33,
-      "yaw": 125.6
-    },
-    {
-      "type": "Swordman",
-      "x": -43.92,
-      "z": -11.88,
-      "yaw": 98.0
-    },
-    {
-      "type": "Swordman",
-      "x": -65.13,
-      "z": -33.09,
-      "yaw": 81.7
-    },
-    {
       "type": "FinalBoss",
       "x": -31.81,
       "z": -10.04,

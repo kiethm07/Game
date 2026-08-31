@@ -31,9 +31,43 @@ Swordman::Swordman(const EnemySpawn &spawn, AssetID asset)
   // back to normal. Keyed on the ASSET rather than on the spawn's EnemyType,
   // because what decides whether these attacks can be played is whether the
   // model carries the clips they name -- `Attack_H`, `Combo_3` and `Combo_2`
-  // exist in the greatsword pack and nowhere else. Anything on the player's
-  // borrowed set keeps the single light swing it always had.
-  if (asset == AssetID::ENEMY_MINIBOSS) {
+  // exist in the greatsword pack and nowhere else, and `Attack_Rapid` and
+  // `Attack_Jump` only in the Mutant pack. Anything on the player's borrowed
+  // set keeps the single light swing it always had.
+  if (asset == AssetID::ENEMY_FINALBOSS) {
+    attack_pattern = {Combo{AttackID::FinalBossPunch},
+                      Combo{AttackID::FinalBossFlurry},
+                      Combo{AttackID::FinalBossLeap}};
+
+    // The boss is 2.792 m -- tools/scale_finalboss.py takes the rig to 1.5x as
+    // the last step before export -- so its hurtbox and head marker scale with
+    // it. Left at Enemy's 2.0/0.5 defaults the capsule would cover only the
+    // bottom two thirds of the model: the head would not be hittable and the
+    // posture bar would float inside the chest.
+    body_height = 3.0f;
+    body_radius = 0.75f;
+
+    // The Mutant pack's Walk is authored at 1.83 m/s (2.596 m over its 85
+    // playable frames at 60 Hz) and its Run at 3.31, so SwordmanAnimator takes
+    // Run over Walk above 2.93 -- RUN_SPEED_FACTOR x the walk. Both speeds are
+    // set against those two numbers rather than copied from the miniboss, whose
+    // pack is authored differently again:
+    //   * 2.55 keeps the approach under the threshold and plays the walk at
+    //     1.39x, and circling (walk_speed x 0.8 = 2.04) at 1.11x.
+    //   * 5.70 plays the run at 1.72x, which is a charge without being the
+    //     slow-motion sprint that picking a speed off the wrong pack produces.
+    //
+    // Both are the pre-scale values times the same 1.5 the rig grew by. That is
+    // not a coincidence to be tidied away: the clips' authored speeds scaled
+    // with the rig, so scaling the character speeds by the same factor is what
+    // keeps every clip playing at the rate it was tuned to.
+    walk_speed = 2.55f;
+    run_speed = 5.7f;
+
+    // No gait switch, for the same reason as the miniboss: the charge is meant
+    // to stay a charge all the way in.
+    gait_switch_distance = 0.0f;
+  } else if (asset == AssetID::ENEMY_MINIBOSS) {
     attack_pattern = {Combo{AttackID::MiniBossSwing},
                       Combo{AttackID::MiniBossDoubleSwing},
                       Combo{AttackID::MiniBossTripleSwing}};
@@ -184,6 +218,7 @@ void Swordman::update(const UpdateContext &ctx) {
   frame.grounded = isGrounded();
 
   animator.update(frame, dt);
+  applyAttackRootMotion(dt);
 
   if (combat_component.getCurrentState() == CombatState::AttackActive && ctx.assets != nullptr) {
     const AttackData *attack = combat_component.getActiveAttack();
@@ -205,6 +240,58 @@ void Swordman::update(const UpdateContext &ctx) {
       }
     }
   }
+}
+
+void Swordman::applyAttackRootMotion(float dt) {
+  // Enemy attacks were in place by construction until this existed: the
+  // animator threw away the track apply() handed back, so no enemy clip's
+  // authored travel could reach the character controller even though
+  // AttackData has carried a usesRootMotion() flag all along. Only the player
+  // consumed it. The final boss's `Attack_Jump` leaps 1.704 m, and without this
+  // it would take off, land on the spot it started from, and snap the mesh back
+  // when the renderer cancelled the travel it could not consume.
+  // Gated on the ANIMATION, not on the combat state alone. A flinch or a
+  // posture break outranks the swing in the animator's ladder, so the combat
+  // machine can still be in an attack phase while something else is on screen
+  // -- and a clip that is not playing must not drive the character.
+  const AttackData *attack = combat_component.getActiveAttack();
+  const RootMotion::Track *track = animator.activeTrack();
+  const bool driving = dt > 0.0f && animator.playingAttack() &&
+                       attack != nullptr && attack->usesRootMotion() &&
+                       track != nullptr && track->hasMotion;
+
+  if (!driving) {
+    // Release what we took. While driving, this function OWNS the horizontal
+    // velocity -- it overwrites whatever the behavior tree wrote earlier in the
+    // frame -- so when it stops driving, the last value it wrote is still in
+    // there and nothing else is obliged to clear it. An attack cut short
+    // mid-leap by a flinch or a posture break would otherwise coast on its last
+    // root velocity until the AI happened to write a new one. Player::update
+    // pins velocity to zero in the same situation and for the same reason.
+    if (root_motion_driving) {
+      setHorizontalVelocity({0.0f, 0.0f, 0.0f});
+      root_motion_driving = false;
+    }
+    return;
+  }
+  root_motion_driving = true;
+
+  // Expressed as a velocity rather than a position offset, exactly as
+  // Player::applyRootMotion does it, so the travel flows through
+  // PhysicsManager's depenetration and ground snapping. Writing the position
+  // here would let a leaping boss pass through a wall.
+  const Vector3 local = animator.sampleRootDelta(*track);
+  const Vector3 world = RootMotion::toWorld(local, rotation.y);
+  Vector3 velocity = Vector3Scale(world, 1.0f / dt);
+
+  // A dt spike (a breakpoint, a dragged window) would otherwise turn one
+  // frame's travel into an arbitrarily large velocity and tunnel the boss
+  // through the level.
+  const float speed = Vector3Length(velocity);
+  if (speed > MAX_ATTACK_ROOT_SPEED)
+    velocity = Vector3Scale(velocity, MAX_ATTACK_ROOT_SPEED / speed);
+
+  setHorizontalVelocity({velocity.x, 0.0f, velocity.z});
 }
 
 void Swordman::onDamaged(bool blocked, bool parried) {

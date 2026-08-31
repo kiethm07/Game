@@ -18,11 +18,12 @@ std::unique_ptr<Enemy> EnemyFactory::createEnemy(const EnemySpawn &spawn) {
     // phase-2 campfire gate reads that rather than guessing from stats or
     // position. MiniBoss also draws its own model (AssetID::ENEMY_MINIBOSS,
     // see AssetManifest.h) rather than the player's borrowed by everything
-    // else built as a Swordman; FinalBoss has none of its own yet.
+    // else built as a Swordman. Both bosses now draw their own model and
+    // animate off their own clip pack.
     case EnemyType::MiniBoss:
         return std::make_unique<Swordman>(spawn, AssetID::ENEMY_MINIBOSS);
     case EnemyType::FinalBoss:
-        return std::make_unique<Swordman>(spawn);
+        return std::make_unique<Swordman>(spawn, AssetID::ENEMY_FINALBOSS);
     }
     throw std::runtime_error("Unknown EnemyType in EnemyFactory");
 }

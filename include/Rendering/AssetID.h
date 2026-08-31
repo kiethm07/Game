@@ -4,6 +4,7 @@ enum class AssetID {
     PLAYER_WOLF,
     ENEMY_ASHIGARU,
     ENEMY_MINIBOSS,
+    ENEMY_FINALBOSS,
     SFX_COIN,
     SFX_HIT,
     SFX_DASH,

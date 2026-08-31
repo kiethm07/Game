@@ -93,11 +93,64 @@ static const AssetID kAshigaruSource = AssetID::PLAYER_WOLF;
 // the blade and then dragging it back out. Measure any further swing before
 // wiring it up -- Attack_3 reaches 4.07 m, and there is no runtime clamp.
 
+// The final boss is Mixamo's Mutant, and it is the FIRST asset here that was
+// already rigged when it arrived -- so unlike the player and the miniboss there
+// is no retarget pass at all. Its clips were downloaded on this character, and
+// a fresh import of each was measured against the model's own rig before the
+// pack was built: all eight carry the same 37 bones with the same names.
+//
+//   1. tools/build_finalboss_pack.py imports the eight FBXs from
+//      `animation pack final boss` as one armature per clip, four of them
+//      scratch. Reads finalboss.blend, writes pack_finalboss.blend, so the
+//      hand-made source file is never touched.
+//   1b. tools/make_finalboss_guard.py authors the crossed-arm block -- Guard,
+//      GuardWalk, GuardImpact -- and the HitReact they are layered over.
+//   1c. tools/make_finalboss_break.py authors PostureBreak (down on the left
+//      knee, left fist planted) and trims Death out of `mutant dying`.
+//   1d. tools/make_finalboss_moves.py generates the four strafes from Walk and
+//      builds the three attacks, then deletes the scratch clips.
+//   1e. tools/scale_finalboss.py takes the rig to 1.5x -- 2.792 m, a little
+//      over the mini boss's 2.627 -- and writes pack_finalboss_scaled.blend.
+//      LAST, because every pose the authoring passes solve is an absolute
+//      world-metre target measured against the unscaled rig. Scaling the
+//      armature object is all it does: merge_animations bakes that into the
+//      mesh and rest bones and rescales the translation keys with it, so bone
+//      lengths, skin and every clip's travel scale together. What does NOT
+//      follow is anything in world metres on the C++ side -- body_height and
+//      body_radius in Swordman's FinalBoss branch, the attack hitbox capsules
+//      in AttackRegistry.cpp, and walk_speed/run_speed -- and those are set
+//      to the same 1.5 by hand.
+//   2. tools/merge_animations.py -> FinalBoss.glb
+//   3. tools/bake_root_motion.py -> FinalBoss.rootmotion.glb
+// tools/rebuild_finalboss.sh runs all of it, in that order, which is not
+// negotiable: step 1 is a replacement and step 1d consumes what it deletes.
+//
+// 37 bones, not the 65 the other two carry. The Mutant has no left-hand finger
+// bones at all -- its oversized left arm is ONE rigid club weighted entirely to
+// `mixamorig:LeftForeArm`, running 0.953 m along a 0.268 m bone. Nothing in the
+// runtime cares, because SwordmanAnimator resolves clips by name and the
+// skinning shader does not count joints; but anything that poses this rig has
+// to (see tools/finalboss_rig.py, LIMB_TIP).
+//
+// It carries 17 clips named for the states they serve, so descTable() hands it
+// a table of its own -- the third, beside the ashigaru's and the miniboss's.
+// There is no weapon mesh: this character's fists are the weapon, so the attack
+// hitboxes in AttackRegistry.cpp are timed off the FISTS rather than off a
+// blade, and none of the three attacks sets a trail.
+//
+// Attack_Jump is the only enemy clip in the game with authored travel that
+// gameplay consumes: it leaps 2.56 m forward, and Swordman applies that through
+// AttackData::usesRootMotion(). The other two are in place to 0.000 m, and so
+// are all four strafes -- nothing reads a strafe's travel, and carrying any
+// made every direction change fade a root cancellation against a fresh zero.
+
 static const AssetEntry kAssets[] = {
     {AssetID::PLAYER_WOLF, "Sekiro.rootmotion.glb", "Sekiro.rootmotion.glb",
      RendererKind::SkinnedCharacter},
     {AssetID::ENEMY_ASHIGARU, "Paladin.rootmotion.glb", "Paladin.rootmotion.glb",
      RendererKind::SkinnedCharacter},
     {AssetID::ENEMY_MINIBOSS, "MiniBoss.rootmotion.glb", "MiniBoss.rootmotion.glb",
+     RendererKind::SkinnedCharacter},
+    {AssetID::ENEMY_FINALBOSS, "FinalBoss.rootmotion.glb", "FinalBoss.rootmotion.glb",
      RendererKind::SkinnedCharacter},
 };
