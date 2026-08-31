@@ -145,6 +145,31 @@ public:
         swings.back().hitboxes.push_back(def);
     }
 
+    /// How fast the attack CLOSES on its target while it is swinging, in m/s.
+    /// Zero for every attack whose displacement is the clip's own -- see
+    /// usesRootMotion(), which is the other way an attack moves and the one
+    /// that commits to a direction at the wind-up.
+    ///
+    /// This one does not commit: it is a live chase, re-aimed every frame at
+    /// wherever the target is now, which is the only thing that works for an
+    /// attack long enough for the player to simply walk out of. Whether an
+    /// attack is closing at all is asked of the attack rather than of the
+    /// enemy, so a boss's rotation can mix one that chases with two that do not.
+    float getAdvanceSpeed() const { return advance_speed; }
+
+    /// How near the target the chase stops, in metres. Closer than this the
+    /// attack holds its ground rather than shoving the target around.
+    float getAdvanceStopDistance() const { return advance_stop; }
+
+    /// How fast the attacker may turn onto the target while chasing, deg/s.
+    float getAdvanceTurnRate() const { return advance_turn; }
+
+    void setAdvance(float speed, float stop_distance, float turn_rate) {
+        advance_speed = speed;
+        advance_stop = stop_distance;
+        advance_turn = turn_rate;
+    }
+
     bool hasTrail() const { return has_trail; }
     float getTrailDuration() const { return trail_duration; }
     Vector3 getBladeVector() const { return blade_vector; }
@@ -179,6 +204,10 @@ private:
 
     const char* clip_name = nullptr;
     bool use_root_motion = false;
+
+    float advance_speed = 0.0f;
+    float advance_stop = 0.0f;
+    float advance_turn = 0.0f;
 
     bool has_trail = false;
     float trail_duration = 0.20f;

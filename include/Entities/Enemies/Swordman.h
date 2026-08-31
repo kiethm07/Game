@@ -33,10 +33,27 @@ private:
   /// attacks whose AttackData asks for it. Enemies were in place by
   /// construction before this: the flag existed on AttackData but only the
   /// player ever read it.
+  ///
+  /// Also the one place that hands over to applyAttackAdvance, because the two
+  /// are the same decision -- whether the behaviour tree or the attack owns
+  /// this frame's velocity -- and splitting it would leave two functions both
+  /// believing they had to release it afterwards.
   void applyAttackRootMotion(float dt);
 
-  /// Whether applyAttackRootMotion wrote the horizontal velocity last frame,
-  /// and therefore owes a release when it stops.
+  /// Walks the character onto its target while an attack that asks for one is
+  /// swinging. The counterpart to applyAttackRootMotion for attacks whose clip
+  /// carries no travel and whose length would otherwise let a player simply
+  /// leave -- see AttackData::getAdvanceSpeed.
+  void applyAttackAdvance(float dt, const AttackData &attack);
+
+  /// Whether the running attack is between its first hit window and its last,
+  /// which is the stretch a chase belongs in -- not the wind-up before it, and
+  /// not the recovery after.
+  bool attackIsSwinging() const;
+
+  /// Whether the attack wrote the horizontal velocity last frame -- from the
+  /// clip's travel or from a chase -- and therefore owes a release when it
+  /// stops.
   bool root_motion_driving = false;
 
   /// The attacks this enemy throws, in the order it throws them, wrapping at

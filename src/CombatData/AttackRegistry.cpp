@@ -75,16 +75,75 @@ void AttackRegistry::InitializeCatalog() {
   const Vector3 kKimonoBlade = {0.05f, 0.83f, 0.10f};
   const Vector3 kKimonoHilt = {0.01f, 0.06f, 0.01f};
 
-  // Attack_H ("standing melee attack horizontal"): 147 keyframes, 2.417s
-  // playable, in place. One cut, blade crossing the front t=0.90-1.10 (the tip
-  // peaks 3.18 forward at t=0.98). 0.90 + 0.20 + 1.31 = 2.41. The long tail is
-  // recovery, and a punishable one, because that is what the clip does after
-  // the cut.
-  AttackData mb_swing(0.90f, 0.20f, 1.31f, "Attack_H", false);
-  mb_swing.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {2.0f, 1.30f, 1.30f}, {-2.0f, 1.30f, 1.30f}, 0.70f, 35.0f, 20.0f));
-  mb_swing.setTrail(true, 0.28f, kMiniBossBlade, kMiniBossHilt);
-  attack_catalog.emplace(AttackID::MiniBossSwing, mb_swing);
+  // Attack_Spin: 199 keyframes, 3.300s playable, in place. The boss's special,
+  // and the one attack here that is AUTHORED rather than downloaded --
+  // tools/make_miniboss_spin.py builds it, and its report is where every number
+  // below comes from. It cocks the greatsword back one-handed over 0.40s, HOLDS
+  // that pose for 0.50s, and then turns three times ANTICLOCKWISE seen from
+  // above, carrying the blade level at 1.35 m, tip 2.6 m out from the body's
+  // own axis. The direction is the clip's: make_miniboss_spin mirrors the
+  // source's footwork rather than spinning its hips the other way.
+  //
+  // Three turns, three hit windows: one per revolution, timed to the pass the
+  // blade makes across the FRONT of the boss. Each window is the time the
+  // measured tip spends inside 50 degrees either side of straight ahead -- read
+  // off the clip, not assumed, because the turn runs between 9 and 28 deg a
+  // frame and where the pass falls is the clip's business rather than a guess.
+  //
+  // That 50 is the capsule's own half-angle: the bar below reaches 1.80 m
+  // either side at 1.50 m forward, so its ends sit at atan2(1.80, 1.50) = 50.2
+  // deg. The window is open exactly while the blade is inside the arc the
+  // hitbox covers, which is what keeps the two from disagreeing when either is
+  // retuned.
+  //
+  // What this is NOT is a hitbox that follows the blade all the way round. The
+  // sweep behind and beside the boss is picture; only the pass in front can
+  // hit. So the attack is answered by not being in front of it when the blade
+  // comes round -- three separate times, with two thirds of a second to read
+  // each one.
+  //
+  // In FRAMES at 60 Hz, not seconds. A window can only start and end on a
+  // frame, so a duration that falls between two of them rounds up and the
+  // windows drift late. The clip is a 60 Hz clip (raylib resamples every
+  // animation to it), so quantising is exact:
+  // 84 + 10 + 30 + 9 + 27 + 8 + 30 = 198 frames, which is the clip's own 3.300s.
+  //
+  // The three passes are not identical. The turn accelerates through the clip
+  // and its last revolution carries a follow-through, so each crosses a little
+  // quicker than the one before -- 10 frames, then 9, then 8. Measured, not
+  // averaged into a single number that would be wrong twice.
+  const int kSpinWindup = 84;             // to the first pass: cock-back, hold
+  const int kSpinPass[3][2] = {{0, 10},   // {gap since the last pass, live}
+                               {30, 9},
+                               {27, 8}};
+  const int kSpinRecover = 30;            // out of the last turn
+  // Half a frame of slack against the countdown landing exactly on zero, which
+  // would cost a window a frame either way depending on the float.
+  auto spin_frames = [](int frames) { return (frames - 0.5f) / 60.0f; };
+
+  AttackData mb_spin(spin_frames(kSpinWindup), spin_frames(kSpinPass[0][1]),
+                     spin_frames(kSpinRecover), "Attack_Spin", false);
+  for (int pass = 0; pass < 3; ++pass) {
+    if (pass > 0)
+      mb_spin.addSwing(spin_frames(kSpinPass[pass][0]),
+                       spin_frames(kSpinPass[pass][1]));
+    // Across the front, at the height the blade is actually carried. Shaped
+    // like the boss's other sweeps rather than like the blade at one instant:
+    // over the window the tip travels the whole 100 deg arc, so a bar is what
+    // it covers. 2.30 m of reach at the centre, against the blade's own 2.6.
+    mb_spin.addHitBoxDef(HitBoxDefinition::createCapsule(
+        {-1.80f, 1.35f, 1.50f}, {1.80f, 1.35f, 1.50f}, 0.80f, 30.0f, 18.0f));
+  }
+  mb_spin.setTrail(true, 0.30f, kMiniBossBlade, kMiniBossHilt);
+  // The clip is in place, so without this the boss turns three times on the
+  // spot and a player who simply walks backwards watches the whole thing from
+  // outside it. 2.6 m/s is faster than the player walks (1.85) and slower than
+  // they sprint (7.38) -- backing away does not work, committing to a sprint
+  // does. The turn is deliberately slower than the boss spins: 90 deg/s follows
+  // a player who repositions between passes, and does not keep the front nailed
+  // to one who commits to going round it.
+  mb_spin.setAdvance(2.6f, 1.2f, 90.0f);
+  attack_catalog.emplace(AttackID::MiniBossSpin, mb_spin);
 
   // Combo_3 ("standing melee combo attack ver. 3"): 167 keyframes, 2.750s
   // playable, in place. Two cuts:

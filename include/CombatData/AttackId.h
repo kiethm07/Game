@@ -13,7 +13,11 @@ enum class AttackID {
     /// is one AttackData playing one clip from the greatsword pack, and the two
     /// combos carry their swings INSIDE that one clip -- see SwingWindow, and
     /// AttackRegistry for where each window's timing was measured.
-    MiniBossSwing,       ///< `Attack_H`, one horizontal cut.
+    ///
+    /// The spin took the single cut's place in the rotation. `Attack_H`, the
+    /// clip that cut played, is still in the pack and still measured (the
+    /// window was 0.90 + 0.20 + 1.31, one sweep at 1.30 m); nothing plays it.
+    MiniBossSpin,        ///< `Attack_Spin`, a cock-back, a hold, three turns.
     MiniBossDoubleSwing, ///< `Combo_3`, two cuts.
     MiniBossTripleSwing, ///< `Combo_2`, two cuts and an overhead chop.
 

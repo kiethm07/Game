@@ -30,7 +30,7 @@ Swordman::Swordman(const EnemySpawn &spawn, AssetID asset)
   // The rotation this enemy walks through: normal, first combo, second combo,
   // back to normal. Keyed on the ASSET rather than on the spawn's EnemyType,
   // because what decides whether these attacks can be played is whether the
-  // model carries the clips they name -- `Attack_H`, `Combo_3` and `Combo_2`
+  // model carries the clips they name -- `Attack_Spin`, `Combo_3` and `Combo_2`
   // exist in the greatsword pack and nowhere else, and `Attack_Rapid` and
   // `Attack_Jump` only in the Mutant pack. Anything on the player's borrowed
   // set keeps the single light swing it always had.
@@ -68,7 +68,7 @@ Swordman::Swordman(const EnemySpawn &spawn, AssetID asset)
     // to stay a charge all the way in.
     gait_switch_distance = 0.0f;
   } else if (asset == AssetID::ENEMY_MINIBOSS) {
-    attack_pattern = {Combo{AttackID::MiniBossSwing},
+    attack_pattern = {Combo{AttackID::MiniBossSpin},
                       Combo{AttackID::MiniBossDoubleSwing},
                       Combo{AttackID::MiniBossTripleSwing}};
 
@@ -280,6 +280,51 @@ void Swordman::update(const UpdateContext &ctx) {
   }
 }
 
+void Swordman::applyAttackAdvance(float dt, const AttackData &attack) {
+  // Re-aimed every frame, which is the whole point: this is for an attack long
+  // enough that a player can walk out of it while it runs, so a direction
+  // chosen once at the wind-up would be aimed at where they used to be. It is
+  // the same target the behaviour tree tracks with during an attack's start-up.
+  const Vector3 target = stealth_component.getLastKnownPlayerPos();
+  Vector3 to_target = {target.x - position.x, 0.0f, target.z - position.z};
+  const float distance = Vector3Length(to_target);
+
+  if (distance > 0.01f) {
+    const float target_yaw = std::atan2(to_target.x, to_target.z) * RAD2DEG;
+    float angle_diff = target_yaw - rotation.y;
+    while (angle_diff < -180.0f) angle_diff += 360.0f;
+    while (angle_diff > 180.0f) angle_diff -= 360.0f;
+    // Rate limited rather than snapped. The hitbox is placed in this
+    // character's own frame, so turning the character turns the pass with it --
+    // which is what keeps the blade coming round onto a player who repositions,
+    // and also what would teleport it onto them if the turn were instant.
+    const float step = attack.getAdvanceTurnRate() * dt;
+    rotation.y += std::max(-step, std::min(step, angle_diff));
+    while (rotation.y < 0.0f) rotation.y += 360.0f;
+    while (rotation.y >= 360.0f) rotation.y -= 360.0f;
+  }
+
+  Vector3 velocity = {0.0f, 0.0f, 0.0f};
+  const float stop = attack.getAdvanceStopDistance();
+  if (distance > stop && distance > 0.01f) {
+    // Capped so one frame cannot carry the boss past the distance it is closing
+    // to and start shoving the player around the arena.
+    const float speed = std::min(attack.getAdvanceSpeed(), (distance - stop) / dt);
+    velocity = Vector3Scale(to_target, speed / distance);
+  }
+  setHorizontalVelocity(velocity);
+}
+
+bool Swordman::attackIsSwinging() const {
+  // Between the first hit window opening and the last one closing, the gaps
+  // between them included -- those are the state machine back in a wind-up
+  // while the blade is still going round, and treating them as "not swinging"
+  // would stall the chase twice mid-spin.
+  const CombatState state = combat_component.getCurrentState();
+  if (state == CombatState::AttackActive) return true;
+  return state == CombatState::AttackStartup && combat_component.getActiveSwing() > 0;
+}
+
 void Swordman::applyAttackRootMotion(float dt) {
   // Enemy attacks were in place by construction until this existed: the
   // animator threw away the track apply() handed back, so no enemy clip's
@@ -294,9 +339,22 @@ void Swordman::applyAttackRootMotion(float dt) {
   // -- and a clip that is not playing must not drive the character.
   const AttackData *attack = combat_component.getActiveAttack();
   const RootMotion::Track *track = animator.activeTrack();
-  const bool driving = dt > 0.0f && animator.playingAttack() &&
-                       attack != nullptr && attack->usesRootMotion() &&
+  const bool playing = dt > 0.0f && animator.playingAttack() && attack != nullptr;
+  const bool driving = playing && attack->usesRootMotion() &&
                        track != nullptr && track->hasMotion;
+  // The other way an attack moves: not the clip's authored travel but a live
+  // chase, for the swings that ask for one. Same ownership of the velocity and
+  // the same release below, because from the controller's side the two are the
+  // same thing -- something other than the behaviour tree deciding where this
+  // character goes this frame.
+  const bool closing = playing && !driving &&
+                       attack->getAdvanceSpeed() > 0.0f && attackIsSwinging();
+
+  if (closing) {
+    root_motion_driving = true;
+    applyAttackAdvance(dt, *attack);
+    return;
+  }
 
   if (!driving) {
     // Release what we took. While driving, this function OWNS the horizontal

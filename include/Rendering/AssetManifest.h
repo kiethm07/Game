@@ -62,6 +62,14 @@ static const AssetID kAshigaruSource = AssetID::PLAYER_WOLF;
 //      A clip added after that first build comes in through
 //      tools/add_miniboss_clip.py, which does NOT re-run build_miniboss_pack --
 //      that one is a replacement and would delete the guard set.
+//   1c-2. tools/make_miniboss_spin.py authors `Attack_Spin`, the boss's special:
+//      Mixamo's 360 attack for the footwork, with the sword ARM solved onto a
+//      one-handed carry so a 2.48 m blade is held level instead of wherever a
+//      clip authored for a small weapon happens to put the wrist. Authored, so
+//      like the guard set it does not survive a build_miniboss_pack re-run and
+//      has to be re-run after one. Its report is where AttackRegistry's spin
+//      numbers come from -- including which frames the blade crosses the front,
+//      which is where the three hit windows are.
 //   1d. tools/plant_clip_on_floor.py drops Death's hips until the body rests
 //      on the floor its feet started on. A Mixamo clip's hip translation is
 //      absolute metres authored for a rig a fifth shorter than this one, so
@@ -86,9 +94,11 @@ static const AssetID kAshigaruSource = AssetID::PLAYER_WOLF;
 // fist exactly as it filled the fist it was authored for.
 //
 // That length is not free. tools/verify_miniboss_sword.py measures how far the
-// blade drops below the character's feet in each clip. Of the four this enemy
-// actually attacks with, Attack_H never reaches the floor at all and the two
-// combos only break it after their last hit has landed: Combo_3 for 0.18 s at
+// blade drops below the character's feet in each clip. Of the three this enemy
+// actually attacks with, Attack_Spin holds the blade 0.98 m clear of the floor
+// at its lowest -- it is authored, so its height is chosen rather than
+// inherited -- and the two combos only break the floor after their last hit has
+// landed: Combo_3 for 0.18 s at
 // 0.32 m and Combo_2 for 0.63 s at 0.51 m, which is its overhead chop burying
 // the blade and then dragging it back out. Measure any further swing before
 // wiring it up -- Attack_3 reaches 4.07 m, and there is no runtime clamp.
