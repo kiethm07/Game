@@ -21,7 +21,7 @@ public:
     ~CombatComponent() = default;
     
     void update(float dt);
-    void initiateCombo(const Combo& combo, bool auto_advance = false);
+    bool initiateCombo(const Combo& combo, bool auto_advance = false);
 
     /// Raises the guard, opening the parry window.
     ///

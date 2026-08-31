@@ -11,6 +11,8 @@
 /// because nothing here needed Game; it does not survive this class growing
 /// members, so it is gone.
 class Campaign;
+class SoundController;
+class AssetManager;
 
 /// The title screen: a cover photo and one button per campaign phase.
 ///
@@ -20,7 +22,8 @@ class Campaign;
 /// and every state downstream reads it live.
 class MainMenuState : public GameState {
 public:
-  explicit MainMenuState(Campaign &campaign);
+  MainMenuState(SoundController &sound_controller, AssetManager &asset_manager,
+                Campaign &campaign);
   ~MainMenuState() override;
 
   // Holds a raw GPU handle, so copying it would double-free the texture. Same
@@ -62,13 +65,14 @@ private:
   /// destructor; the zeroing is what makes the second call a no-op.
   void unloadBackground();
 
+  SoundController &sound_controller;
+  AssetManager &asset_manager;
   Campaign &campaign;
 
   Texture2D background{};
 
-  /// The centred crop of `background` that fills the window. Computed once in
-  /// enter() -- it cannot change while the state is alive.
   Rectangle bg_source{};
+  Rectangle bg_dest{};
 
   std::vector<MenuButton> buttons;
 

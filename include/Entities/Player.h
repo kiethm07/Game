@@ -196,6 +196,8 @@ private:
   float guard_buffer_timer = 0.0f;
   std::vector<SmokeCloud> pending_smoke_clouds;
   SwordTrail sword_trail;
+  /// Landing audio tracking
+  bool was_grounded_audio = true;
 
   void updateLocomotionVelocity(const UpdateContext &ctx, Vector3 moveDirection,
                                 float speedScale, Gait gait);

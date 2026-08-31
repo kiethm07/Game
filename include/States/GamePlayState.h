@@ -69,6 +69,7 @@ private:
   /// Returns the enemy rather than a bool because the prompt names what is
   /// blocking it, and a bool cannot.
   const Enemy *blockingBoss() const;
+  bool hasEngagedEnemy() const;
 
   /// Which deathblow, if any, is on offer against one enemy right now.
   ///
@@ -206,6 +207,8 @@ private:
   /// reads as resting. It is also what makes the fire worth having — it is on
   /// screen, alight, for exactly as long as it takes to notice.
   float checkpoint_timer = -1.0f;
+  float victory_timer = -1.0f;
+  static constexpr float VICTORY_HOLD = 3.5f;
 
   /// Which campfire is burning down the clock, so the message can name it and
   /// a second G cannot start a second countdown.

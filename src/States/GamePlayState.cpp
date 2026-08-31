@@ -134,14 +134,27 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
 
   player = std::make_unique<Player>(input_manager);
 
-  // Load test SFX
+  // Load SFX
   asset_manager.loadSound(AssetID::SFX_COIN, assets::path("audio/coin.wav"));
   asset_manager.loadSound(AssetID::SFX_HIT, assets::path("audio/hit.MP3"));
+  asset_manager.loadSound(AssetID::SFX_DASH, assets::path("audio/dash.mp3"));
   asset_manager.loadSound(AssetID::SFX_DEFLECT_1, assets::path("audio/deflect_1.MP3"));
   asset_manager.loadSound(AssetID::SFX_DEFLECT_2, assets::path("audio/Deflect_2.MP3"));
   asset_manager.loadSound(AssetID::SFX_DEFLECT_NPC, assets::path("audio/deflect_NPC.MP3"));
-  asset_manager.loadSound(AssetID::SFX_BLOCK, assets::path("audio/block.wav"));
+  asset_manager.loadSound(AssetID::SFX_BLOCK, assets::path("audio/block.MP3"));
   asset_manager.loadSound(AssetID::SFX_DEATHBLOW, assets::path("audio/deflect_end.mp3"));
+  asset_manager.loadSound(AssetID::SFX_WALK, assets::path("audio/walkingongrass.mp3"));
+  asset_manager.loadSound(AssetID::SFX_RUN, assets::path("audio/runningongrass.mp3"));
+  asset_manager.loadSound(AssetID::SFX_LAND, assets::path("audio/landingongrass.mp3"));
+  asset_manager.loadSound(AssetID::SFX_SLASH, assets::path("audio/swordslash.mp3"));
+  asset_manager.loadSound(AssetID::SFX_HEAL, assets::path("audio/healinggourd.mp3"));
+  asset_manager.loadSound(AssetID::SFX_SMOKE, assets::path("audio/smokebomb.mp3"));
+  asset_manager.loadSound(AssetID::SFX_BREAK, assets::path("audio/posturebreak.mp3"));
+
+  // Load BGMs
+  asset_manager.loadMusic(AssetID::BGM_COMBAT, assets::path("audio/incombatbgm.mp3"));
+  asset_manager.loadMusic(AssetID::BGM_EXPLORE, assets::path("audio/outcombatbgm.mp3"));
+
   player->setPosition(level.playerSpawn.position);
   player->setRotation({0.0f, level.playerSpawn.yaw, 0.0f});
 
@@ -305,6 +318,12 @@ void GameplayState::enter() {
              "posture-broken enemies will show no marker. The deathblow itself "
              "still works.");
   }
+
+  sound_controller.playMusic(AssetID::BGM_EXPLORE);
+}
+
+void GameplayState::exit() {
+  unloadPostureCue();
 }
 
 void GameplayState::unloadPostureCue() {
@@ -323,6 +342,21 @@ const Enemy *GameplayState::blockingBoss() const {
     }
   }
   return nullptr;
+}
+
+bool GameplayState::hasEngagedEnemy() const {
+  if (locked_target != nullptr && !locked_target->getStats().isDead()) {
+    return true;
+  }
+  for (const auto &enemy_ptr : enemies) {
+    const Enemy *enemy = enemy_ptr.get();
+    if (!enemy->getStats().isDead() && !enemy->isModelUnloaded()) {
+      if (enemy->getStealthComponent().isPlayerDetected()) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 GameplayState::TakedownKind
@@ -564,7 +598,15 @@ StateAction GameplayState::update(float dt) {
   const UpdateContext ctx{dt, camera_controller->getCameraForward(),
                           camera_controller->getCameraRight(), player_pos,
                           &asset_manager, &nav_query, &level.obstacles,
-                          &smoke_clouds, locked_target, &active_characters};
+                          &smoke_clouds, locked_target, &active_characters,
+                          &sound_controller};
+
+  // Adaptive BGM evaluation based on engaged enemies
+  if (hasEngagedEnemy()) {
+    sound_controller.playMusic(AssetID::BGM_COMBAT);
+  } else {
+    sound_controller.playMusic(AssetID::BGM_EXPLORE);
+  }
 
   // 1.5. Evaluate Stealth before AI update so AI can react in the same frame
   stealth_manager.update(active_characters, player.get(), level.obstacles,
@@ -795,11 +837,27 @@ StateAction GameplayState::update(float dt) {
     return StateAction::ChangeToMenu;
   }
 
-  // The exit campfire: stand near it, press G, watch it catch, and the phase
-  // ends. Ordered before the debug keys below because it is the real feature
-  // and they are stand-ins for it.
+  // Exit handling: campfire or victory on the final phase
   checkpoint_in_reach = false;
   checkpoint_blocked_by = nullptr;
+  if (!campaign.hasExit()) {
+    if (blockingBoss() == nullptr && death_timer < 0.0f) {
+      if (victory_timer < 0.0f) {
+        victory_timer = VICTORY_HOLD;
+        TraceLog(LOG_INFO,
+                 "GameplayState: Final boss defeated — transitioning to victory in %.1fs",
+                 VICTORY_HOLD);
+      } else {
+        victory_timer -= dt;
+        if (victory_timer <= 0.0f) {
+          victory_timer = -1.0f;
+          campaign.setCarry(snapshotCarry());
+          return StateAction::RequestNextPhase;
+        }
+      }
+    }
+  }
+
   if (checkpoint_timer >= 0.0f) {
     // A countdown is already running. Nothing can start a second one, and the
     // fire is left burning while it runs -- that pause is the whole point.
@@ -1335,24 +1393,7 @@ void GameplayState::draw() {
   }
 
   // --- HEALTH BARS ---
-  //
-  // "Engaged" is deliberately the union of three things, not the strictest of
-  // them: locked on, or seen by anything still alive, or already carrying
-  // posture damage. Any one means a fight the player has to read a posture bar
-  // during, and taking the union is what keeps the meter from blinking out
-  // mid-exchange because the lock happened to drop or an enemy lost sight for a
-  // step. Posture above zero is checked by each drawer, which owns that number.
-  bool player_engaged = (locked_target != nullptr);
-  if (!player_engaged) {
-    for (const auto &enemy : enemies) {
-      if (enemy->getStats().isDead() || enemy->isModelUnloaded()) continue;
-      if (enemy->getStealthComponent().isPlayerDetected()) {
-        player_engaged = true;
-        break;
-      }
-    }
-  }
-
+  const bool player_engaged = hasEngagedEnemy();
   player->drawHPBar2D(player_engaged);
   for (const auto &enemy : enemies) {
     if (enemy->isModelUnloaded()) continue;
@@ -1465,11 +1506,4 @@ void GameplayState::draw() {
   if (defeat_shown) {
     drawDefeatScreen();
   }
-}
-
-void GameplayState::exit() {
-  // GPU handles only. This runs on quit-to-menu, on a phase change and at
-  // shutdown, so it is deliberately not where run state is written -- see the
-  // note on the carry in update().
-  unloadPostureCue();
 }

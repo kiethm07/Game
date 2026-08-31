@@ -3,6 +3,7 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include <GameManager/SmokeCloud.h>
+#include <GameManager/SoundController.h>
 #include <CombatData/AttackRegistry.h>
 #include <Entities/Items/HealingGourd.h>
 #include <Entities/Items/SmokeBomb.h>
@@ -54,6 +55,10 @@ void Player::update(const UpdateContext &ctx) {
       combat_component.interrupt();
       cancelItemUse();
       sword_trail.clear();
+      if (ctx.sound_controller != nullptr) {
+        ctx.sound_controller->stopSFX(AssetID::SFX_WALK);
+        ctx.sound_controller->stopSFX(AssetID::SFX_RUN);
+      }
     }
 
     setHorizontalVelocity({0.0f, 0.0f, 0.0f});
@@ -79,6 +84,10 @@ void Player::update(const UpdateContext &ctx) {
                         animator.landPlayDuration(ctx.assets))) {
     combat_component.interrupt();
     sword_trail.clear();
+    if (ctx.sound_controller != nullptr) {
+      ctx.sound_controller->stopSFX(AssetID::SFX_WALK);
+      ctx.sound_controller->stopSFX(AssetID::SFX_RUN);
+    }
   }
 
   animator.updateFlinch(dt, ctx.assets);
@@ -117,6 +126,15 @@ void Player::update(const UpdateContext &ctx) {
           if (!inventory.empty() && active_item_index < inventory.size()) {
               inventory[active_item_index]->use(this);
               inventory[active_item_index]->consume();
+              if (ctx.sound_controller != nullptr) {
+                  ctx.sound_controller->stopSFX(AssetID::SFX_WALK);
+                  ctx.sound_controller->stopSFX(AssetID::SFX_RUN);
+                  if (active_item_index == 0) {
+                      ctx.sound_controller->playSFX(AssetID::SFX_HEAL);
+                  } else {
+                      ctx.sound_controller->playSFX(AssetID::SFX_SMOKE);
+                  }
+              }
           }
       }
   }
@@ -135,6 +153,39 @@ void Player::update(const UpdateContext &ctx) {
         move_gate.moveSpeedScale, move_gate.gait);
 
   const Vector3 velocity = getHorizontalVelocity();
+
+  // Landing audio trigger
+  if (isGrounded() && !was_grounded_audio) {
+      if (ctx.sound_controller != nullptr) {
+          ctx.sound_controller->stopSFX(AssetID::SFX_WALK);
+          ctx.sound_controller->stopSFX(AssetID::SFX_RUN);
+          ctx.sound_controller->playSFX(AssetID::SFX_LAND);
+      }
+  }
+  was_grounded_audio = isGrounded();
+
+  // Footstep audio trigger
+  const bool is_moving = (velocity.x != 0.0f || velocity.z != 0.0f);
+  if (isGrounded() && move_gate.canMove && is_moving) {
+      if (ctx.sound_controller != nullptr) {
+          if (move_gate.gait == Gait::Sprinting) {
+              ctx.sound_controller->stopSFX(AssetID::SFX_WALK);
+              if (!ctx.sound_controller->isSFXPlaying(AssetID::SFX_RUN)) {
+                  ctx.sound_controller->playSFX(AssetID::SFX_RUN);
+              }
+          } else {
+              ctx.sound_controller->stopSFX(AssetID::SFX_RUN);
+              if (!ctx.sound_controller->isSFXPlaying(AssetID::SFX_WALK)) {
+                  ctx.sound_controller->playSFX(AssetID::SFX_WALK);
+              }
+          }
+      }
+  } else {
+      if (ctx.sound_controller != nullptr) {
+          ctx.sound_controller->stopSFX(AssetID::SFX_WALK);
+          ctx.sound_controller->stopSFX(AssetID::SFX_RUN);
+      }
+  }
 
   PlayerAnimator::Frame frame;
   frame.combat = &combat_component;
@@ -525,7 +576,13 @@ void Player::handleCombatAndUtilityInputs(const UpdateContext &ctx,
   }
 
   if (input_manager.isActionPressed(GameAction::Attack) && gate.canAttack) {
-    combat_component.initiateCombo(combo);
+    if (combat_component.initiateCombo(combo)) {
+      if (ctx.sound_controller != nullptr) {
+        ctx.sound_controller->stopSFX(AssetID::SFX_WALK);
+        ctx.sound_controller->stopSFX(AssetID::SFX_RUN);
+        ctx.sound_controller->playSFX(AssetID::SFX_SLASH);
+      }
+    }
   }
   // Latched rather than acted on, then spent on the first frame that will have
   // it -- this one, when nothing is in the way. See guard_buffer_timer.
@@ -570,8 +627,14 @@ void Player::handleCombatAndUtilityInputs(const UpdateContext &ctx,
     // Latched only if the state machine accepted it. Otherwise a dodge refused
     // mid-attack would still leave its direction behind, and the next accepted
     // dodge would roll the wrong way.
-    if (combat_component.startDodge(duration))
+    if (combat_component.startDodge(duration)) {
       animator.setDodge(dodge);
+      if (ctx.sound_controller != nullptr) {
+        ctx.sound_controller->stopSFX(AssetID::SFX_WALK);
+        ctx.sound_controller->stopSFX(AssetID::SFX_RUN);
+        ctx.sound_controller->playSFX(AssetID::SFX_DASH);
+      }
+    }
   }
   if (input_manager.isActionPressed(GameAction::Jump) && gate.canJump) {
     // A jump taken from a crouch stands up first rather than launching

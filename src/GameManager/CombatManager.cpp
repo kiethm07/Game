@@ -136,9 +136,16 @@ void CombatManager::update(const std::vector<Character*>& characters, ParticleMa
                         }
 
                         if (sound_controller) {
+                            if (defender->getStats().isPostureBroken()) {
+                                sound_controller->playSFX(AssetID::SFX_BREAK);
+                            }
                             if (result == DamageResult::PARRIED) {
                                 if (dynamic_cast<const Player*>(defender)) {
-                                    sound_controller->playSFX(use_deflect_1 ? AssetID::SFX_DEFLECT_1 : AssetID::SFX_DEFLECT_2);
+                                    if (use_deflect_1) {
+                                        sound_controller->playSFX(AssetID::SFX_DEFLECT_1);
+                                    } else {
+                                        sound_controller->playSFX(AssetID::SFX_DEFLECT_2);
+                                    }
                                     use_deflect_1 = !use_deflect_1;
                                 } else {
                                     sound_controller->playSFX(AssetID::SFX_DEFLECT_NPC);
