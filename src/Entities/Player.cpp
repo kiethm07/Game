@@ -108,14 +108,28 @@ void Player::update(const UpdateContext &ctx) {
       }
   }
 
-  handleCombatAndUtilityInputs(
-      ctx, locomotion.gate(combat_component, isGrounded(), sprint_held));
+  ActionGate input_gate =
+      locomotion.gate(combat_component, isGrounded(), sprint_held);
+  if (animator.isFlinching()) {
+    input_gate.canMove = false;
+    input_gate.canAttack = false;
+    input_gate.canDodge = false;
+    input_gate.canJump = false;
+  }
+
+  handleCombatAndUtilityInputs(ctx, input_gate);
 
   // Re-evaluated after the inputs rather than reusing the one above. An attack
   // started this frame has to stop movement on this frame; a gate read before
   // the input that began it would let one frame of free steering through.
   ActionGate move_gate =
       locomotion.gate(combat_component, isGrounded(), sprint_held);
+  if (animator.isFlinching()) {
+    move_gate.canMove = false;
+    move_gate.canAttack = false;
+    move_gate.canDodge = false;
+    move_gate.canJump = false;
+  }
 
   // Item timer logic
   if (item_use_timer > 0.0f) {
@@ -504,6 +518,7 @@ DamageResult Player::takeDamage(float health_damage, float posture_damage,
     // Cancel item usage on flinch
     cancelItemUse();
     sword_trail.clear();
+    setHorizontalVelocity({0.0f, 0.0f, 0.0f});
 
     // Queued, not played here: this runs from CombatManager's pass, and the
     // reaction needs a frame's assets to find the clip's length. Gated on the
@@ -521,7 +536,10 @@ DamageResult Player::takeDamage(float health_damage, float posture_damage,
     // fall a frame ahead of the flinch queued three lines up, and would have
     // this pass, which runs from CombatManager, reaching into the animation
     // clock that only update() advances.
-    return blocked ? DamageResult::BLOCKED : DamageResult::HIT;
+    if (blocked) {
+      return DamageResult::BLOCKED;
+    }
+    return DamageResult::HIT;
   }
   return DamageResult::IGNORED;
 }

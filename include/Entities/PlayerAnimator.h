@@ -151,6 +151,17 @@ public:
   /// Starts whatever flinch queueReaction() left, and ages the running one.
   void updateFlinch(float dt, const AssetManager *assets);
 
+  /// Returns true if the player is currently flinching / in hit reaction.
+  bool isFlinching() const {
+    if (reaction_timer > 0.0f) {
+      return true;
+    }
+    if (queued_reaction != PlayerAnimState::Count) {
+      return true;
+    }
+    return false;
+  }
+
   /// Queues a flinch for the next updateFlinch(). Queued rather than started on
   /// the spot because damage is dealt from CombatManager's pass, which runs
   /// outside the player's own update: the animation clock is only ever advanced
