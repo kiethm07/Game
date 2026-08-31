@@ -12,5 +12,17 @@ enum class AssetID {
     SFX_DEFLECT_2,
     SFX_DEFLECT_NPC,
     SFX_BLOCK,
-    SFX_DEATHBLOW
+    SFX_DEATHBLOW,
+    SFX_WALK,
+    SFX_RUN,
+    SFX_LAND,
+    SFX_SLASH,
+    SFX_HEAL,
+    SFX_SMOKE,
+    SFX_BREAK,
+    BGM_COMBAT,
+    BGM_EXPLORE,
+    BGM_MENU,
+    BGM_VICTORY,
+    BGM_RETURN
 };

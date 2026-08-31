@@ -1,14 +1,17 @@
 #include <States/MainMenuState.h>
 
 #include <Core/AssetPaths.h>
+#include <GameManager/SoundController.h>
 #include <Level/Campaign.h>
+#include <Rendering/AssetManager.h>
 #include <cmath>
 #include <raylib.h>
 
 namespace {
 
-/// The cover photo. One file, read once per menu entry, owned by the state.
-constexpr const char *kBackgroundAsset = "mainmenuphoto.jpg";
+/// Cover photo assets
+constexpr const char *BG_DEFAULT = "mainmenuphoto.jpg";
+constexpr const char *BG_RETURN = "mainmenureturn.png";
 
 // --- Layout ----------------------------------------------------------------
 //
@@ -54,7 +57,11 @@ Rectangle coverSource(int tw, int th, int sw, int sh) {
 
 } // namespace
 
-MainMenuState::MainMenuState(Campaign &campaign) : campaign(campaign) {}
+MainMenuState::MainMenuState(SoundController &sound_controller,
+                           AssetManager &asset_manager, Campaign &campaign)
+    : sound_controller(sound_controller),
+      asset_manager(asset_manager),
+      campaign(campaign) {}
 
 MainMenuState::~MainMenuState() {
   // exit() has already run on every path Game takes (popState calls it), so
@@ -74,44 +81,73 @@ void MainMenuState::enter() {
 
   loadBackground();
   buildButtons();
+
+  if (campaign.isCompleted()) {
+    asset_manager.loadMusic(AssetID::BGM_RETURN, assets::path("audio/mainmenubgm2.mp3"));
+    sound_controller.playMusic(AssetID::BGM_RETURN);
+  } else {
+    asset_manager.loadMusic(AssetID::BGM_MENU, assets::path("audio/mainmenubgm.mp3"));
+    sound_controller.playMusic(AssetID::BGM_MENU);
+  }
 }
 
 void MainMenuState::loadBackground() {
-  Image image = LoadImage(assets::path(kBackgroundAsset).c_str());
+  const float screen_w = static_cast<float>(GetScreenWidth());
+  const float screen_h = static_cast<float>(GetScreenHeight());
 
-  if (IsImageValid(image)) {
-    const int screen_w = GetScreenWidth();
-    const int screen_h = GetScreenHeight();
+  if (campaign.isCompleted()) {
+    // Comeback background (mainmenureturn.png): DO NOT crop, fit uncropped (letterbox/black bars)
+    Image image = LoadImage(assets::path(BG_RETURN).c_str());
+    if (IsImageValid(image)) {
+      const float scale = fminf(screen_w / static_cast<float>(image.width),
+                                screen_h / static_cast<float>(image.height));
 
-    // fmaxf covers and crops; fminf would contain and letterbox. The photo is
-    // 3239x1851 (1.7499) against a 1366x768 window (1.7786), so this is
-    // width-driven and the crop comes off the top and bottom.
-    //
-    // Resized on the CPU before upload because the file decodes to a 3-channel
-    // image -- raylib maps comp==3 to R8G8B8 -- and 3239x1851x3 is 17.1 MiB of
-    // VRAM to draw a 1366x768 rectangle. The resize takes it to 1366x781, or
-    // 3.05 MiB, and lands texel-to-pixel 1:1 so no filter is wanted and
-    // mipmaps would be 33% more VRAM for a texture that is never minified.
-    const float scale = fmaxf(static_cast<float>(screen_w) / image.width,
-                              static_cast<float>(screen_h) / image.height);
-    ImageResize(&image, static_cast<int>(ceilf(image.width * scale)),
-                static_cast<int>(ceilf(image.height * scale)));
+      const float dest_w = floorf(static_cast<float>(image.width) * scale);
+      const float dest_h = floorf(static_cast<float>(image.height) * scale);
+      const float dest_x = floorf((screen_w - dest_w) * 0.5f);
+      const float dest_y = floorf((screen_h - dest_h) * 0.5f);
 
-    background = LoadTextureFromImage(image);
-    bg_source = coverSource(background.width, background.height, screen_w,
-                            screen_h);
-  }
+      bg_dest = Rectangle{dest_x, dest_y, dest_w, dest_h};
 
-  // Outside the branch on purpose: raylib null-checks the data pointer, so this
-  // is safe on an image that failed to load, and putting it inside would leak
-  // the 17 MiB decode buffer on every menu entry.
-  UnloadImage(image);
+      background = LoadTextureFromImage(image);
+      if (background.id != 0) {
+        bg_source = Rectangle{0.0f, 0.0f, static_cast<float>(background.width),
+                              static_cast<float>(background.height)};
+        SetTextureFilter(background, TEXTURE_FILTER_BILINEAR);
+      }
+    }
+    UnloadImage(image);
 
-  if (background.id == 0) {
-    TraceLog(LOG_WARNING,
-             "MainMenuState: could not load '%s'; the menu will come up on a "
-             "flat background. The chapter buttons still work.",
-             kBackgroundAsset);
+    if (background.id == 0) {
+      TraceLog(LOG_WARNING,
+               "MainMenuState: could not load '%s'; the menu will come up on a "
+               "flat background. The chapter buttons still work.",
+               BG_RETURN);
+    }
+  } else {
+    // Original background (mainmenuphoto.jpg): CROP to cover full screen
+    Image image = LoadImage(assets::path(BG_DEFAULT).c_str());
+    if (IsImageValid(image)) {
+      const float scale = fmaxf(screen_w / static_cast<float>(image.width),
+                                screen_h / static_cast<float>(image.height));
+      ImageResize(&image, static_cast<int>(ceilf(image.width * scale)),
+                  static_cast<int>(ceilf(image.height * scale)));
+
+      background = LoadTextureFromImage(image);
+      if (background.id != 0) {
+        bg_source = coverSource(background.width, background.height,
+                                static_cast<int>(screen_w), static_cast<int>(screen_h));
+        bg_dest = Rectangle{0.0f, 0.0f, screen_w, screen_h};
+      }
+    }
+    UnloadImage(image);
+
+    if (background.id == 0) {
+      TraceLog(LOG_WARNING,
+               "MainMenuState: could not load '%s'; the menu will come up on a "
+               "flat background. The chapter buttons still work.",
+               BG_DEFAULT);
+    }
   }
 }
 
@@ -192,9 +228,9 @@ void MainMenuState::draw() {
   ClearBackground(BLACK);
 
   if (background.id != 0) {
-    DrawTexturePro(background, bg_source,
-                   Rectangle{0.0f, 0.0f, screen_w, screen_h},
-                   Vector2{0.0f, 0.0f}, 0.0f, WHITE);
+    const Rectangle src_rec = {0.0f, 0.0f, static_cast<float>(background.width),
+                               static_cast<float>(background.height)};
+    DrawTexturePro(background, src_rec, bg_dest, Vector2{0.0f, 0.0f}, 0.0f, WHITE);
   }
 
   // One gradient does all the legibility work: opaque under the buttons, gone
@@ -216,23 +252,32 @@ void MainMenuState::draw() {
     const MenuButton &button = buttons[i];
     const bool lit = (static_cast<int>(i) == hovered);
 
-    DrawRectangleRec(button.bounds, Fade(BLACK, lit ? 0.55f : 0.35f));
-    DrawRectangleLinesEx(button.bounds, lit ? 2.0f : 1.0f,
-                         lit ? GOLD : Fade(kInk, 0.35f));
+    Color bg_color = Fade(BLACK, 0.35f);
+    Color border_color = Fade(kInk, 0.35f);
+    float border_thick = 1.0f;
+    Color text_color = kInk;
+
+    if (lit) {
+      bg_color = Fade(BLACK, 0.55f);
+      border_color = GOLD;
+      border_thick = 2.0f;
+      text_color = GOLD;
+    }
+
+    DrawRectangleRec(button.bounds, bg_color);
+    DrawRectangleLinesEx(button.bounds, border_thick, border_color);
     if (lit) {
       DrawRectangleRec(Rectangle{button.bounds.x, button.bounds.y, 4.0f,
                                  button.bounds.height},
                        GOLD);
     }
 
-    // Left-aligned rather than centred inside the button: centring would be a
-    // seventh copy of the MeasureText idiom this codebase already repeats six
-    // times, and a ragged left edge is worse here than a ragged right one.
+    // Left-aligned rather than centred inside the button
     DrawText(TextFormat("CHAPTER %s", roman(button.phase + 1)),
              static_cast<int>(button.bounds.x) + 20,
              static_cast<int>(button.bounds.y +
                               (button.bounds.height - label_size) * 0.5f),
-             label_size, lit ? GOLD : kInk);
+             label_size, text_color);
   }
 
   const int hint_size = static_cast<int>(screen_h * 0.0234f); // 18 px at 768

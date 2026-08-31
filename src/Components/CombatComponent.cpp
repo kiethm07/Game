@@ -116,21 +116,26 @@ void CombatComponent::update(float dt) {
     }
 }
 
-void CombatComponent::initiateCombo(const Combo& combo, bool auto_advance) {
-    if (combo.isEmpty()) return;
+bool CombatComponent::initiateCombo(const Combo& combo, bool auto_advance) {
+    if (combo.isEmpty()) {
+        return false;
+    }
 
     if (current_state == CombatState::Idle) {
         active_combo_ptr = &combo; 
         combo_index = 0;
         is_auto_combo = auto_advance;
         startAttackPhase();
+        return true;
     } 
     else if (current_state == CombatState::AttackRecovery && active_combo_ptr == &combo) {
         if (combo_index + 1 < active_combo_ptr->getAttackCount()) {
             combo_index++;
             startAttackPhase();
+            return true;
         }
     }
+    return false;
 }
 
 void CombatComponent::startGuard(bool held) {

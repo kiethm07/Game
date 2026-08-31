@@ -127,7 +127,11 @@ public:
   const PhaseCarry &getCarry() const { return carry; }
   void setCarry(const PhaseCarry &c) { carry = c; }
 
+  bool isCompleted() const { return completed; }
+  void markCompleted() { completed = true; }
+
 private:
   size_t cursor = 0;
+  bool completed = false;
   PhaseCarry carry{};
 };

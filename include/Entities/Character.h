@@ -12,6 +12,7 @@
 
 class NavMeshQuery;
 struct SmokeCloud;
+class SoundController;
 
 enum class DamageResult {
     IGNORED,
@@ -49,6 +50,9 @@ struct UpdateContext {
 
   /// Read-only access to all active characters for separation steering.
   const std::vector<Character*> *activeCharacters = nullptr;
+
+  /// Non-owning pointer to SoundController for triggering audio effects.
+  SoundController *sound_controller = nullptr;
 };
 
 class Character {

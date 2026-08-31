@@ -8,6 +8,7 @@
 #include <AI/NavMeshQuery.h>
 #include <Stealth/CombatSenseSensor.h>
 #include <GameManager/SmokeCloud.h>
+#include <GameManager/SoundController.h>
 #include <Rendering/BoneSocketHelper.h>
 
 namespace {
@@ -370,7 +371,11 @@ void Swordman::setupBehaviorTree() {
       // to hand initiateCombo a pointer into it.
       const Combo &next = attack_pattern[next_attack];
       next_attack = (next_attack + 1) % attack_pattern.size();
-      combat_component.initiateCombo(next);
+      if (combat_component.initiateCombo(next)) {
+        if (current_ctx != nullptr && current_ctx->sound_controller != nullptr) {
+          current_ctx->sound_controller->playSFX(AssetID::SFX_SLASH);
+        }
+      }
       
       // Randomize cooldown completely for each turn (1.5s to 3.5s)
       attack_cooldown_timer = 1.5f + (rand() % 200) / 100.0f;

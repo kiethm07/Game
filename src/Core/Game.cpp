@@ -1,5 +1,6 @@
 #include <Core/Game.h>
 #include <States/LoadingState.h>
+#include <States/EndGameState.h>
 
 Game::Game()
     : sound_controller(asset_manager), attack_registry(AttackRegistry::instance()) {}
@@ -13,7 +14,7 @@ Game::~Game() {
 void Game::start() { pushMainMenu(); }
 
 void Game::pushMainMenu() {
-    pushState(std::make_unique<MainMenuState>(campaign));
+    pushState(std::make_unique<MainMenuState>(sound_controller, asset_manager, campaign));
 }
 
 void Game::update() {
@@ -81,10 +82,10 @@ void Game::update() {
                 popState();
                 pushState(std::make_unique<LoadingState>(asset_manager, campaign));
             } else {
-                // That was the last phase. The run is over.
+                // That was the last phase. The run is over -> Transition to End Game Scene!
                 popState();
                 campaign.restart();
-                pushMainMenu();
+                pushState(std::make_unique<EndGameState>(sound_controller, asset_manager, campaign));
             }
         }
     }
