@@ -598,15 +598,12 @@ private:
 } // namespace
 
 void GameRenderer::drawUI() {
-  static FrameTimeAverage frameTime;
-  frameTime.sample(GetFrameTime());
-
-  DrawFPS(10, 10);
-
   if (!debugOverlay) {
-    DrawText("F2 collision overlay  F3 shadow mode", 10, 40, 16, GRAY);
     return;
   }
+
+  static FrameTimeAverage frameTime;
+  frameTime.sample(GetFrameTime());
 
   const ShadowStats &stats = shadowMap.stats();
   int y = 40;

@@ -251,10 +251,6 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
     nav_builder.addObstacle(obs);
   }
   if (!nav_builder.build()) {
-    // Silently discarding this used to be survivable when the geometry was a
-    // literal in this file. Now that it comes from a level file, a bake that
-    // fails is an authoring problem the author needs told about — otherwise it
-    // presents as enemies that simply never move.
     TraceLog(LOG_ERROR,
              "GameplayState: navmesh bake failed for level '%s'. Enemies will "
              "not path. Check that the level has a floor proxy and that gaps "
@@ -807,32 +803,6 @@ StateAction GameplayState::update(float dt) {
   shot.collision_mesh = collision_mesh.isEmpty() ? nullptr : &collision_mesh;
   camera_controller->update(shot);
 
-  // Debug affordance, not a game action, so it stays off InputManager's
-  // GameAction enum. Shows the raw depth map so the light frustum can be
-  // checked against where the arena actually is.
-  if (IsKeyPressed(KEY_F1)) {
-    show_shadow_map = !show_shadow_map;
-  }
-
-  // F2: collision proxies over the level mesh. The check that the Blender
-  // export lined up — see GameRenderer::setDebugOverlay.
-  if (IsKeyPressed(KEY_F2)) {
-    renderer->setDebugOverlay(!renderer->debugOverlayEnabled());
-  }
-
-  // F3: cycle what the depth pass renders, for measuring its cost against the
-  // fragment-side cost. The stats readout comes up with the F2 overlay.
-  if (IsKeyPressed(KEY_F3)) {
-    renderer->cycleShadowMode();
-  }
-
-  // F9: hitbox/hurtbox wireframes, off by default — combat_manager.drawDebug
-  // draws over every character every frame, which is noise once you are not
-  // actively checking an attack's reach.
-  if (IsKeyPressed(KEY_F9)) {
-    show_hitboxes = !show_hitboxes;
-  }
-
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
     return StateAction::ChangeToMenu;
   }
@@ -908,75 +878,34 @@ StateAction GameplayState::update(float dt) {
     }
   }
 
-  // L: leave this phase for the next one.
-  //
-  // A debug affordance in the same sense F1-F3 are, so it stays off
-  // InputManager's GameAction enum for the reason given at the top of that
-  // block -- and for one more: it is standing in for a trigger that will not
-  // be a keypress at all. Once phases carry an exit marker this same body
-  // fires from a proximity test, and a GameAction binding would be dead weight.
-  //
-  // The carry is snapshotted here rather than in exit() so that taking it and
-  // deciding to leave are one statement. exit() also runs on quit-to-menu and
-  // on shutdown, where writing a carry would be wrong, and the ordering
-  // against Campaign::restart() would then have to be reasoned about.
-  if (IsKeyPressed(KEY_L)) {
-    campaign.setCarry(snapshotCarry());
-    return StateAction::RequestNextPhase;
-  }
-
-  // F4: the player's position as a line to paste into
-  // assets/levels/<phase>/enemies.json. Same debug-affordance convention as
-  // F1-F3 above -- off InputManager's GameAction enum.
-  //
-  // Two decimals rather than the five the exporter writes: those exist for a
-  // machine round-trip, and this number gets retyped by a person for whom a
-  // centimetre of spawn placement has never mattered. The trailing comma is
-  // there because the overwhelmingly common paste target is the middle of a
-  // list, and deleting a comma beats remembering to add one.
-  //
-  // `y` goes on a second line rather than into the paste, because leaving it
-  // out is the normal case -- the loader snaps to the ground under (x, z) --
-  // and JSON has nowhere to put a commented-out field.
+  // F4: log the player's position to console/terminal.
   if (IsKeyPressed(KEY_F4)) {
     const Vector3 p = player->getPosition();
     float yaw = player->getRotation().y;
     while (yaw <= -180.0f) yaw += 360.0f;
     while (yaw > 180.0f) yaw -= 360.0f;
 
-    spawn_line = TextFormat(
+    std::string spawn_str = TextFormat(
         "{ \"type\": \"%s\", \"x\": %.2f, \"z\": %.2f, \"yaw\": %.1f },",
         enemyTypeName(debug_spawn_type), p.x, p.z, yaw);
-    spawn_line_timer = 8.0f;
-    TraceLog(LOG_INFO, "%s", spawn_line.c_str());
+    TraceLog(LOG_INFO, "%s", spawn_str.c_str());
     TraceLog(LOG_INFO,
              "  (you are at y=%.2f -- add \"y\": %.2f to pin the height "
              "instead of snapping to the ground)",
              p.y, p.y);
   }
 
-  // SHIFT+F4 cycles which type F4 writes, so the readout stays correct the day
-  // a second type exists rather than needing to be remembered.
   if (IsKeyPressed(KEY_F4) && IsKeyDown(KEY_LEFT_SHIFT)) {
     debug_spawn_type = static_cast<EnemyType>(
         (static_cast<int>(debug_spawn_type) + 1) % kEnemyTypeCount);
   }
 
-  // F5: rebuild this phase, re-reading level.json and enemies.json. The other
-  // half of the authoring loop -- edit the file, press this, see it.
+  // F5: rebuild this phase, re-reading level.json and enemies.json.
   if (IsKeyPressed(KEY_F5)) {
     return StateAction::RequestReloadPhase;
   }
 
-  // F6 drops a campfire where the player stands; F7 lights or snuffs the
-  // nearest one. Debug affordances in the same sense F1-F5 are, and the same
-  // stand-in role KEY_L plays: once phases carry an exit marker, checkpoints
-  // are read from level data and lighting one is what fires the transition.
-  //
-  // Snapped to the ground the same way an authored spawn is, so a campfire
-  // dropped on a slope sits on it rather than at the player's feet height --
-  // the model's origin is the centre of its base, which is what makes this one
-  // call enough.
+  // F6 drops a campfire where the player stands; F7 lights or snuffs nearest.
   if (IsKeyPressed(KEY_F6)) {
     Checkpoint point;
     point.position = player->getPosition();
@@ -995,7 +924,6 @@ StateAction GameplayState::update(float dt) {
   }
 
   if (IsKeyPressed(KEY_F7) && !checkpoints.empty()) {
-    // Nearest one, so the key means "this fire" rather than "some fire".
     size_t nearest = 0;
     float best = Vector3DistanceSqr(player->getPosition(),
                                     checkpoints[0].position);
@@ -1010,20 +938,10 @@ StateAction GameplayState::update(float dt) {
              (int)nearest + 1, checkpoints[nearest].lit ? "lit" : "out");
   }
 
-  // F8: die on the spot. The same debug-affordance convention F1-F7 follow, and
-  // the only way to reach the fall and the defeat screen without losing a real
-  // fight -- the player has 1000 HP, so the path this exists to exercise is
-  // otherwise minutes long and not repeatable.
-  //
-  // Routed through takeDamage rather than reaching into Stats, so it takes the
-  // same path a killing blow does. That means a raised guard absorbs it, since
-  // a null attacker is always considered in front: let go of the guard and
-  // press it again.
+  // F8: die on the spot for testing defeat state.
   if (IsKeyPressed(KEY_F8)) {
     player->takeDamage(99999.0f, 0.0f, nullptr);
   }
-
-  if (spawn_line_timer > 0.0f) spawn_line_timer -= dt;
 
   if (smoke_cooldown_timer > 0.0f) {
       smoke_cooldown_timer -= dt;
@@ -1034,18 +952,6 @@ StateAction GameplayState::update(float dt) {
   for (const auto& sc : new_clouds) {
       smoke_clouds.push_back(sc);
       particle_manager.emitVisualSmoke(sc.position, sc.radius, sc.life);
-  }
-
-  // Debug smoke spawning on enemy
-  if (IsKeyPressed(KEY_P) && !enemies.empty() && smoke_cooldown_timer <= 0.0f) {
-      SmokeCloud sc;
-      sc.position = enemies[0]->getPosition();
-      sc.radius = 3.5f;
-      sc.life = 6.0f;
-      sc.owner = enemies[0].get();
-      smoke_clouds.push_back(sc);
-      particle_manager.emitVisualSmoke(sc.position, sc.radius, sc.life);
-      smoke_cooldown_timer = 8.0f; // 8 seconds cooldown
   }
 
   // Update smoke data lifetimes
@@ -1352,21 +1258,6 @@ void GameplayState::draw() {
       DrawSphere(draw_pos, 0.15f, GOLD);
   }
 
-  std::vector<Character *> active_characters;
-  active_characters.reserve(1 + enemies.size());
-  active_characters.push_back(player.get());
-  for (const auto &enemy : enemies) {
-    if (enemy->isModelUnloaded()) continue;
-    active_characters.push_back(enemy.get());
-  }
-
-  // Collision debug wireframes — must stay inside the 3D scope.
-  physics_manager.drawDebug(active_characters, level.obstacles);
-  if (show_hitboxes) {
-    combat_manager.drawDebug(active_characters);
-  }
-  stealth_manager.drawDebug(active_characters);
-
   // Deathblow markers. Before the lock-on dot so that on an enemy who is both
   // locked on and broken, the small solid dot sits on top of the cue rather
   // than being swallowed by it.
@@ -1388,9 +1279,6 @@ void GameplayState::draw() {
 
   // 2D overlay pass (after the 3D scope is closed).
   renderer->drawUI();
-  if (show_shadow_map) {
-    renderer->drawShadowMapDebug();
-  }
 
   // --- HEALTH BARS ---
   const bool player_engaged = hasEngagedEnemy();
@@ -1414,25 +1302,6 @@ void GameplayState::draw() {
   if (player->isInSmoke()) {
       // Draw a full-screen semi-transparent gray overlay
       DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), {100, 100, 100, 150});
-  }
-
-  // --- MONEY UI ---
-  if (IsKeyDown(KEY_I)) {
-      std::string money_str = "Money: " + std::to_string(player->getMoney());
-      int font_size = 30;
-      int text_width = MeasureText(money_str.c_str(), font_size);
-      DrawText(money_str.c_str(), GetScreenWidth() - text_width - 30, 30, font_size, GOLD);
-  }
-
-  // The F4 readout, latched for a few seconds so it can be read and retyped.
-  if (spawn_line_timer > 0.0f && !spawn_line.empty()) {
-    const int width = MeasureText(spawn_line.c_str(), 20);
-    DrawText(spawn_line.c_str(), (GetScreenWidth() - width) / 2,
-             GetScreenHeight() - 70, 20, RAYWHITE);
-    DrawText("paste into assets/levels/<phase>/enemies.json, then F5",
-             (GetScreenWidth() - MeasureText(
-                  "paste into assets/levels/<phase>/enemies.json, then F5", 16)) / 2,
-             GetScreenHeight() - 44, 16, GRAY);
   }
 
   // The campfire prompt. Without it the interaction is undiscoverable -- there
@@ -1479,7 +1348,11 @@ void GameplayState::draw() {
     DrawText(banner.c_str(), 12, 8, 20, RED);
   }
 
-  // --- ITEM UI ---
+  // --- COIN / ITEM UI ---
+  std::string coin_text = "Coins: " + std::to_string(player->getMoney());
+  int coin_font_size = 20;
+  DrawText(coin_text.c_str(), 20, GetScreenHeight() - 100, coin_font_size, YELLOW);
+
   const auto& inventory = player->getInventory();
   if (!inventory.empty()) {
       int active_idx = player->getActiveItemIndex();

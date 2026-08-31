@@ -2,9 +2,19 @@
 #include <Core/Application.h>
 
 Application::Application() {
-  // SetConfigFlags(FLAG_WINDOW_TOPMOST | FLAG_WINDOW_UNDECORATED);
-  // InitWindow(GetScreenWidth(), GetScreenHeight(), "Borderless fullscreen");
+  SetConfigFlags(FLAG_WINDOW_UNDECORATED);
   InitWindow(1366, 768, "Game");
+
+  const int monitor = GetCurrentMonitor();
+  const int monitor_width = GetMonitorWidth(monitor);
+  const int monitor_height = GetMonitorHeight(monitor);
+  const Vector2 monitor_pos = GetMonitorPosition(monitor);
+
+  if (monitor_width > 0 && monitor_height > 0) {
+    SetWindowPosition(static_cast<int>(monitor_pos.x),
+                      static_cast<int>(monitor_pos.y));
+    SetWindowSize(monitor_width, monitor_height);
+  }
 
   // Before anything loads. Resolving here rather than lazily is what turns
   // "no asset root" into one message at startup naming every directory that
