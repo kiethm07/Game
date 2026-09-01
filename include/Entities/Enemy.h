@@ -101,6 +101,19 @@ protected:
   /// subclass's tree maps it in its own action.
   bool moveAlongPath(float speed);
 
+  /// One frame of loitering inside `wander_radius` of the post.
+  ///
+  /// Alternates walking to a random reachable point in the disc with standing
+  /// still for a few seconds. The caller has already established this enemy is
+  /// unaware and near enough to its post for the disc to be the right frame of
+  /// reference -- this does not check either, and does nothing at all when
+  /// `wander_radius` is 0.
+  ///
+  /// Here rather than in Swordman for the same reason moveAlongPath is: it is
+  /// path geometry plus the post, both of which are Enemy's, and none of it is
+  /// swordman-shaped.
+  void wanderAroundPost(float speed);
+
   /// Cut `path` short where it would walk into a smoke cloud.
   void truncatePathBySmoke(std::vector<Vector3> &path);
 
@@ -122,6 +135,14 @@ protected:
   EnemyType type = EnemyType::Swordman;
   Vector3 spawn_position{0.0f, 0.0f, 0.0f};
   float spawn_yaw = 0.0f;
+
+  /// How far from the post this enemy may loiter while unaware, and where the
+  /// loitering is up to. 0 -- the default, and what an overlay without a
+  /// `wanderRadius` gets -- means it stands the post exactly as it always did,
+  /// so wanderAroundPost is never even reached.
+  float wander_radius = 0.0f;
+  float wander_dwell_timer = 0.0f;
+  bool wander_walking = false;
 
   /// Called once per hit that actually landed, with whether the guard caught
   /// it. The hook exists so a subclass can react — a flinch is the whole of it

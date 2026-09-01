@@ -594,8 +594,19 @@ void Swordman::setupBehaviorTree() {
     if (!current_ctx) return NodeState::FAILURE;
     
     float dist_to_post = Vector2Distance({position.x, position.z}, {spawn_position.x, spawn_position.z});
-    
-    if (dist_to_post > 1.0f) {
+
+    // A wanderer is home anywhere inside its disc, not just on the exact spawn
+    // point. Without this the two behaviours fight: every leg of a wander ends
+    // more than a metre from the post, so the return-home branch would drag it
+    // straight back and it would never dwell anywhere but the centre. Falls
+    // back to the literal 1.0 for the standing case, which is unchanged.
+    const float post_arrival_distance = std::max(1.0f, wander_radius);
+
+    if (dist_to_post > post_arrival_distance) {
+      // Whatever leg was in progress is stale -- it was chosen from a position
+      // this enemy has since left. Re-pick on arrival.
+      wander_walking = false;
+
       // Pathfind to spawn
       path_recalc_timer -= current_ctx->dt;
       if (path_recalc_timer <= 0.0f) {
@@ -606,6 +617,13 @@ void Swordman::setupBehaviorTree() {
         path_recalc_timer = 1.0f;
       }
       moveAlongPath(walk_speed * 0.5f); // Walk slowly back
+    } else if (wander_radius > 0.0f) {
+      // Loiter instead of standing. `in_direct_combat` is the animator's strafe
+      // flag and has no business being up out of combat -- a wander that
+      // inherited it from an interrupted fight would sidestep its way around
+      // the post on the strafe clips.
+      in_direct_combat = false;
+      wanderAroundPost(walk_speed * 0.5f);
     } else {
       // At post, align to spawn yaw
       this->setHorizontalVelocity({0, 0, 0});

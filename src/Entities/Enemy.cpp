@@ -21,6 +21,13 @@ Enemy::Enemy(const EnemySpawn &spawn, Faction faction) : Character(faction) {
   if (spawn.overrides.startAwareness) {
     stealth_component.forceAwareness(*spawn.overrides.startAwareness);
   }
+
+  wander_radius = spawn.overrides.wanderRadius.value_or(0.0f);
+
+  // Staggered by id, the same trick Swordman's attack cooldown uses: a squad
+  // authored in one pass otherwise steps off on the same frame and loiters in
+  // formation, which reads as choreography rather than idling.
+  wander_dwell_timer = (getId() % 5) * 0.7f;
 }
 
 
@@ -67,6 +74,89 @@ bool Enemy::moveAlongPath(float speed) {
   while (rotation.y >= 360.0f) rotation.y -= 360.0f;
   
   return false;
+}
+
+/// How long one leg of a wander may take before it is abandoned. Generous:
+/// the longest honest leg is a full diameter at half walk speed, which for the
+/// biggest radius anyone should author is a little over five seconds.
+static constexpr float kWanderLegTimeout = 8.0f;
+
+void Enemy::wanderAroundPost(float speed) {
+  if (wander_radius <= 0.0f || !current_ctx) return;
+
+  if (wander_walking) {
+    // The same field is the leg's deadline while walking and the pause when
+    // stopped -- the two states are exclusive, and a second float would only
+    // ever hold a number the other state ignores. The deadline is what stops an
+    // enemy shoved off its line by a squadmate from leaning into a tree for the
+    // rest of the level: the leg is abandoned and a new one picked from where
+    // it actually ended up.
+    wander_dwell_timer -= current_ctx->dt;
+
+    // `current_path` is shared with the combat and investigate branches, and
+    // they overwrite it without asking. An enemy that spotted the player
+    // without ever leaving its disc and then lost them again comes back here
+    // still "walking", but the path underneath it is now a route to where the
+    // player was -- so check the leg still ends inside the disc rather than
+    // trusting the flag alone.
+    const bool leg_is_ours =
+        !current_path.empty() &&
+        Vector2Distance({current_path.back().x, current_path.back().z},
+                        {spawn_position.x, spawn_position.z}) <=
+            wander_radius + 0.5f;
+
+    // moveAlongPath returns true when the path is spent, which for a one-point
+    // path is arrival.
+    if (!leg_is_ours || moveAlongPath(speed) || wander_dwell_timer <= 0.0f) {
+      wander_walking = false;
+      setHorizontalVelocity({0.0f, 0.0f, 0.0f});
+      wander_dwell_timer = 2.0f + (rand() % 300) / 100.0f; // 2.0s to 5.0s
+    }
+    return;
+  }
+
+  setHorizontalVelocity({0.0f, 0.0f, 0.0f});
+  wander_dwell_timer -= current_ctx->dt;
+  if (wander_dwell_timer > 0.0f) return;
+
+  // No navmesh means no way to tell ground from a drop, and a guard that walks
+  // off a wall is worse than one that stands still.
+  if (current_ctx->nav_query == nullptr) {
+    wander_dwell_timer = 1.0f;
+    return;
+  }
+
+  // Four tries, then wait and try again rather than settling for a point we
+  // could not verify. The inner floor of 0.4 keeps the destination far enough
+  // to be worth walking to -- without it a draw near 0 makes the enemy take a
+  // single step and immediately dwell again.
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    const float angle = (rand() % 360) * DEG2RAD;
+    const float radius =
+        wander_radius * (0.4f + 0.6f * ((rand() % 100) / 100.0f));
+    const Vector3 candidate = {spawn_position.x + std::cos(angle) * radius,
+                               spawn_position.y,
+                               spawn_position.z + std::sin(angle) * radius};
+
+    // True means the whole segment stayed on the navmesh -- no ledge, no wall,
+    // no gap between here and there. That is a stronger answer than findPath
+    // would give: Detour returns a PARTIAL path to the nearest reachable
+    // polygon, so a non-empty path would not prove the candidate itself is
+    // standable. It also makes the walk a straight line, which is why this
+    // hands moveAlongPath a one-point path rather than a route.
+    if (current_ctx->nav_query->raycast(position, candidate)) {
+      current_path = {candidate};
+      wander_walking = true;
+      wander_dwell_timer = kWanderLegTimeout;
+      // Due immediately, so that aggro landing mid-leg replaces this straight
+      // line with a real chase path on the next tick instead of walking the
+      // last wander destination for up to a second first.
+      path_recalc_timer = 0.0f;
+      return;
+    }
+  }
+
+  wander_dwell_timer = 1.0f;
 }
 
 void Enemy::truncatePathBySmoke(std::vector<Vector3> &path) {

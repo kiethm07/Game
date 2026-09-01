@@ -509,7 +509,7 @@ def check_enemy_spawns(level, level_dir, declared, overlay, spawns_effective,
         known = None
 
     allowed = {"type", "x", "y", "z", "yaw", "maxHealth", "vision",
-               "startAwareness"}
+               "startAwareness", "wanderRadius"}
     bad = 0
 
     for i, spawn in enumerate(overlay["spawns"]):
@@ -538,6 +538,16 @@ def check_enemy_spawns(level, level_dir, declared, overlay, spawns_effective,
             bad += 1
             print("  FAIL  %-12s maxHealth %.1f would spawn something already "
                   "dead" % (label, spawn["maxHealth"]))
+        if "wanderRadius" in spawn:
+            radius = spawn["wanderRadius"]
+            if not isinstance(radius, (int, float)):
+                bad += 1
+                print("  FAIL  %-12s wanderRadius %r is not a number"
+                      % (label, radius))
+            elif radius < 0:
+                bad += 1
+                print("  FAIL  %-12s wanderRadius %.1f is negative; use 0 or "
+                      "omit the key to hold the post" % (label, radius))
         awareness = spawn.get("startAwareness")
         if isinstance(awareness, (int, float)) and not 0 <= awareness <= 200:
             print("  note  %-12s startAwareness %.0f is outside the 0-200 "

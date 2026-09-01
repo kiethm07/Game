@@ -4,20 +4,23 @@
     {
       "type": "Swordman",
       "x": 32.54,
-      "z": 43.70,
-      "yaw": 137.5
+      "z": 43.7,
+      "yaw": 137.5,
+      "wanderRadius": 4.0
     },
     {
       "type": "Swordman",
       "x": 19.18,
       "z": 14.88,
-      "yaw": 22.3
+      "yaw": 22.3,
+      "wanderRadius": 3.0
     },
     {
       "type": "Swordman",
       "x": 7.43,
       "z": -27.33,
-      "yaw": 3.3
+      "yaw": 3.3,
+      "wanderRadius": 3.5
     },
     {
       "type": "Swordman",

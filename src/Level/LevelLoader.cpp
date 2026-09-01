@@ -140,6 +140,18 @@ bool parseSpawnEntry(const json &node, const std::string &source, size_t index,
             if (vision.contains("cone"))
                 out.overrides.visionConeDegrees = vision.at("cone").get<float>();
         }
+        if (node.contains("wanderRadius")) {
+            const float radius = node.at("wanderRadius").get<float>();
+            if (radius < 0.0f) {
+                TraceLog(LOG_WARNING,
+                         "LevelLoader: %s entry %d has wanderRadius %.1f. A "
+                         "radius cannot be negative; use 0 or omit the key to "
+                         "hold the post. Skipped.",
+                         source.c_str(), (int)index, radius);
+                return false;
+            }
+            out.overrides.wanderRadius = radius;
+        }
         if (node.contains("startAwareness")) {
             out.overrides.startAwareness =
                 node.at("startAwareness").get<float>();
@@ -207,9 +219,14 @@ void applyEnemyOverlay(const std::string &dir, Level &parsed) {
 
     std::vector<EnemySpawn> spawns;
     int skipped = 0;
+    // Counted separately from spawns.size(): that is how many were KEPT, so
+    // once one entry is skipped every later warning names an index the author
+    // cannot find in the file. The point of the index is to locate the entry.
+    size_t entry_index = 0;
     for (const json &node : root.at("spawns")) {
         EnemySpawn spawn;
-        if (!parseSpawnEntry(node, path, spawns.size(), spawn)) {
+        const size_t index = entry_index++;
+        if (!parseSpawnEntry(node, path, index, spawn)) {
             ++skipped;
             continue;
         }
@@ -296,10 +313,11 @@ Level LevelLoader::load(const std::string &jsonPath) {
         // level looking for, with the log open. Different detectability,
         // different policy.
         int skipped = 0;
+        size_t entry_index = 0;
         for (const json &node : root.value("enemySpawns", json::array())) {
             EnemySpawn spawn;
-            if (!parseSpawnEntry(node, jsonPath, parsed.enemySpawns.size(),
-                                 spawn)) {
+            const size_t index = entry_index++;
+            if (!parseSpawnEntry(node, jsonPath, index, spawn)) {
                 ++skipped;
                 continue;
             }

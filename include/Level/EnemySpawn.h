@@ -30,6 +30,16 @@ struct EnemyOverrides {
     std::optional<float> visionRadius;
     std::optional<float> visionConeDegrees;
 
+    /// Radius in metres of the disc around spawn_position this enemy loiters
+    /// in while Unaware, instead of standing its post.
+    ///
+    /// Absent or 0 is the behaviour every enemy had before this existed: walk
+    /// home if displaced, then hold the authored yaw. A positive value is a
+    /// leash rather than a promise -- the enemy only steps onto points the
+    /// navmesh says it can reach in a straight line, so a guard on a narrow
+    /// walkway given 5 m simply uses less of it.
+    std::optional<float> wanderRadius;
+
     /// Seeds StealthComponent's 0-200 awareness scale (100 = Suspicious,
     /// 200 = Aware).
     ///
