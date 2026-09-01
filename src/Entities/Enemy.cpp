@@ -299,15 +299,23 @@ void Enemy::updateCombatCircling(const UpdateContext& ctx, Vector3 target_pos, f
 }
 
 void Enemy::drawHPBar(const Camera3D &camera, bool locked_on) const {
+  constexpr float MAX_DISTANCE = 36.0f;
 
   Vector3 head_pos = {position.x, position.y + body_height + 0.2f, position.z};
+  Vector3 to_enemy = Vector3Subtract(head_pos, camera.position);
+
+  if (!locked_on) {
+    if (Vector3LengthSqr(to_enemy) > MAX_DISTANCE * MAX_DISTANCE) {
+      return;
+    }
+  }
 
   Vector3 cam_forward =
       Vector3Normalize(Vector3Subtract(camera.target, camera.position));
-  Vector3 to_enemy = Vector3Subtract(head_pos, camera.position);
 
-  if (Vector3DotProduct(cam_forward, to_enemy) <= 0.0f)
+  if (Vector3DotProduct(cam_forward, to_enemy) <= 0.0f) {
     return;
+  }
 
   Vector2 screen_pos = GetWorldToScreen(head_pos, camera);
 
