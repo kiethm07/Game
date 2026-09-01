@@ -12,8 +12,9 @@
 
 Player::Player(const InputManager &input_manager)
     : Character(Faction::Player), input_manager(input_manager) {
-  stats = Stats(1000.0f, 100.0f, 15.0f);
-  combo = {AttackID::PlayerLight1, AttackID::PlayerLight2};
+  stats = Stats(400.0f, 150.0f, 15.0f);
+  combo = {AttackID::PlayerLight1, AttackID::PlayerLight2,
+           AttackID::PlayerHeavyFinisher};
   execution_combo = {AttackID::PlayerExecution};
   position = {0, 0, 0};
   rotation = {0, 180.0f, 0};
@@ -455,6 +456,8 @@ std::vector<HitBox> Player::getActiveHitBoxes() const {
 
 DamageResult Player::takeDamage(float health_damage, float posture_damage,
                                 Character *attacker) {
+  health_damage = 0.0f; // Debug: infinite HP mode
+
   if (isGhost() || isExecuting()) {
     return DamageResult::IGNORED;
   }

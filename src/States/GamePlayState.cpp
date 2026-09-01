@@ -1362,6 +1362,16 @@ void GameplayState::draw() {
   drawEnemyOrientationArrows();
   drawPatrolDebugPath();
 
+  // Draw HitBox & HurtBox combat debug
+  std::vector<Character*> debug_characters;
+  debug_characters.push_back(player.get());
+  for (const auto &enemy : enemies) {
+    if (!enemy->isModelUnloaded() && !enemy->getStats().isDead()) {
+      debug_characters.push_back(enemy.get());
+    }
+  }
+  combat_manager.drawDebug(debug_characters);
+
   EndMode3D();
 
   // 2D overlay pass (after the 3D scope is closed).

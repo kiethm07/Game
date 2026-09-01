@@ -16,21 +16,21 @@ void AttackRegistry::InitializeCatalog() {
   // Slash: 1.53s authored, in place.
   AttackData light1(0.55f, 0.20f, 0.76f, "Slash", false);
   // Sweep capsule from right to left (simulating a horizontal slash)
-  light1.addHitBoxDef(HitBoxDefinition::createCapsule({1.0f, 0.9f, 1.0f}, {-1.0f, 0.9f, 1.0f}, 0.5f, 25.0f, 15.0f));
+  light1.addHitBoxDef(HitBoxDefinition::createCapsule({1.0f, 0.9f, 1.0f}, {-1.0f, 0.9f, 1.0f}, 0.5f, 38.0f, 23.0f));
   light1.setTrail(true, 0.22f, {0.0f, 1.25f, 0.0f}, {0.0f, 0.1f, 0.0f});
   attack_catalog.emplace(AttackID::PlayerLight1, light1);
 
   // Slash_3: 1.60s authored, small step in and out.
   AttackData light2(0.55f, 0.20f, 0.83f, "Slash_3", true);
   // Sweep capsule from left to right (simulating a horizontal slash)
-  light2.addHitBoxDef(HitBoxDefinition::createCapsule({-1.0f, 0.9f, 1.0f}, {1.0f, 0.9f, 1.0f}, 0.5f, 25.0f, 15.0f));
+  light2.addHitBoxDef(HitBoxDefinition::createCapsule({-1.0f, 0.9f, 1.0f}, {1.0f, 0.9f, 1.0f}, 0.5f, 38.0f, 23.0f));
   light2.setTrail(true, 0.22f, {0.0f, 1.25f, 0.0f}, {0.0f, 0.1f, 0.0f});
   attack_catalog.emplace(AttackID::PlayerLight2, light2);
 
   // Attack_2: 1.33s authored, 2.7-unit forward lunge.
   AttackData heavy1(0.45f, 0.18f, 0.68f, "Attack_2", true);
   // Thrust capsule straight forward
-  heavy1.addHitBoxDef(HitBoxDefinition::createCapsule({0.0f, 0.9f, 0.0f}, {0.0f, 0.9f, 2.0f}, 0.6f, 35.0f, 25.0f));
+  heavy1.addHitBoxDef(HitBoxDefinition::createCapsule({0.0f, 0.9f, 0.0f}, {0.0f, 0.9f, 2.0f}, 0.6f, 53.0f, 38.0f));
   heavy1.setTrail(true, 0.25f, {0.0f, 1.25f, 0.0f}, {0.0f, 0.1f, 0.0f});
   attack_catalog.emplace(AttackID::PlayerHeavyFinisher, heavy1);
 
@@ -132,7 +132,7 @@ void AttackRegistry::InitializeCatalog() {
     // over the window the tip travels the whole 100 deg arc, so a bar is what
     // it covers. 2.30 m of reach at the centre, against the blade's own 2.6.
     mb_spin.addHitBoxDef(HitBoxDefinition::createCapsule(
-        {-1.80f, 1.35f, 1.50f}, {1.80f, 1.35f, 1.50f}, 0.80f, 30.0f, 18.0f));
+        {-1.80f, 1.35f, 1.50f}, {1.80f, 1.35f, 1.50f}, 0.80f, 60.0f, 36.0f));
   }
   mb_spin.setTrail(true, 0.30f, kMiniBossBlade, kMiniBossHilt);
   // The clip is in place, so without this the boss turns three times on the
@@ -152,10 +152,10 @@ void AttackRegistry::InitializeCatalog() {
   // 0.95 + 0.22 + 0.43 + 0.24 + 0.89 = 2.73.
   AttackData mb_double(0.95f, 0.22f, 0.89f, "Combo_3", false);
   mb_double.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {1.9f, 1.25f, 1.25f}, {-1.9f, 1.25f, 1.25f}, 0.70f, 28.0f, 16.0f));
+      {1.9f, 1.25f, 1.25f}, {-1.9f, 1.25f, 1.25f}, 0.70f, 56.0f, 32.0f));
   mb_double.addSwing(0.43f, 0.24f);
   mb_double.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {-1.9f, 1.15f, 1.15f}, {1.9f, 1.15f, 1.15f}, 0.70f, 32.0f, 18.0f));
+      {-1.9f, 1.15f, 1.15f}, {1.9f, 1.15f, 1.15f}, 0.70f, 64.0f, 36.0f));
   mb_double.setTrail(true, 0.28f, kMiniBossBlade, kMiniBossHilt);
   attack_catalog.emplace(AttackID::MiniBossDoubleSwing, mb_double);
 
@@ -171,13 +171,13 @@ void AttackRegistry::InitializeCatalog() {
   // opening the boss gives and it is left at very nearly its authored length.
   AttackData mb_triple(0.95f, 0.22f, 1.38f, "Combo_2", false);
   mb_triple.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {1.9f, 1.20f, 1.25f}, {-1.9f, 1.20f, 1.25f}, 0.70f, 25.0f, 15.0f));
+      {1.9f, 1.20f, 1.25f}, {-1.9f, 1.20f, 1.25f}, 0.70f, 50.0f, 30.0f));
   mb_triple.addSwing(0.43f, 0.20f);
   mb_triple.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {-1.9f, 1.30f, 1.25f}, {1.9f, 1.30f, 1.25f}, 0.70f, 25.0f, 15.0f));
+      {-1.9f, 1.30f, 1.25f}, {1.9f, 1.30f, 1.25f}, 0.70f, 50.0f, 30.0f));
   mb_triple.addSwing(0.80f, 0.20f);
   mb_triple.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {0.0f, 1.60f, 0.90f}, {0.0f, 0.35f, 1.90f}, 0.70f, 45.0f, 25.0f));
+      {0.0f, 1.60f, 0.90f}, {0.0f, 0.35f, 1.90f}, 0.70f, 90.0f, 50.0f));
   mb_triple.setTrail(true, 0.28f, kMiniBossBlade, kMiniBossHilt);
   attack_catalog.emplace(AttackID::MiniBossTripleSwing, mb_triple);
 
@@ -212,73 +212,45 @@ void AttackRegistry::InitializeCatalog() {
   // playable, in place to 0.000 m. Two hits:
   //   1. t=0.17-0.30, the jab, fist reaching 0.91 m forward at 0.59 high
   //   2. t=1.47-1.60, the club coming across low, 1.31 m out at 0.48
-  // 0.17 + 0.13 + 1.17 + 0.13 + 0.37 = 1.97. The long gap between them is the
-  // punch's own recovery, which the swing is appended after rather than into.
+  // 0.17 + 0.13 + 1.17 + 0.13 + 0.37 = 1.97.
   AttackData fb_punch(0.17f, 0.13f, 0.37f, "Attack", false);
   fb_punch.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {0.000f, 1.125f, 0.450f}, {0.000f, 0.900f, 1.950f}, 0.825f, 30.0f, 18.0f));
+      {0.000f, 1.125f, 0.450f}, {0.000f, 0.900f, 1.950f}, 0.825f, 60.0f, 36.0f));
   fb_punch.addSwing(1.17f, 0.13f);
   fb_punch.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {2.250f, 0.825f, 1.425f}, {-2.250f, 0.825f, 1.425f}, 0.900f, 35.0f, 20.0f));
+      {2.250f, 0.825f, 1.425f}, {-2.250f, 0.825f, 1.425f}, 0.900f, 70.0f, 40.0f));
   attack_catalog.emplace(AttackID::FinalBossPunch, fb_punch);
 
   // `Attack_Rapid` (five alternating swipes): 97 frames, 3.200 s playable, in
-  // place to 0.000 m. Five hits, alternating arms -- the odd ones are the left
-  // club sweeping low and wide, the even ones the shorter right arm coming over
-  // the top, which is why their reaches and heights differ:
-  //   1. t=0.83-1.00, left,  1.52 m out at 1.13
-  //   2. t=1.13-1.40, right, 0.95 m out at 1.89
-  //   3. t=1.77-1.93, left,  1.52 m out at 1.13
-  //   4. t=2.07-2.33, right, 0.95 m out at 1.89
-  //   5. t=2.70-2.83, left,  1.31 m out at 0.49
-  // 0.83 + 0.17 + 0.13 + 0.27 + 0.37 + 0.17 + 0.14 + 0.26 + 0.37 + 0.13 + 0.36
-  // = 3.20. Per-hit damage is deliberately low: five of these landing in full
-  // is 110, which is more than any single miniboss combo and is meant to be the
-  // punish for standing in it.
+  // place to 0.000 m. Five hits, alternating arms:
+  // 0.83 + 0.17 + 0.13 + 0.27 + 0.37 + 0.17 + 0.14 + 0.26 + 0.37 + 0.13 + 0.36 = 3.20.
   AttackData fb_flurry(0.83f, 0.17f, 0.36f, "Attack_Rapid", false);
   fb_flurry.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {2.400f, 1.650f, 1.650f}, {-2.400f, 1.650f, 1.650f}, 0.900f, 22.0f, 14.0f));
+      {2.400f, 1.650f, 1.650f}, {-2.400f, 1.650f, 1.650f}, 0.900f, 44.0f, 28.0f));
   fb_flurry.addSwing(0.13f, 0.27f);
   fb_flurry.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {-1.800f, 2.625f, 1.275f}, {1.800f, 2.025f, 1.275f}, 0.825f, 22.0f, 14.0f));
+      {-1.800f, 2.625f, 1.275f}, {1.800f, 2.025f, 1.275f}, 0.825f, 44.0f, 28.0f));
   fb_flurry.addSwing(0.37f, 0.17f);
   fb_flurry.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {2.400f, 1.650f, 1.650f}, {-2.400f, 1.650f, 1.650f}, 0.900f, 22.0f, 14.0f));
+      {2.400f, 1.650f, 1.650f}, {-2.400f, 1.650f, 1.650f}, 0.900f, 44.0f, 28.0f));
   fb_flurry.addSwing(0.14f, 0.26f);
   fb_flurry.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {-1.800f, 2.625f, 1.275f}, {1.800f, 2.025f, 1.275f}, 0.825f, 22.0f, 14.0f));
+      {-1.800f, 2.625f, 1.275f}, {1.800f, 2.025f, 1.275f}, 0.825f, 44.0f, 28.0f));
   fb_flurry.addSwing(0.37f, 0.13f);
   fb_flurry.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {2.250f, 0.825f, 1.425f}, {-2.250f, 0.825f, 1.425f}, 0.900f, 22.0f, 14.0f));
+      {2.250f, 0.825f, 1.425f}, {-2.250f, 0.825f, 1.425f}, 0.900f, 44.0f, 28.0f));
   attack_catalog.emplace(AttackID::FinalBossFlurry, fb_flurry);
 
-  // `Attack_Jump` (the leap, a landing slam, then two swings): 102 frames,
-  // 3.367 s playable, and the ONE enemy attack in the game that travels --
-  // 2.556 m forward (1.704 at authoring scale), consumed through
-  // usesRootMotion() below. Three hits:
-  //   1. t=1.33-1.67, the landing slam, both fists coming down
-  //   2. t=2.27-2.57, left club across
-  //   3. t=2.70-3.00, right arm over the top
-  // 1.33 + 0.34 + 0.60 + 0.30 + 0.13 + 0.30 + 0.37 = 3.37.
-  //
-  // The airborne window at t=0.33-0.67 is NOT a hit: it is the arms coming up
-  // as the character leaves the ground, and a hitbox there would catch a player
-  // standing where the boss started rather than where it lands.
-  //
-  // Capsule reach is quoted from the body, not from the clip. The measured fist
-  // positions run to 3.2 m forward, but 1.70 of that is the leap itself, and
-  // the capsule is placed in the character's own space AFTER root motion has
-  // moved it -- so counting the travel twice would give the slam nearly double
-  // the reach it looks like it has.
+  // `Attack_Jump` (the leap, a landing slam, then two swings): 102 frames, 3.367 s.
   AttackData fb_leap(1.33f, 0.34f, 0.37f, "Attack_Jump", true);
   fb_leap.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {1.350f, 2.100f, 0.600f}, {-1.350f, 0.300f, 2.250f}, 1.125f, 55.0f, 32.0f));
+      {1.350f, 2.100f, 0.600f}, {-1.350f, 0.300f, 2.250f}, 1.125f, 110.0f, 64.0f));
   fb_leap.addSwing(0.60f, 0.30f);
   fb_leap.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {2.550f, 1.350f, 1.650f}, {-2.550f, 1.350f, 1.650f}, 0.975f, 32.0f, 20.0f));
+      {2.550f, 1.350f, 1.650f}, {-2.550f, 1.350f, 1.650f}, 0.975f, 64.0f, 40.0f));
   fb_leap.addSwing(0.13f, 0.30f);
   fb_leap.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {-1.950f, 2.550f, 1.350f}, {1.950f, 1.950f, 1.350f}, 0.900f, 32.0f, 20.0f));
+      {-1.950f, 2.550f, 1.350f}, {1.950f, 1.950f, 1.350f}, 0.900f, 64.0f, 40.0f));
   attack_catalog.emplace(AttackID::FinalBossLeap, fb_leap);
 
   // ---------------------------------------------------------------------
@@ -301,7 +273,7 @@ void AttackRegistry::InitializeCatalog() {
   // 0.60 + 0.20 + 0.47 = 1.27.
   AttackData km_swing(0.60f, 0.20f, 0.47f, "Attack", false);
   km_swing.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {-0.35f, 1.45f, 1.10f}, {0.80f, 0.45f, 1.10f}, 0.55f, 30.0f, 18.0f));
+      {-0.35f, 1.45f, 1.10f}, {0.80f, 0.45f, 1.10f}, 0.55f, 60.0f, 36.0f));
   attack_catalog.emplace(AttackID::KimonoSwing, km_swing);
 
   // `Combo_1` ("standing melee combo attack ver. 2"): 127 frames, 4.200 s, in
@@ -314,15 +286,15 @@ void AttackRegistry::InitializeCatalog() {
   // 0.98 + 0.12 + 0.50 + 0.12 + 0.84 + 0.18 + 1.46 = 4.20.
   AttackData km_cleave(0.98f, 0.12f, 1.46f, "Combo_1", false);
   km_cleave.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {-1.20f, 0.90f, 1.05f}, {1.20f, 0.90f, 1.05f}, 0.55f, 26.0f, 14.0f));
+      {-1.20f, 0.90f, 1.05f}, {1.20f, 0.90f, 1.05f}, 0.55f, 52.0f, 28.0f));
   km_cleave.addSwing(0.50f, 0.12f);
   km_cleave.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {1.20f, 0.78f, 1.05f}, {-1.20f, 0.78f, 1.05f}, 0.55f, 26.0f, 14.0f));
+      {1.20f, 0.78f, 1.05f}, {-1.20f, 0.78f, 1.05f}, 0.55f, 52.0f, 28.0f));
   // The finisher. A near-vertical capsule, because the tip covers 1.7 m of
   // height in 0.18 s: a horizontal bar at any one height would miss most of it.
   km_cleave.addSwing(0.84f, 0.18f);
   km_cleave.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {0.0f, 1.70f, 1.15f}, {0.0f, 0.15f, 1.60f}, 0.62f, 38.0f, 22.0f));
+      {0.0f, 1.70f, 1.15f}, {0.0f, 0.15f, 1.60f}, 0.62f, 76.0f, 44.0f));
   km_cleave.setTrail(true, 0.26f, kKimonoBlade, kKimonoHilt);
   attack_catalog.emplace(AttackID::KimonoCleave, km_cleave);
 
@@ -339,13 +311,13 @@ void AttackRegistry::InitializeCatalog() {
   // 0.45 + 0.26 + 1.19 + 0.22 + 0.71 + 0.22 + 1.62 = 4.67.
   AttackData km_lunge(0.45f, 0.26f, 1.62f, "Combo_2", true);
   km_lunge.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {-1.00f, 0.85f, 0.95f}, {1.00f, 0.85f, 0.95f}, 0.50f, 22.0f, 12.0f));
+      {-1.00f, 0.85f, 0.95f}, {1.00f, 0.85f, 0.95f}, 0.50f, 44.0f, 24.0f));
   km_lunge.addSwing(1.19f, 0.22f);
   km_lunge.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {-1.30f, 1.00f, 1.25f}, {1.30f, 1.00f, 1.25f}, 0.55f, 30.0f, 16.0f));
+      {-1.30f, 1.00f, 1.25f}, {1.30f, 1.00f, 1.25f}, 0.55f, 60.0f, 32.0f));
   km_lunge.addSwing(0.71f, 0.22f);
   km_lunge.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {1.00f, 0.78f, 1.15f}, {-1.10f, 1.75f, 1.50f}, 0.60f, 34.0f, 20.0f));
+      {1.00f, 0.78f, 1.15f}, {-1.10f, 1.75f, 1.50f}, 0.60f, 68.0f, 40.0f));
   km_lunge.setTrail(true, 0.26f, kKimonoBlade, kKimonoHilt);
   attack_catalog.emplace(AttackID::KimonoLunge, km_lunge);
 }

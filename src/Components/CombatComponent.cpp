@@ -73,8 +73,8 @@ void CombatComponent::update(float dt) {
         return;
     }
 
-    //Attack
-    state_timer -= dt;
+    //Attack (0.1x speed debug mode)
+    state_timer -= (dt * 0.1f);
 
     if (state_timer <= 0.0f) {
         AttackID current_id = active_combo_ptr->getAttackID(combo_index);

@@ -279,8 +279,10 @@ SwordmanAnimator::resolve(const Frame &frame) const {
         selection.clip = named;
     }
 
-    if (selection.clip >= 0)
+    if (selection.clip >= 0) {
+      selection.rate = 0.1f; // Debug: 0.1x speed for all attacks
       return selection;
+    }
   }
 
   // Below the swing, so a hit taken mid-attack does not interrupt it — the same
