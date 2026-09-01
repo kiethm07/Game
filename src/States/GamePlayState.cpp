@@ -144,7 +144,7 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
   asset_manager.loadSound(AssetID::SFX_BLOCK, assets::path("audio/block.MP3"));
   asset_manager.loadSound(AssetID::SFX_DEATHBLOW, assets::path("audio/deflect_end.mp3"));
   asset_manager.loadSound(AssetID::SFX_WALK, assets::path("audio/walkingongrass.mp3"));
-  asset_manager.loadSound(AssetID::SFX_RUN, assets::path("audio/runningongrass.mp3"));
+  asset_manager.loadSound(AssetID::SFX_RUN, assets::path("audio/runningongrass.wav"));
   asset_manager.loadSound(AssetID::SFX_LAND, assets::path("audio/landingongrass.mp3"));
   asset_manager.loadSound(AssetID::SFX_SLASH, assets::path("audio/swordslash.mp3"));
   asset_manager.loadSound(AssetID::SFX_HEAL, assets::path("audio/healinggourd.mp3"));
@@ -804,6 +804,7 @@ StateAction GameplayState::update(float dt) {
   camera_controller->update(shot);
 
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
+    campaign.resetCompleted();
     return StateAction::ChangeToMenu;
   }
 
@@ -1149,6 +1150,9 @@ StateAction GameplayState::updateDefeatScreen() {
   }
 
   if (defeat_hovered >= 0 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    if (defeat_buttons[defeat_hovered].action == StateAction::ChangeToMenu) {
+      campaign.resetCompleted();
+    }
     return defeat_buttons[defeat_hovered].action;
   }
 
@@ -1157,6 +1161,7 @@ StateAction GameplayState::updateDefeatScreen() {
   // screen whose whole content is two buttons, a key that picks one of them
   // without saying which is a way to lose a run by leaning on the keyboard.
   if (IsKeyPressed(KEY_ESCAPE)) {
+    campaign.resetCompleted();
     return StateAction::ChangeToMenu;
   }
 

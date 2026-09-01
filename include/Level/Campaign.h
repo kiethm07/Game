@@ -114,21 +114,23 @@ public:
     if (phaseIndex >= count()) return false;
     cursor = phaseIndex;
     carry = PhaseCarry{};
+    completed = false;
     return true;
   }
 
   /// Back to the first phase carrying nothing. This is what ends a run, and it
   /// is reached two ways: quitting out of a phase, and finishing the last one.
-  ///
-  /// Expressed as startAt(0) so "a fresh run carries nothing" is stated once
-  /// rather than twice with a chance to drift.
-  void restart() { startAt(0); }
+  void restart() {
+    cursor = 0;
+    carry = PhaseCarry{};
+  }
 
   const PhaseCarry &getCarry() const { return carry; }
   void setCarry(const PhaseCarry &c) { carry = c; }
 
   bool isCompleted() const { return completed; }
   void markCompleted() { completed = true; }
+  void resetCompleted() { completed = false; }
 
 private:
   size_t cursor = 0;

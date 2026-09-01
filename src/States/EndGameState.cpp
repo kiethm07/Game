@@ -34,7 +34,6 @@ EndGameState::~EndGameState() {
 
 void EndGameState::enter() {
   EnableCursor();
-  campaign.markCompleted();
   loadBackground();
   buildButtons();
   alpha_timer = 0.0f;
@@ -115,10 +114,17 @@ StateAction EndGameState::update(float dt) {
   }
 
   if (hovered >= 0 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    campaign.markCompleted();
     return StateAction::ChangeToMenu;
   }
 
-  if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_ESCAPE)) {
+  if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
+    campaign.markCompleted();
+    return StateAction::ChangeToMenu;
+  }
+
+  if (IsKeyPressed(KEY_ESCAPE)) {
+    campaign.resetCompleted();
     return StateAction::ChangeToMenu;
   }
 
