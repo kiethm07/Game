@@ -186,8 +186,8 @@ void AttackRegistry::InitializeCatalog() {
       {0.000f, 1.125f, 0.450f}, {0.000f, 0.900f, 1.950f}, 0.825f, 60.0f, 36.0f));
   attack_catalog.emplace(AttackID::FinalBossJab, fb_jab);
 
-  // 2. FinalBossClub: 0.90s windup + 0.13s active + 0.27s recovery = 1.30s total
-  AttackData fb_club(0.90f, 0.13f, 0.27f, "Attack", 0.67f, false);
+  // 2. FinalBossClub: 0.90s windup + 0.13s active + 1.00s recovery
+  AttackData fb_club(0.90f, 0.13f, 1.00f, "Attack", 0.67f, false);
   fb_club.addHitBoxDef(HitBoxDefinition::createCapsule(
       {2.250f, 0.825f, 1.425f}, {-2.250f, 0.825f, 1.425f}, 0.900f, 70.0f, 40.0f));
   attack_catalog.emplace(AttackID::FinalBossClub, fb_club);
@@ -217,8 +217,8 @@ void AttackRegistry::InitializeCatalog() {
       {-1.800f, 2.625f, 1.275f}, {1.800f, 2.025f, 1.275f}, 0.825f, 44.0f, 28.0f));
   attack_catalog.emplace(AttackID::FinalBossFlurry4, fb_flurry4);
 
-  // 5. FinalBossFlurry5: 0.35s windup + 0.10s active + 0.32s recovery = 0.77s total
-  AttackData fb_flurry5(0.35f, 0.10f, 0.32f, "Attack_Rapid", 2.43f, false);
+  // 5. FinalBossFlurry5: 0.35s windup + 0.10s active + 1.00s recovery
+  AttackData fb_flurry5(0.35f, 0.10f, 1.00f, "Attack_Rapid", 2.43f, false);
   fb_flurry5.addHitBoxDef(HitBoxDefinition::createCapsule(
       {2.250f, 0.825f, 1.425f}, {-2.250f, 0.825f, 1.425f}, 0.900f, 44.0f, 28.0f));
   attack_catalog.emplace(AttackID::FinalBossFlurry5, fb_flurry5);
@@ -236,8 +236,8 @@ void AttackRegistry::InitializeCatalog() {
       {2.550f, 1.350f, 1.650f}, {-2.550f, 1.350f, 1.650f}, 0.975f, 64.0f, 40.0f));
   attack_catalog.emplace(AttackID::FinalBossLeapSweep, fb_leap2);
 
-  // 3. FinalBossLeapOverhead: 0.40s windup + 0.10s active + 0.31s recovery = 0.81s total
-  AttackData fb_leap3(0.40f, 0.10f, 0.31f, "Attack_Jump", 2.56f, false);
+  // 3. FinalBossLeapOverhead: 0.40s windup + 0.10s active + 1.00s recovery
+  AttackData fb_leap3(0.40f, 0.10f, 1.00f, "Attack_Jump", 2.56f, false);
   fb_leap3.addHitBoxDef(HitBoxDefinition::createCapsule(
       {-1.950f, 2.550f, 1.350f}, {1.950f, 1.950f, 1.350f}, 0.900f, 64.0f, 40.0f));
   attack_catalog.emplace(AttackID::FinalBossLeapOverhead, fb_leap3);
