@@ -180,7 +180,7 @@ void AttackRegistry::InitializeCatalog() {
   // ---------------------------------------------------------------------
 
   // Combo 1: Punch (Jab + Club)
-  AttackData fb_jab(0.17f, 0.13f, 0.37f, "Attack", 0.00f, false);
+  AttackData fb_jab(0.17f, 0.13f, 0.00f, "Attack", 0.00f, false);
   fb_jab.addHitBoxDef(HitBoxDefinition::createCapsule(
       {0.000f, 1.125f, 0.450f}, {0.000f, 0.900f, 1.950f}, 0.825f, 60.0f, 36.0f));
   attack_catalog.emplace(AttackID::FinalBossJab, fb_jab);
