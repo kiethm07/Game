@@ -28,5 +28,5 @@ private:
   /// Fallback only, for owners that never call setSpeed. Roughly the authored
   /// speed of a Mixamo run cycle.
   float movement_speed = 4.0f;
-  const float ROTATION_SPEED = 10.0f;
+  const float ROTATION_SPEED = 20.0f;
 };

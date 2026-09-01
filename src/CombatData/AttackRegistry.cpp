@@ -180,54 +180,64 @@ void AttackRegistry::InitializeCatalog() {
   // ---------------------------------------------------------------------
 
   // Combo 1: Punch (Jab + Club)
-  AttackData fb_jab(0.17f, 0.13f, 0.00f, "Attack", 0.00f, false);
+  // 1. FinalBossJab: 0.30s windup + 0.13s active + 0.24s recovery = 0.67s total
+  AttackData fb_jab(0.30f, 0.13f, 0.24f, "Attack", 0.00f, false);
   fb_jab.addHitBoxDef(HitBoxDefinition::createCapsule(
       {0.000f, 1.125f, 0.450f}, {0.000f, 0.900f, 1.950f}, 0.825f, 60.0f, 36.0f));
   attack_catalog.emplace(AttackID::FinalBossJab, fb_jab);
 
-  AttackData fb_club(0.80f, 0.13f, 0.37f, "Attack", 0.67f, false);
+  // 2. FinalBossClub: 0.90s windup + 0.13s active + 0.27s recovery = 1.30s total
+  AttackData fb_club(0.90f, 0.13f, 0.27f, "Attack", 0.67f, false);
   fb_club.addHitBoxDef(HitBoxDefinition::createCapsule(
       {2.250f, 0.825f, 1.425f}, {-2.250f, 0.825f, 1.425f}, 0.900f, 70.0f, 40.0f));
   attack_catalog.emplace(AttackID::FinalBossClub, fb_club);
 
   // Combo 2: Flurry (5 alternating swipes)
-  AttackData fb_flurry1(0.83f, 0.17f, 0.00f, "Attack_Rapid", 0.00f, false);
+  // 1. FinalBossFlurry1: 0.92s windup + 0.10s active + 0.00s recovery = 1.02s total
+  AttackData fb_flurry1(0.92f, 0.10f, 0.00f, "Attack_Rapid", 0.00f, false);
   fb_flurry1.addHitBoxDef(HitBoxDefinition::createCapsule(
       {2.400f, 1.650f, 1.650f}, {-2.400f, 1.650f, 1.650f}, 0.900f, 44.0f, 28.0f));
   attack_catalog.emplace(AttackID::FinalBossFlurry1, fb_flurry1);
 
-  AttackData fb_flurry2(0.13f, 0.27f, 0.00f, "Attack_Rapid", 1.00f, false);
+  // 2. FinalBossFlurry2: 0.37s windup + 0.10s active + 0.00s recovery = 0.47s total
+  AttackData fb_flurry2(0.37f, 0.10f, 0.00f, "Attack_Rapid", 1.02f, false);
   fb_flurry2.addHitBoxDef(HitBoxDefinition::createCapsule(
       {-1.800f, 2.625f, 1.275f}, {1.800f, 2.025f, 1.275f}, 0.825f, 44.0f, 28.0f));
   attack_catalog.emplace(AttackID::FinalBossFlurry2, fb_flurry2);
 
-  AttackData fb_flurry3(0.37f, 0.17f, 0.00f, "Attack_Rapid", 1.40f, false);
+  // 3. FinalBossFlurry3: 0.37s windup + 0.10s active + 0.00s recovery = 0.47s total
+  AttackData fb_flurry3(0.37f, 0.10f, 0.00f, "Attack_Rapid", 1.49f, false);
   fb_flurry3.addHitBoxDef(HitBoxDefinition::createCapsule(
       {2.400f, 1.650f, 1.650f}, {-2.400f, 1.650f, 1.650f}, 0.900f, 44.0f, 28.0f));
   attack_catalog.emplace(AttackID::FinalBossFlurry3, fb_flurry3);
 
-  AttackData fb_flurry4(0.14f, 0.26f, 0.00f, "Attack_Rapid", 1.93f, false);
+  // 4. FinalBossFlurry4: 0.37s windup + 0.10s active + 0.00s recovery = 0.47s total
+  AttackData fb_flurry4(0.37f, 0.10f, 0.00f, "Attack_Rapid", 1.96f, false);
   fb_flurry4.addHitBoxDef(HitBoxDefinition::createCapsule(
       {-1.800f, 2.625f, 1.275f}, {1.800f, 2.025f, 1.275f}, 0.825f, 44.0f, 28.0f));
   attack_catalog.emplace(AttackID::FinalBossFlurry4, fb_flurry4);
 
-  AttackData fb_flurry5(0.37f, 0.13f, 0.36f, "Attack_Rapid", 2.33f, false);
+  // 5. FinalBossFlurry5: 0.35s windup + 0.10s active + 0.32s recovery = 0.77s total
+  AttackData fb_flurry5(0.35f, 0.10f, 0.32f, "Attack_Rapid", 2.43f, false);
   fb_flurry5.addHitBoxDef(HitBoxDefinition::createCapsule(
       {2.250f, 0.825f, 1.425f}, {-2.250f, 0.825f, 1.425f}, 0.900f, 44.0f, 28.0f));
   attack_catalog.emplace(AttackID::FinalBossFlurry5, fb_flurry5);
 
   // Combo 3: Leap (Leap slam + 2 swings)
-  AttackData fb_leap1(1.33f, 0.34f, 0.00f, "Attack_Jump", 0.00f, true);
+  // 1. FinalBossLeapSlam: 1.62s windup + 0.12s active + 0.00s recovery = 1.74s total
+  AttackData fb_leap1(1.62f, 0.12f, 0.00f, "Attack_Jump", 0.00f, true);
   fb_leap1.addHitBoxDef(HitBoxDefinition::createCapsule(
       {1.350f, 2.100f, 0.600f}, {-1.350f, 0.300f, 2.250f}, 1.125f, 110.0f, 64.0f));
   attack_catalog.emplace(AttackID::FinalBossLeapSlam, fb_leap1);
 
-  AttackData fb_leap2(0.60f, 0.30f, 0.00f, "Attack_Jump", 1.67f, false);
+  // 2. FinalBossLeapSweep: 0.72s windup + 0.10s active + 0.00s recovery = 0.82s total
+  AttackData fb_leap2(0.72f, 0.10f, 0.00f, "Attack_Jump", 1.74f, false);
   fb_leap2.addHitBoxDef(HitBoxDefinition::createCapsule(
       {2.550f, 1.350f, 1.650f}, {-2.550f, 1.350f, 1.650f}, 0.975f, 64.0f, 40.0f));
   attack_catalog.emplace(AttackID::FinalBossLeapSweep, fb_leap2);
 
-  AttackData fb_leap3(0.13f, 0.30f, 0.37f, "Attack_Jump", 2.57f, false);
+  // 3. FinalBossLeapOverhead: 0.40s windup + 0.10s active + 0.31s recovery = 0.81s total
+  AttackData fb_leap3(0.40f, 0.10f, 0.31f, "Attack_Jump", 2.56f, false);
   fb_leap3.addHitBoxDef(HitBoxDefinition::createCapsule(
       {-1.950f, 2.550f, 1.350f}, {1.950f, 1.950f, 1.350f}, 0.900f, 64.0f, 40.0f));
   attack_catalog.emplace(AttackID::FinalBossLeapOverhead, fb_leap3);

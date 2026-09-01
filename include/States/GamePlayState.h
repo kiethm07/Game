@@ -266,6 +266,7 @@ private:
   Character *locked_target = nullptr;
 
   bool ghost_mode = false;
+  bool show_debug_visuals = false;
   float saved_pos_toast_timer = 0.0f;
   std::string last_saved_pos_str = "";
 

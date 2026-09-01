@@ -14,21 +14,33 @@ public:
 
     ~Stats() = default;
 
-    void update(float dt);
+    void update(float dt, bool is_holding_block = false);
+    void recoverPosture(float amount);
     bool applyDamage(float health_damage, float posture_damage);
     void triggerInvincibility(float duration);
     void setInvincible(bool status);
 
     float getCurrentHealth() const { return current_health; }
     float getMaxHealth() const { return max_health; }
-    float getHealthPercentage() const { return (max_health > 0.0f) ? (current_health / max_health) : 0.0f; }
+    float getHealthPercentage() const {
+        if (max_health <= 0.0f) {
+            return 0.0f;
+        }
+        return current_health / max_health;
+    }
     bool isDead() const { return current_health <= 0.0f; }
 
     float getCurrentPosture() const { return current_posture; }
     float getMaxPosture() const { return max_posture; }
-    float getPosturePercentage() const { return (max_posture > 0.0f) ? (current_posture / max_posture) : 0.0f; }
+    float getPosturePercentage() const {
+        if (max_posture <= 0.0f) {
+            return 0.0f;
+        }
+        return current_posture / max_posture;
+    }
     bool isPostureBroken() const { return current_posture >= max_posture; }
     void resetPosture() { current_posture = 0.0f; }
+    float getTimeSinceLastDamage() const { return time_since_last_damage; }
 
     bool getIsInvincible() const { return is_invincible; }
 

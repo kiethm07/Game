@@ -32,7 +32,7 @@ void Player::update(const UpdateContext &ctx) {
     movement_component.setSpeed(animator.locomotionSpeed());
 
   combat_component.update(dt);
-  stats.update(dt);
+  stats.update(dt, combat_component.isGuarding());
   sword_trail.update(dt);
 
   // Out of health: the fall, and nothing else.
@@ -162,10 +162,40 @@ void Player::update(const UpdateContext &ctx) {
   // Only the free regime produces velocity here — the committed one gets its
   // velocity below, from the root motion of whichever clip is chosen, or none
   // at all for a clip that does not travel.
-  if (move_gate.canMove)
+  if (move_gate.canMove) {
     updateLocomotionVelocity(
         ctx, calculateCameraRelativeDirection(ctx.camForward, ctx.camRight),
         move_gate.moveSpeedScale, move_gate.gait);
+  } else {
+    // If attacking while locked on, smoothly and rapidly track the locked target
+    CombatState combat_state = combat_component.getCurrentState();
+    bool is_attacking = (combat_state == CombatState::AttackStartup ||
+                         combat_state == CombatState::AttackActive ||
+                         combat_state == CombatState::AttackRecovery);
+    if (is_attacking && ctx.lockedTarget != nullptr) {
+      Vector3 to_target = Vector3Subtract(ctx.lockedTarget->getPosition(), position);
+      to_target.y = 0.0f;
+      if (Vector3LengthSqr(to_target) > 0.001f) {
+        to_target = Vector3Normalize(to_target);
+        float target_yaw = std::atan2(to_target.x, to_target.z) * RAD2DEG;
+
+        float angle_diff = target_yaw - rotation.y;
+        while (angle_diff < -180.0f) angle_diff += 360.0f;
+        while (angle_diff > 180.0f) angle_diff -= 360.0f;
+
+        float attack_rot_speed = 20.0f;
+        if (combat_state == CombatState::AttackStartup) {
+          attack_rot_speed = 30.0f; // Very responsive tracking during startup
+        }
+        float alpha = attack_rot_speed * dt;
+        if (alpha > 1.0f) alpha = 1.0f;
+        rotation.y += angle_diff * alpha;
+
+        while (rotation.y < 0.0f) rotation.y += 360.0f;
+        while (rotation.y >= 360.0f) rotation.y -= 360.0f;
+      }
+    }
+  }
 
   const Vector3 velocity = getHorizontalVelocity();
 
@@ -300,7 +330,7 @@ void Player::updateLocomotionVelocity(const UpdateContext &ctx,
       while (angle_diff < -180.0f) angle_diff += 360.0f;
       while (angle_diff > 180.0f) angle_diff -= 360.0f;
       
-      float alpha = 10.0f * dt; // Same as ROTATION_SPEED in MovementComponent
+      float alpha = 20.0f * dt; // Same as ROTATION_SPEED in MovementComponent
       if (alpha > 1.0f) alpha = 1.0f;
       rotation.y += angle_diff * alpha;
       
@@ -396,10 +426,6 @@ void Player::drawHPBar2D(bool engaged) const {
 
     PostureMeter::draw(GetScreenWidth() * 0.5f, GetScreenHeight() - 60.0f,
                        stats.getPosturePercentage(), style);
-  }
-
-  if (locomotion.getStance() == Stance::Crouching) {
-    DrawText("CROUCHING", x, y - 24, 20, SKYBLUE);
   }
 }
 

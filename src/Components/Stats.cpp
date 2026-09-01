@@ -1,32 +1,32 @@
 #include <Components/Stats.h>
+#include <cmath>
 
-void Stats::update(float dt) {
+void Stats::update(float dt, bool is_holding_block) {
     // Recover posture over time back to 0
     if (current_posture > 0.0f) {
         time_since_last_damage += dt;
         
-        // No regeneration in the first 3 seconds
         float current_regen_rate = 0.0f;
-
         float hp_ratio = getHealthPercentage();
 
-        if (hp_ratio <= 0.40f) {
-            // Under 40% HP, posture can't recover at all
-            current_regen_rate = 0.0f;
-        } else if (time_since_last_damage > 3.0f) {
-            // After 3 seconds without taking damage, speed increases non-linearly
-            float time_past_delay = time_since_last_damage - 3.0f;
-            float base_rate = posture_regen_rate * (time_past_delay * 0.5f);
+        if (is_holding_block) {
+            // Holding guard: 1.0s delay, no HP penalty, balanced logarithmic pace
+            if (time_since_last_damage > 1.0f) {
+                float time_past_delay = time_since_last_damage - 1.0f;
+                float log_scale = 1.0f + std::log(1.0f + 1.2f * time_past_delay);
+                current_regen_rate = posture_regen_rate * 1.75f * log_scale;
+            }
+        } else if (hp_ratio > 0.40f) {
+            // Standard unblocked recovery: 3.0s delay with HP ratio scaling
+            if (time_since_last_damage > 3.0f) {
+                float normalized_hp = (hp_ratio - 0.40f) / 0.60f; // Maps 40%-100% HP to 0.0-1.0
+                float inverse_hp = 1.0f - normalized_hp;
+                float hp_multiplier = 1.0f - (inverse_hp * inverse_hp);
 
-            // Scale the recovery rate non-linearly based on remaining health above 40%
-            float normalized_hp = (hp_ratio - 0.40f) / 0.60f; // Maps 40%-100% HP to 0.0-1.0
-            
-            // To punish the player, we use an inverted quadratic curve. 
-            // This means the enemy retains high recovery speed until their HP gets very close to 40%.
-            float inverse_hp = 1.0f - normalized_hp;
-            float hp_multiplier = 1.0f - (inverse_hp * inverse_hp);
-            
-            current_regen_rate = base_rate * hp_multiplier;
+                float time_past_delay = time_since_last_damage - 3.0f;
+                float base_rate = posture_regen_rate * (time_past_delay * 0.5f);
+                current_regen_rate = base_rate * hp_multiplier;
+            }
         }
 
         current_posture -= current_regen_rate * dt;
@@ -44,6 +44,16 @@ void Stats::update(float dt) {
             invincibility_timer = 0.0f;
             is_invincible = false;
         }
+    }
+}
+
+void Stats::recoverPosture(float amount) {
+    if (amount <= 0.0f) {
+        return;
+    }
+    current_posture -= amount;
+    if (current_posture < 0.0f) {
+        current_posture = 0.0f;
     }
 }
 

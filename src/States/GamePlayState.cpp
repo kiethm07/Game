@@ -898,82 +898,8 @@ StateAction GameplayState::update(float dt) {
     }
   }
 
-  // Debug: I key toggles Ghost mode (allows walking through NPCs)
-  if (IsKeyPressed(KEY_I)) {
-    if (ghost_mode) {
-      ghost_mode = false;
-    } else {
-      ghost_mode = true;
-    }
-    player->setGhost(ghost_mode);
-    if (ghost_mode) {
-      TraceLog(LOG_INFO, "GameplayState: Ghost mode ENABLED (pass-through NPCs)");
-    } else {
-      TraceLog(LOG_INFO, "GameplayState: Ghost mode DISABLED");
-    }
-  }
-
-  // Debug: P key outputs player's location and yaw to text file
-  if (IsKeyPressed(KEY_P)) {
-    const Vector3 p = player->getPosition();
-    float yaw = player->getRotation().y;
-    while (yaw <= -180.0f) {
-      yaw += 360.0f;
-    }
-    while (yaw > 180.0f) {
-      yaw -= 360.0f;
-    }
-
-    std::ofstream out_file("recorded_npc_positions.txt", std::ios::app);
-    if (out_file.is_open()) {
-      out_file << "{ \"type\": \"Swordman\", \"x\": " << p.x << ", \"y\": " << p.y
-               << ", \"z\": " << p.z << ", \"yaw\": " << yaw << ", \"wanderRadius\": 0.0 },\n";
-      out_file.close();
-    }
-    last_saved_pos_str = TextFormat("Saved (%.2f, %.2f, %.2f) Yaw: %.1f", p.x, p.y, p.z, yaw);
-    saved_pos_toast_timer = 2.5f;
-    TraceLog(LOG_INFO, "GameplayState: %s", last_saved_pos_str.c_str());
-  }
-
-  // Debug: K key cycles / selects an NPC
-  if (IsKeyPressed(KEY_K)) {
-    selectNextDebugNPC();
-  }
-
-  // Debug: O key outputs/records the player's position as a patrol waypoint for the selected NPC
-  if (IsKeyPressed(KEY_O)) {
-    recordPatrolWaypoint();
-  }
-
-  // Debug: N key marks the selected NPC for deletion (records note to file)
-  if (IsKeyPressed(KEY_N)) {
-    markNPCForDeletion();
-  }
-
   if (saved_pos_toast_timer > 0.0f) {
     saved_pos_toast_timer -= dt;
-  }
-
-  // F4: log the player's position to console/terminal.
-  if (IsKeyPressed(KEY_F4)) {
-    const Vector3 p = player->getPosition();
-    float yaw = player->getRotation().y;
-    while (yaw <= -180.0f) yaw += 360.0f;
-    while (yaw > 180.0f) yaw -= 360.0f;
-
-    std::string spawn_str = TextFormat(
-        "{ \"type\": \"%s\", \"x\": %.2f, \"z\": %.2f, \"yaw\": %.1f },",
-        enemyTypeName(debug_spawn_type), p.x, p.z, yaw);
-    TraceLog(LOG_INFO, "%s", spawn_str.c_str());
-    TraceLog(LOG_INFO,
-             "  (you are at y=%.2f -- add \"y\": %.2f to pin the height "
-             "instead of snapping to the ground)",
-             p.y, p.y);
-  }
-
-  if (IsKeyPressed(KEY_F4) && IsKeyDown(KEY_LEFT_SHIFT)) {
-    debug_spawn_type = static_cast<EnemyType>(
-        (static_cast<int>(debug_spawn_type) + 1) % kEnemyTypeCount);
   }
 
   // F5: rebuild this phase, re-reading level.json and enemies.json.
@@ -981,42 +907,9 @@ StateAction GameplayState::update(float dt) {
     return StateAction::RequestReloadPhase;
   }
 
-  // F6 drops a campfire where the player stands; F7 lights or snuffs nearest.
-  if (IsKeyPressed(KEY_F6)) {
-    Checkpoint point;
-    point.position = player->getPosition();
-    point.yaw = player->getRotation().y;
-    float ground = 0.0f;
-    if (SpawnGround::highestUnder(collision_mesh, level.obstacles, level.bounds,
-                                  point.position.x, point.position.z, ground)) {
-      point.position.y = ground;
-    }
-    checkpoints.push_back(point);
-    renderer->setCheckpoints(checkpoints);
-    TraceLog(LOG_INFO,
-             "GameplayState: campfire %d at (%.2f, %.2f, %.2f) — F7 to light it",
-             (int)checkpoints.size(), point.position.x, point.position.y,
-             point.position.z);
-  }
-
-  if (IsKeyPressed(KEY_F7) && !checkpoints.empty()) {
-    size_t nearest = 0;
-    float best = Vector3DistanceSqr(player->getPosition(),
-                                    checkpoints[0].position);
-    for (size_t i = 1; i < checkpoints.size(); ++i) {
-      const float d = Vector3DistanceSqr(player->getPosition(),
-                                         checkpoints[i].position);
-      if (d < best) { best = d; nearest = i; }
-    }
-    checkpoints[nearest].lit = !checkpoints[nearest].lit;
-    renderer->setCheckpoints(checkpoints);
-    TraceLog(LOG_INFO, "GameplayState: campfire %d is now %s",
-             (int)nearest + 1, checkpoints[nearest].lit ? "lit" : "out");
-  }
-
-  // F8: die on the spot for testing defeat state.
-  if (IsKeyPressed(KEY_F8)) {
-    player->takeDamage(99999.0f, 0.0f, nullptr);
+  // F3: toggle visual debug overlays
+  if (IsKeyPressed(KEY_F3)) {
+    show_debug_visuals = !show_debug_visuals;
   }
 
   if (smoke_cooldown_timer > 0.0f) {
@@ -1357,20 +1250,22 @@ void GameplayState::draw() {
     DrawSphere(chest_pos, 0.04f, WHITE);
   }
 
-  // Draw player orientation arrow for debug
-  drawPlayerOrientationArrow();
-  drawEnemyOrientationArrows();
-  drawPatrolDebugPath();
+  // 3D debug visual overlays
+  if (show_debug_visuals) {
+    drawPlayerOrientationArrow();
+    drawEnemyOrientationArrows();
+    drawPatrolDebugPath();
 
-  // Draw HitBox & HurtBox combat debug
-  std::vector<Character*> debug_characters;
-  debug_characters.push_back(player.get());
-  for (const auto &enemy : enemies) {
-    if (!enemy->isModelUnloaded() && !enemy->getStats().isDead()) {
-      debug_characters.push_back(enemy.get());
+    // Draw HitBox & HurtBox combat debug
+    std::vector<Character*> debug_characters;
+    debug_characters.push_back(player.get());
+    for (const auto &enemy : enemies) {
+      if (!enemy->isModelUnloaded() && !enemy->getStats().isDead()) {
+        debug_characters.push_back(enemy.get());
+      }
     }
+    combat_manager.drawDebug(debug_characters);
   }
-  combat_manager.drawDebug(debug_characters);
 
   EndMode3D();
 
@@ -1386,10 +1281,12 @@ void GameplayState::draw() {
                      locked_target == enemy.get());
   }
   drawBossPostureBars();
-  drawEnemyOverheadInfo();
 
-  // --- DEBUG HUD ---
-  drawDebugHUD();
+  // 2D debug visual overlays
+  if (show_debug_visuals) {
+    drawEnemyOverheadInfo();
+    drawDebugHUD();
+  }
 
   if (takedown_text_timer > 0.0f) {
     const char *text = takedown_type_str.c_str();
@@ -1449,10 +1346,18 @@ void GameplayState::draw() {
     DrawText(banner.c_str(), 12, 8, 20, RED);
   }
 
-  // --- COIN / ITEM UI ---
+  // --- COIN / CROUCH / ITEM UI ---
   std::string coin_text = "Coins: " + std::to_string(player->getMoney());
-  int coin_font_size = 20;
-  DrawText(coin_text.c_str(), 20, GetScreenHeight() - 100, coin_font_size, YELLOW);
+  int hud_font_size = 20;
+  DrawText(coin_text.c_str(), 20, GetScreenHeight() - 125, hud_font_size, YELLOW);
+
+  std::string crouch_text = "Stance: Standing [C]";
+  Color crouch_color = LIGHTGRAY;
+  if (player->isCrouching()) {
+    crouch_text = "Stance: Crouched [C]";
+    crouch_color = LIME;
+  }
+  DrawText(crouch_text.c_str(), 20, GetScreenHeight() - 95, hud_font_size, crouch_color);
 
   const auto& inventory = player->getInventory();
   if (!inventory.empty()) {
@@ -1460,16 +1365,19 @@ void GameplayState::draw() {
       if (active_idx >= 0 && active_idx < inventory.size()) {
           const auto& active_item = inventory[active_idx];
           std::string item_text = "[Q] < " + active_item->getName() + " (" + std::to_string(active_item->getCount()) + ") > [E]   Use: [X]";
-          int item_font_size = 20;
-          DrawText(item_text.c_str(), 20, GetScreenHeight() - 70, item_font_size, active_item->isEmpty() ? GRAY : BLACK);
+          Color item_color = BLACK;
+          if (active_item->isEmpty()) {
+            item_color = GRAY;
+          }
+          DrawText(item_text.c_str(), 20, GetScreenHeight() - 65, hud_font_size, item_color);
 
           // If using, draw a progress bar
           float use_timer = player->getItemUseTimer();
           if (use_timer > 0.0f) {
               float duration = active_item->getUseDuration();
               float progress = 1.0f - (use_timer / duration);
-              DrawRectangle(20, GetScreenHeight() - 85, 200, 10, DARKGRAY);
-              DrawRectangle(20, GetScreenHeight() - 85, (int)(200 * progress), 10, SKYBLUE);
+              DrawRectangle(20, GetScreenHeight() - 75, 200, 8, DARKGRAY);
+              DrawRectangle(20, GetScreenHeight() - 75, (int)(200 * progress), 8, SKYBLUE);
           }
       }
   }
