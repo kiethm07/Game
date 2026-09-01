@@ -244,13 +244,12 @@ PlayerAnimator::resolve(const Frame &frame) const {
       if (named >= 0) {
         selection.clip = named;
         selection.rootDriven = attack->usesRootMotion();
+        selection.startAt = attack->getStartTime();
       }
     }
 
-    if (selection.clip >= 0) {
-      selection.rate = 0.1f; // Debug: 0.1x speed
+    if (selection.clip >= 0)
       return selection;
-    }
   }
 
   // Two clips for one condition, split at the apex. Rising is the jump proper;

@@ -37,7 +37,13 @@ Swordman::Swordman(const EnemySpawn &spawn, AssetID asset)
   // set keeps the single light swing it always had.
   if (asset == AssetID::ENEMY_FINALBOSS) {
     stats = Stats(o.maxHealth.value_or(1000.0f), 1000.0f, 10.0f);
-    attack_pattern = {Combo{AttackID::FinalBossPunch}};
+    attack_pattern = {
+        Combo{AttackID::FinalBossJab, AttackID::FinalBossClub},
+        Combo{AttackID::FinalBossFlurry1, AttackID::FinalBossFlurry2,
+              AttackID::FinalBossFlurry3, AttackID::FinalBossFlurry4,
+              AttackID::FinalBossFlurry5},
+        Combo{AttackID::FinalBossLeapSlam, AttackID::FinalBossLeapSweep,
+              AttackID::FinalBossLeapOverhead}};
 
     // The boss is 2.792 m -- tools/scale_finalboss.py takes the rig to 1.5x as
     // the last step before export -- so its hurtbox and head marker scale with
@@ -69,9 +75,12 @@ Swordman::Swordman(const EnemySpawn &spawn, AssetID asset)
     gait_switch_distance = 0.0f;
   } else if (asset == AssetID::ENEMY_MINIBOSS) {
     stats = Stats(o.maxHealth.value_or(750.0f), 750.0f, 10.0f);
-    attack_pattern = {Combo{AttackID::MiniBossSpin},
-                      Combo{AttackID::MiniBossDoubleSwing},
-                      Combo{AttackID::MiniBossTripleSwing}};
+    attack_pattern = {
+        Combo{AttackID::MiniBossSpin1, AttackID::MiniBossSpin2,
+              AttackID::MiniBossSpin3},
+        Combo{AttackID::MiniBossDoubleSwing1, AttackID::MiniBossDoubleSwing2},
+        Combo{AttackID::MiniBossTripleSwing1, AttackID::MiniBossTripleSwing2,
+              AttackID::MiniBossTripleSwing3}};
 
     // The greatsword pack's Walk is authored at 1.06 m/s and its Run at 4.05,
     // so SwordmanAnimator switches to the run above 1.70 (RUN_SPEED_FACTOR x
@@ -90,9 +99,12 @@ Swordman::Swordman(const EnemySpawn &spawn, AssetID asset)
     gait_switch_distance = 0.0f;
   } else if (asset == AssetID::ENEMY_KIMONO) {
     stats = Stats(o.maxHealth.value_or(750.0f), 750.0f, 8.0f);
-    attack_pattern = {Combo{AttackID::KimonoSwing},
-                      Combo{AttackID::KimonoCleave},
-                      Combo{AttackID::KimonoLunge}};
+    attack_pattern = {
+        Combo{AttackID::KimonoSwing},
+        Combo{AttackID::KimonoCleave1, AttackID::KimonoCleave2,
+              AttackID::KimonoCleave3},
+        Combo{AttackID::KimonoLunge1, AttackID::KimonoLunge2,
+              AttackID::KimonoLunge3}};
 
     // 1.65 m -- the shortest character in the game, against the player's 1.8
     // and the mini boss's 2.63. Left at Enemy's 2.0/0.5 defaults the capsule
@@ -462,7 +474,7 @@ void Swordman::setupBehaviorTree() {
       // to hand initiateCombo a pointer into it.
       const Combo &next = attack_pattern[next_attack];
       next_attack = (next_attack + 1) % attack_pattern.size();
-      if (combat_component.initiateCombo(next)) {
+      if (combat_component.initiateCombo(next, true)) {
         if (current_ctx != nullptr && current_ctx->sound_controller != nullptr) {
           current_ctx->sound_controller->playSFX(AssetID::SFX_SLASH);
         }

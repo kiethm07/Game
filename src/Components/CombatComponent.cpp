@@ -73,8 +73,8 @@ void CombatComponent::update(float dt) {
         return;
     }
 
-    //Attack (0.1x speed debug mode)
-    state_timer -= (dt * 0.1f);
+    //Attack
+    state_timer -= dt;
 
     if (state_timer <= 0.0f) {
         AttackID current_id = active_combo_ptr->getAttackID(combo_index);
@@ -82,27 +82,11 @@ void CombatComponent::update(float dt) {
 
         if (current_state == CombatState::AttackStartup) {
             current_state = CombatState::AttackActive;
-            state_timer = frame_data.getActiveDuration(swing_index);
+            state_timer = frame_data.getActiveDuration();
         } 
         else if (current_state == CombatState::AttackActive) {
-            if (swing_index + 1 < frame_data.getSwingCount()) {
-                // Another swing inside the SAME clip: back to a wind-up rather
-                // than on to the recovery. Nothing else changes -- not the
-                // attack, not the combo index, and above all not `action_id`,
-                // which is what the animator would take as "a new swing" and
-                // rewind the combo animation to frame 0 for.
-                //
-                // Dropping out of AttackActive is also what lets the second and
-                // third swings land at all: CombatManager remembers who a swing
-                // has already hit and only forgets when the attacker's hitboxes
-                // go away, which is exactly this gap.
-                swing_index++;
-                current_state = CombatState::AttackStartup;
-                state_timer = frame_data.getWindupDuration(swing_index);
-            } else {
-                current_state = CombatState::AttackRecovery;
-                state_timer = frame_data.getRecoveryDuration();
-            }
+            current_state = CombatState::AttackRecovery;
+            state_timer = frame_data.getRecoveryDuration();
         } 
         else if (current_state == CombatState::AttackRecovery) {
             if (is_auto_combo && combo_index + 1 < active_combo_ptr->getAttackCount()) {

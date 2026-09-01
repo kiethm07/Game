@@ -275,14 +275,14 @@ SwordmanAnimator::resolve(const Frame &frame) const {
     if (attack->getClipName() && frame.assets) {
       const int named = frame.assets->findAnimation(asset_id,
                                                     attack->getClipName());
-      if (named >= 0)
+      if (named >= 0) {
         selection.clip = named;
+        selection.startAt = attack->getStartTime();
+      }
     }
 
-    if (selection.clip >= 0) {
-      selection.rate = 0.1f; // Debug: 0.1x speed for all attacks
+    if (selection.clip >= 0)
       return selection;
-    }
   }
 
   // Below the swing, so a hit taken mid-attack does not interrupt it — the same

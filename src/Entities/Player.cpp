@@ -456,8 +456,6 @@ std::vector<HitBox> Player::getActiveHitBoxes() const {
 
 DamageResult Player::takeDamage(float health_damage, float posture_damage,
                                 Character *attacker) {
-  health_damage = 0.0f; // Debug: infinite HP mode
-
   if (isGhost() || isExecuting()) {
     return DamageResult::IGNORED;
   }

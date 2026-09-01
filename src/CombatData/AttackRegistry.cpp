@@ -121,203 +121,162 @@ void AttackRegistry::InitializeCatalog() {
   // would cost a window a frame either way depending on the float.
   auto spin_frames = [](int frames) { return (frames - 0.5f) / 60.0f; };
 
-  AttackData mb_spin(spin_frames(kSpinWindup), spin_frames(kSpinPass[0][1]),
-                     spin_frames(kSpinRecover), "Attack_Spin", false);
-  for (int pass = 0; pass < 3; ++pass) {
-    if (pass > 0)
-      mb_spin.addSwing(spin_frames(kSpinPass[pass][0]),
-                       spin_frames(kSpinPass[pass][1]));
-    // Across the front, at the height the blade is actually carried. Shaped
-    // like the boss's other sweeps rather than like the blade at one instant:
-    // over the window the tip travels the whole 100 deg arc, so a bar is what
-    // it covers. 2.30 m of reach at the centre, against the blade's own 2.6.
-    mb_spin.addHitBoxDef(HitBoxDefinition::createCapsule(
-        {-1.80f, 1.35f, 1.50f}, {1.80f, 1.35f, 1.50f}, 0.80f, 60.0f, 36.0f));
-  }
-  mb_spin.setTrail(true, 0.30f, kMiniBossBlade, kMiniBossHilt);
-  // The clip is in place, so without this the boss turns three times on the
-  // spot and a player who simply walks backwards watches the whole thing from
-  // outside it. 2.6 m/s is faster than the player walks (1.85) and slower than
-  // they sprint (7.38) -- backing away does not work, committing to a sprint
-  // does. The turn is deliberately slower than the boss spins: 90 deg/s follows
-  // a player who repositions between passes, and does not keep the front nailed
-  // to one who commits to going round it.
-  mb_spin.setAdvance(2.6f, 1.2f, 90.0f);
-  attack_catalog.emplace(AttackID::MiniBossSpin, mb_spin);
+  // MiniBoss Spin (3 turns)
+  AttackData mb_spin1(1.39f, 0.16f, 0.00f, "Attack_Spin", 0.00f, false);
+  mb_spin1.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {-1.80f, 1.35f, 1.50f}, {1.80f, 1.35f, 1.50f}, 0.80f, 60.0f, 36.0f));
+  mb_spin1.setTrail(true, 0.30f, kMiniBossBlade, kMiniBossHilt);
+  mb_spin1.setAdvance(2.6f, 1.2f, 90.0f);
+  attack_catalog.emplace(AttackID::MiniBossSpin1, mb_spin1);
 
-  // Combo_3 ("standing melee combo attack ver. 3"): 167 keyframes, 2.750s
-  // playable, in place. Two cuts:
-  //   1. t=0.98-1.17, right to left, tip peaks 2.99 forward at chest height
-  //   2. t=1.60-1.84, left to right and dropping, tip peaks 2.15 forward
-  // 0.95 + 0.22 + 0.43 + 0.24 + 0.89 = 2.73.
-  AttackData mb_double(0.95f, 0.22f, 0.89f, "Combo_3", false);
-  mb_double.addHitBoxDef(HitBoxDefinition::createCapsule(
+  AttackData mb_spin2(0.49f, 0.14f, 0.00f, "Attack_Spin", 1.55f, false);
+  mb_spin2.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {-1.80f, 1.35f, 1.50f}, {1.80f, 1.35f, 1.50f}, 0.80f, 60.0f, 36.0f));
+  mb_spin2.setTrail(true, 0.30f, kMiniBossBlade, kMiniBossHilt);
+  mb_spin2.setAdvance(2.6f, 1.2f, 90.0f);
+  attack_catalog.emplace(AttackID::MiniBossSpin2, mb_spin2);
+
+  AttackData mb_spin3(0.44f, 0.12f, 0.49f, "Attack_Spin", 2.18f, false);
+  mb_spin3.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {-1.80f, 1.35f, 1.50f}, {1.80f, 1.35f, 1.50f}, 0.80f, 60.0f, 36.0f));
+  mb_spin3.setTrail(true, 0.30f, kMiniBossBlade, kMiniBossHilt);
+  mb_spin3.setAdvance(2.6f, 1.2f, 90.0f);
+  attack_catalog.emplace(AttackID::MiniBossSpin3, mb_spin3);
+
+  // MiniBoss Double Swing (Combo_3)
+  AttackData mb_double1(0.95f, 0.22f, 0.00f, "Combo_3", 0.00f, false);
+  mb_double1.addHitBoxDef(HitBoxDefinition::createCapsule(
       {1.9f, 1.25f, 1.25f}, {-1.9f, 1.25f, 1.25f}, 0.70f, 56.0f, 32.0f));
-  mb_double.addSwing(0.43f, 0.24f);
-  mb_double.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {-1.9f, 1.15f, 1.15f}, {1.9f, 1.15f, 1.15f}, 0.70f, 64.0f, 36.0f));
-  mb_double.setTrail(true, 0.28f, kMiniBossBlade, kMiniBossHilt);
-  attack_catalog.emplace(AttackID::MiniBossDoubleSwing, mb_double);
+  mb_double1.setTrail(true, 0.28f, kMiniBossBlade, kMiniBossHilt);
+  attack_catalog.emplace(AttackID::MiniBossDoubleSwing1, mb_double1);
 
-  // Combo_2 ("standing melee combo attack ver. 2"): 254 keyframes, 4.200s
-  // playable, in place. Three hits:
-  //   1. t=0.98-1.17, right to left, tip peaks 2.85 forward
-  //   2. t=1.60-1.80, left to right, tip peaks 2.70 forward
-  //   3. t=2.60-2.80, overhead chop -- the tip falls from 3.89 up to the floor
-  //      and out to 3.7 forward, so this one is a NARROW capsule standing in
-  //      the vertical plane the blade comes down through, not a lateral sweep.
-  // 0.95 + 0.22 + 0.43 + 0.20 + 0.80 + 0.20 + 1.38 = 4.18. That 1.38s tail is
-  // the sword buried in the ground and dragged back out; it is the widest
-  // opening the boss gives and it is left at very nearly its authored length.
-  AttackData mb_triple(0.95f, 0.22f, 1.38f, "Combo_2", false);
-  mb_triple.addHitBoxDef(HitBoxDefinition::createCapsule(
+  AttackData mb_double2(0.43f, 0.24f, 0.89f, "Combo_3", 1.17f, false);
+  mb_double2.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {-1.9f, 1.15f, 1.15f}, {1.9f, 1.15f, 1.15f}, 0.70f, 64.0f, 36.0f));
+  mb_double2.setTrail(true, 0.28f, kMiniBossBlade, kMiniBossHilt);
+  attack_catalog.emplace(AttackID::MiniBossDoubleSwing2, mb_double2);
+
+  // MiniBoss Triple Swing (Combo_2)
+  AttackData mb_triple1(0.95f, 0.22f, 0.00f, "Combo_2", 0.00f, false);
+  mb_triple1.addHitBoxDef(HitBoxDefinition::createCapsule(
       {1.9f, 1.20f, 1.25f}, {-1.9f, 1.20f, 1.25f}, 0.70f, 50.0f, 30.0f));
-  mb_triple.addSwing(0.43f, 0.20f);
-  mb_triple.addHitBoxDef(HitBoxDefinition::createCapsule(
+  mb_triple1.setTrail(true, 0.28f, kMiniBossBlade, kMiniBossHilt);
+  attack_catalog.emplace(AttackID::MiniBossTripleSwing1, mb_triple1);
+
+  AttackData mb_triple2(0.43f, 0.20f, 0.00f, "Combo_2", 1.17f, false);
+  mb_triple2.addHitBoxDef(HitBoxDefinition::createCapsule(
       {-1.9f, 1.30f, 1.25f}, {1.9f, 1.30f, 1.25f}, 0.70f, 50.0f, 30.0f));
-  mb_triple.addSwing(0.80f, 0.20f);
-  mb_triple.addHitBoxDef(HitBoxDefinition::createCapsule(
+  mb_triple2.setTrail(true, 0.28f, kMiniBossBlade, kMiniBossHilt);
+  attack_catalog.emplace(AttackID::MiniBossTripleSwing2, mb_triple2);
+
+  AttackData mb_triple3(0.80f, 0.20f, 1.38f, "Combo_2", 1.80f, false);
+  mb_triple3.addHitBoxDef(HitBoxDefinition::createCapsule(
       {0.0f, 1.60f, 0.90f}, {0.0f, 0.35f, 1.90f}, 0.70f, 90.0f, 50.0f));
-  mb_triple.setTrail(true, 0.28f, kMiniBossBlade, kMiniBossHilt);
-  attack_catalog.emplace(AttackID::MiniBossTripleSwing, mb_triple);
+  mb_triple3.setTrail(true, 0.28f, kMiniBossBlade, kMiniBossHilt);
+  attack_catalog.emplace(AttackID::MiniBossTripleSwing3, mb_triple3);
 
   // ---------------------------------------------------------------------
   // The final boss, on the Mutant pack (assets/FinalBoss.rootmotion.glb).
-  //
-  // Timed off the FISTS, not a blade: this character carries no weapon, so the
-  // trajectory that matters is its own hands. Both are carried through each
-  // clip's joint hierarchy the way the miniboss's sword tip is -- and on this
-  // rig that is not the hand BONE. The Mutant has no `mixamorig:LeftHand`
-  // vertex group at all; its oversized left arm is one rigid club weighted to
-  // the forearm and reaching 0.953 m past the elbow, so the visible left fist
-  // is measured out along the FOREARM (tools/finalboss_rig.py, LIMB_TIP). The
-  // right arm is ordinary.
-  //
-  // A window is a frame range where a fist is both forward of the body and
-  // moving faster than 6 m/s. The times quoted per swing are those frames.
-  //
-  // REACHES BELOW ARE QUOTED AT AUTHORING SCALE, and the capsules are those
-  // figures times 1.5 -- tools/scale_finalboss.py takes the whole rig to
-  // 2.792 m as the last step before export, so every measurement taken in the
-  // .blend is 1/1.5 of what the shipped asset does. Times are unaffected:
-  // scaling a rig does not change when a fist crosses the body.
-  // Every clip's playable length is one frame shorter than its authored length
-  // (RootMotion::Track::duration), and the phase sums below are against the
-  // playable figure.
-  //
-  // No trails. setTrail draws a weapon arc between a hilt and a tip, which is
-  // a thing this character does not have.
+  // ---------------------------------------------------------------------
 
-  // `Attack` (a right jab, then a left club swing): 60 frames, 1.967 s
-  // playable, in place to 0.000 m. Two hits:
-  //   1. t=0.17-0.30, the jab, fist reaching 0.91 m forward at 0.59 high
-  //   2. t=1.47-1.60, the club coming across low, 1.31 m out at 0.48
-  // 0.17 + 0.13 + 1.17 + 0.13 + 0.37 = 1.97.
-  AttackData fb_punch(0.17f, 0.13f, 0.37f, "Attack", false);
-  fb_punch.addHitBoxDef(HitBoxDefinition::createCapsule(
+  // Combo 1: Punch (Jab + Club)
+  AttackData fb_jab(0.17f, 0.13f, 0.37f, "Attack", 0.00f, false);
+  fb_jab.addHitBoxDef(HitBoxDefinition::createCapsule(
       {0.000f, 1.125f, 0.450f}, {0.000f, 0.900f, 1.950f}, 0.825f, 60.0f, 36.0f));
-  fb_punch.addSwing(1.17f, 0.13f);
-  fb_punch.addHitBoxDef(HitBoxDefinition::createCapsule(
+  attack_catalog.emplace(AttackID::FinalBossJab, fb_jab);
+
+  AttackData fb_club(0.80f, 0.13f, 0.37f, "Attack", 0.67f, false);
+  fb_club.addHitBoxDef(HitBoxDefinition::createCapsule(
       {2.250f, 0.825f, 1.425f}, {-2.250f, 0.825f, 1.425f}, 0.900f, 70.0f, 40.0f));
-  attack_catalog.emplace(AttackID::FinalBossPunch, fb_punch);
+  attack_catalog.emplace(AttackID::FinalBossClub, fb_club);
 
-  // `Attack_Rapid` (five alternating swipes): 97 frames, 3.200 s playable, in
-  // place to 0.000 m. Five hits, alternating arms:
-  // 0.83 + 0.17 + 0.13 + 0.27 + 0.37 + 0.17 + 0.14 + 0.26 + 0.37 + 0.13 + 0.36 = 3.20.
-  AttackData fb_flurry(0.83f, 0.17f, 0.36f, "Attack_Rapid", false);
-  fb_flurry.addHitBoxDef(HitBoxDefinition::createCapsule(
+  // Combo 2: Flurry (5 alternating swipes)
+  AttackData fb_flurry1(0.83f, 0.17f, 0.00f, "Attack_Rapid", 0.00f, false);
+  fb_flurry1.addHitBoxDef(HitBoxDefinition::createCapsule(
       {2.400f, 1.650f, 1.650f}, {-2.400f, 1.650f, 1.650f}, 0.900f, 44.0f, 28.0f));
-  fb_flurry.addSwing(0.13f, 0.27f);
-  fb_flurry.addHitBoxDef(HitBoxDefinition::createCapsule(
+  attack_catalog.emplace(AttackID::FinalBossFlurry1, fb_flurry1);
+
+  AttackData fb_flurry2(0.13f, 0.27f, 0.00f, "Attack_Rapid", 1.00f, false);
+  fb_flurry2.addHitBoxDef(HitBoxDefinition::createCapsule(
       {-1.800f, 2.625f, 1.275f}, {1.800f, 2.025f, 1.275f}, 0.825f, 44.0f, 28.0f));
-  fb_flurry.addSwing(0.37f, 0.17f);
-  fb_flurry.addHitBoxDef(HitBoxDefinition::createCapsule(
+  attack_catalog.emplace(AttackID::FinalBossFlurry2, fb_flurry2);
+
+  AttackData fb_flurry3(0.37f, 0.17f, 0.00f, "Attack_Rapid", 1.40f, false);
+  fb_flurry3.addHitBoxDef(HitBoxDefinition::createCapsule(
       {2.400f, 1.650f, 1.650f}, {-2.400f, 1.650f, 1.650f}, 0.900f, 44.0f, 28.0f));
-  fb_flurry.addSwing(0.14f, 0.26f);
-  fb_flurry.addHitBoxDef(HitBoxDefinition::createCapsule(
+  attack_catalog.emplace(AttackID::FinalBossFlurry3, fb_flurry3);
+
+  AttackData fb_flurry4(0.14f, 0.26f, 0.00f, "Attack_Rapid", 1.93f, false);
+  fb_flurry4.addHitBoxDef(HitBoxDefinition::createCapsule(
       {-1.800f, 2.625f, 1.275f}, {1.800f, 2.025f, 1.275f}, 0.825f, 44.0f, 28.0f));
-  fb_flurry.addSwing(0.37f, 0.13f);
-  fb_flurry.addHitBoxDef(HitBoxDefinition::createCapsule(
+  attack_catalog.emplace(AttackID::FinalBossFlurry4, fb_flurry4);
+
+  AttackData fb_flurry5(0.37f, 0.13f, 0.36f, "Attack_Rapid", 2.33f, false);
+  fb_flurry5.addHitBoxDef(HitBoxDefinition::createCapsule(
       {2.250f, 0.825f, 1.425f}, {-2.250f, 0.825f, 1.425f}, 0.900f, 44.0f, 28.0f));
-  attack_catalog.emplace(AttackID::FinalBossFlurry, fb_flurry);
+  attack_catalog.emplace(AttackID::FinalBossFlurry5, fb_flurry5);
 
-  // `Attack_Jump` (the leap, a landing slam, then two swings): 102 frames, 3.367 s.
-  AttackData fb_leap(1.33f, 0.34f, 0.37f, "Attack_Jump", true);
-  fb_leap.addHitBoxDef(HitBoxDefinition::createCapsule(
+  // Combo 3: Leap (Leap slam + 2 swings)
+  AttackData fb_leap1(1.33f, 0.34f, 0.00f, "Attack_Jump", 0.00f, true);
+  fb_leap1.addHitBoxDef(HitBoxDefinition::createCapsule(
       {1.350f, 2.100f, 0.600f}, {-1.350f, 0.300f, 2.250f}, 1.125f, 110.0f, 64.0f));
-  fb_leap.addSwing(0.60f, 0.30f);
-  fb_leap.addHitBoxDef(HitBoxDefinition::createCapsule(
+  attack_catalog.emplace(AttackID::FinalBossLeapSlam, fb_leap1);
+
+  AttackData fb_leap2(0.60f, 0.30f, 0.00f, "Attack_Jump", 1.67f, false);
+  fb_leap2.addHitBoxDef(HitBoxDefinition::createCapsule(
       {2.550f, 1.350f, 1.650f}, {-2.550f, 1.350f, 1.650f}, 0.975f, 64.0f, 40.0f));
-  fb_leap.addSwing(0.13f, 0.30f);
-  fb_leap.addHitBoxDef(HitBoxDefinition::createCapsule(
+  attack_catalog.emplace(AttackID::FinalBossLeapSweep, fb_leap2);
+
+  AttackData fb_leap3(0.13f, 0.30f, 0.37f, "Attack_Jump", 2.57f, false);
+  fb_leap3.addHitBoxDef(HitBoxDefinition::createCapsule(
       {-1.950f, 2.550f, 1.350f}, {1.950f, 1.950f, 1.350f}, 0.900f, 64.0f, 40.0f));
-  attack_catalog.emplace(AttackID::FinalBossLeap, fb_leap);
+  attack_catalog.emplace(AttackID::FinalBossLeapOverhead, fb_leap3);
 
   // ---------------------------------------------------------------------
   // The kimono swordsman.
-  //
-  // Every window below is where the KATANA TIP actually is, tracked frame by
-  // frame through the clip on this character's own rig -- the blade is one
-  // rigid bone (`L_Katana`) off the hand, so the tip is a real position and not
-  // an estimate. Reported as (t, forward, height, lateral) at 30 fps.
-  //
-  // The capsules are (right, up, forward), and each is drawn along the sweep
-  // the tip measured: a cut that travels left-to-right gets a capsule from -x
-  // to +x at the height the blade held. This character is 1.65 m, so these are
-  // noticeably tighter than the miniboss's 2.5 m greatsword boxes.
   // ---------------------------------------------------------------------
 
-  // `Attack` ("great sword slash"): 39 frames, 1.267 s, in place. One cut, the
-  // tip crossing the front t=0.63-0.80 and falling 1.51 -> 0.41 in height as it
-  // goes -- a downward diagonal from high-left to low-right.
-  // 0.60 + 0.20 + 0.47 = 1.27.
-  AttackData km_swing(0.60f, 0.20f, 0.47f, "Attack", false);
+  // Combo 1: Single Slash
+  AttackData km_swing(0.60f, 0.20f, 0.47f, "Attack", 0.00f, false);
   km_swing.addHitBoxDef(HitBoxDefinition::createCapsule(
       {-0.35f, 1.45f, 1.10f}, {0.80f, 0.45f, 1.10f}, 0.55f, 60.0f, 36.0f));
   attack_catalog.emplace(AttackID::KimonoSwing, km_swing);
 
-  // `Combo_1` ("standing melee combo attack ver. 2"): 127 frames, 4.200 s, in
-  // place. The brief's heavy cleave string, and it measures as one:
-  //   1. t=0.98-1.10  fwd 1.03-1.11, h 0.83-0.92, x -0.40 -> +0.63  (L to R)
-  //   2. t=1.60-1.72  fwd 0.99-1.06, h 0.74,      x +0.03 -> -0.63  (R to L)
-  //   3. t=2.56-2.74  fwd 1.05 -> 1.85, h 1.77 -> 0.08              (overhead,
-  //      driving into the ground, which is what the brief asked hit 1 to do and
-  //      what this clip in fact does last)
-  // 0.98 + 0.12 + 0.50 + 0.12 + 0.84 + 0.18 + 1.46 = 4.20.
-  AttackData km_cleave(0.98f, 0.12f, 1.46f, "Combo_1", false);
-  km_cleave.addHitBoxDef(HitBoxDefinition::createCapsule(
+  // Combo 2: Heavy Cleave (3 cuts)
+  AttackData km_cleave1(0.98f, 0.12f, 0.00f, "Combo_1", 0.00f, false);
+  km_cleave1.addHitBoxDef(HitBoxDefinition::createCapsule(
       {-1.20f, 0.90f, 1.05f}, {1.20f, 0.90f, 1.05f}, 0.55f, 52.0f, 28.0f));
-  km_cleave.addSwing(0.50f, 0.12f);
-  km_cleave.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {1.20f, 0.78f, 1.05f}, {-1.20f, 0.78f, 1.05f}, 0.55f, 52.0f, 28.0f));
-  // The finisher. A near-vertical capsule, because the tip covers 1.7 m of
-  // height in 0.18 s: a horizontal bar at any one height would miss most of it.
-  km_cleave.addSwing(0.84f, 0.18f);
-  km_cleave.addHitBoxDef(HitBoxDefinition::createCapsule(
-      {0.0f, 1.70f, 1.15f}, {0.0f, 0.15f, 1.60f}, 0.62f, 76.0f, 44.0f));
-  km_cleave.setTrail(true, 0.26f, kKimonoBlade, kKimonoHilt);
-  attack_catalog.emplace(AttackID::KimonoCleave, km_cleave);
+  km_cleave1.setTrail(true, 0.26f, kKimonoBlade, kKimonoHilt);
+  attack_catalog.emplace(AttackID::KimonoCleave1, km_cleave1);
 
-  // `Combo_2` ("standing melee combo attack ver. 1"): 141 frames, 4.667 s, and
-  // the only kimono attack that TRAVELS -- 1.53 m forward, which is the brief's
-  // lunge. Root motion is on, so that advance is gameplay and not just picture.
-  //   1. t=0.45-0.71  fwd 0.81-0.92, h ~0.75, x -0.32 -> +0.60  (step-in cut,
-  //      slower than the other two: tip speed 3.7-4.9 against 11-19)
-  //   2. t=1.90-2.12  fwd 0.90 -> 1.72, h ~1.02, x -1.01 -> +1.25  (the sweep)
-  //   3. t=2.83-3.05  fwd 0.93 -> 2.08, h 0.76 -> 1.88, x +0.73 -> -1.10
-  //      (rising diagonal, the deepest reach of any clip in the pack)
-  // The tip moves again at t=3.60-3.90 but at 3-6 rather than 13-19; that is
-  // the blade being carried back down into the stance, not a fourth hit.
-  // 0.45 + 0.26 + 1.19 + 0.22 + 0.71 + 0.22 + 1.62 = 4.67.
-  AttackData km_lunge(0.45f, 0.26f, 1.62f, "Combo_2", true);
-  km_lunge.addHitBoxDef(HitBoxDefinition::createCapsule(
+  AttackData km_cleave2(0.50f, 0.12f, 0.00f, "Combo_1", 1.10f, false);
+  km_cleave2.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {1.20f, 0.78f, 1.05f}, {-1.20f, 0.78f, 1.05f}, 0.55f, 52.0f, 28.0f));
+  km_cleave2.setTrail(true, 0.26f, kKimonoBlade, kKimonoHilt);
+  attack_catalog.emplace(AttackID::KimonoCleave2, km_cleave2);
+
+  AttackData km_cleave3(0.84f, 0.18f, 1.46f, "Combo_1", 1.72f, false);
+  km_cleave3.addHitBoxDef(HitBoxDefinition::createCapsule(
+      {0.0f, 1.70f, 1.15f}, {0.0f, 0.15f, 1.60f}, 0.62f, 76.0f, 44.0f));
+  km_cleave3.setTrail(true, 0.26f, kKimonoBlade, kKimonoHilt);
+  attack_catalog.emplace(AttackID::KimonoCleave3, km_cleave3);
+
+  // Combo 3: Lunge (3 cuts with root motion)
+  AttackData km_lunge1(0.45f, 0.26f, 0.00f, "Combo_2", 0.00f, true);
+  km_lunge1.addHitBoxDef(HitBoxDefinition::createCapsule(
       {-1.00f, 0.85f, 0.95f}, {1.00f, 0.85f, 0.95f}, 0.50f, 44.0f, 24.0f));
-  km_lunge.addSwing(1.19f, 0.22f);
-  km_lunge.addHitBoxDef(HitBoxDefinition::createCapsule(
+  km_lunge1.setTrail(true, 0.26f, kKimonoBlade, kKimonoHilt);
+  attack_catalog.emplace(AttackID::KimonoLunge1, km_lunge1);
+
+  AttackData km_lunge2(1.19f, 0.22f, 0.00f, "Combo_2", 0.71f, true);
+  km_lunge2.addHitBoxDef(HitBoxDefinition::createCapsule(
       {-1.30f, 1.00f, 1.25f}, {1.30f, 1.00f, 1.25f}, 0.55f, 60.0f, 32.0f));
-  km_lunge.addSwing(0.71f, 0.22f);
-  km_lunge.addHitBoxDef(HitBoxDefinition::createCapsule(
+  km_lunge2.setTrail(true, 0.26f, kKimonoBlade, kKimonoHilt);
+  attack_catalog.emplace(AttackID::KimonoLunge2, km_lunge2);
+
+  AttackData km_lunge3(0.71f, 0.22f, 1.62f, "Combo_2", 2.12f, true);
+  km_lunge3.addHitBoxDef(HitBoxDefinition::createCapsule(
       {1.00f, 0.78f, 1.15f}, {-1.10f, 1.75f, 1.50f}, 0.60f, 68.0f, 40.0f));
-  km_lunge.setTrail(true, 0.26f, kKimonoBlade, kKimonoHilt);
-  attack_catalog.emplace(AttackID::KimonoLunge, km_lunge);
+  km_lunge3.setTrail(true, 0.26f, kKimonoBlade, kKimonoHilt);
+  attack_catalog.emplace(AttackID::KimonoLunge3, km_lunge3);
 }
