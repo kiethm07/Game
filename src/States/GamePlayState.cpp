@@ -11,6 +11,7 @@
 #include <Rendering/PostureMeter.h>
 #include <cassert>
 #include <cmath>
+#include <fstream>
 #include <rlgl.h>
 
 namespace {
@@ -226,6 +227,18 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
       }
       placed.at.position.y = ground;
     }
+
+    // Snap patrol waypoint heights if not explicitly authored
+    for (Vector3 &wp : placed.patrolPoints) {
+      if (std::abs(wp.y) < 0.001f) {
+        float wp_ground = 0.0f;
+        if (SpawnGround::highestUnder(collision_mesh, level.obstacles,
+                                      level.bounds, wp.x, wp.z, wp_ground)) {
+          wp.y = wp_ground;
+        }
+      }
+    }
+
     enemies.push_back(EnemyFactory::createEnemy(placed));
   }
   if (dropped > 0) {
@@ -879,6 +892,62 @@ StateAction GameplayState::update(float dt) {
     }
   }
 
+  // Debug: I key toggles Ghost mode (allows walking through NPCs)
+  if (IsKeyPressed(KEY_I)) {
+    if (ghost_mode) {
+      ghost_mode = false;
+    } else {
+      ghost_mode = true;
+    }
+    player->setGhost(ghost_mode);
+    if (ghost_mode) {
+      TraceLog(LOG_INFO, "GameplayState: Ghost mode ENABLED (pass-through NPCs)");
+    } else {
+      TraceLog(LOG_INFO, "GameplayState: Ghost mode DISABLED");
+    }
+  }
+
+  // Debug: P key outputs player's location and yaw to text file
+  if (IsKeyPressed(KEY_P)) {
+    const Vector3 p = player->getPosition();
+    float yaw = player->getRotation().y;
+    while (yaw <= -180.0f) {
+      yaw += 360.0f;
+    }
+    while (yaw > 180.0f) {
+      yaw -= 360.0f;
+    }
+
+    std::ofstream out_file("recorded_npc_positions.txt", std::ios::app);
+    if (out_file.is_open()) {
+      out_file << "{ \"type\": \"Swordman\", \"x\": " << p.x << ", \"y\": " << p.y
+               << ", \"z\": " << p.z << ", \"yaw\": " << yaw << ", \"wanderRadius\": 0.0 },\n";
+      out_file.close();
+    }
+    last_saved_pos_str = TextFormat("Saved (%.2f, %.2f, %.2f) Yaw: %.1f", p.x, p.y, p.z, yaw);
+    saved_pos_toast_timer = 2.5f;
+    TraceLog(LOG_INFO, "GameplayState: %s", last_saved_pos_str.c_str());
+  }
+
+  // Debug: K key cycles / selects an NPC
+  if (IsKeyPressed(KEY_K)) {
+    selectNextDebugNPC();
+  }
+
+  // Debug: O key outputs/records the player's position as a patrol waypoint for the selected NPC
+  if (IsKeyPressed(KEY_O)) {
+    recordPatrolWaypoint();
+  }
+
+  // Debug: N key marks the selected NPC for deletion (records note to file)
+  if (IsKeyPressed(KEY_N)) {
+    markNPCForDeletion();
+  }
+
+  if (saved_pos_toast_timer > 0.0f) {
+    saved_pos_toast_timer -= dt;
+  }
+
   // F4: log the player's position to console/terminal.
   if (IsKeyPressed(KEY_F4)) {
     const Vector3 p = player->getPosition();
@@ -1022,6 +1091,7 @@ StateAction GameplayState::update(float dt) {
         player->performTakedown();
         deathblow_victim = pending_aerial_target;
         takedown_text_timer = 2.0f;
+        StealthManager::emitNoise(pending_aerial_target->getPosition(), 15.0f, active_characters, player.get());
 
         pending_aerial_target = nullptr;
       }
@@ -1089,6 +1159,7 @@ StateAction GameplayState::update(float dt) {
               player->performTakedown();
               deathblow_victim = enemy;
               takedown_text_timer = 2.0f;
+              StealthManager::emitNoise(enemy->getPosition(), 15.0f, active_characters, player.get());
             }
             break; // Only execute one enemy
         }
@@ -1280,6 +1351,11 @@ void GameplayState::draw() {
     DrawSphere(chest_pos, 0.04f, WHITE);
   }
 
+  // Draw player orientation arrow for debug
+  drawPlayerOrientationArrow();
+  drawEnemyOrientationArrows();
+  drawPatrolDebugPath();
+
   EndMode3D();
 
   // 2D overlay pass (after the 3D scope is closed).
@@ -1294,6 +1370,10 @@ void GameplayState::draw() {
                      locked_target == enemy.get());
   }
   drawBossPostureBars();
+  drawEnemyOverheadInfo();
+
+  // --- DEBUG HUD ---
+  drawDebugHUD();
 
   if (takedown_text_timer > 0.0f) {
     const char *text = takedown_type_str.c_str();
@@ -1383,5 +1463,327 @@ void GameplayState::draw() {
   // greyed-out scene would read as the game still being live.
   if (defeat_shown) {
     drawDefeatScreen();
+  }
+}
+
+void GameplayState::drawPlayerOrientationArrow() const {
+  Vector3 pos = player->getPosition();
+  pos.y += 1.0f;
+
+  float yaw_rad = player->getRotation().y * DEG2RAD;
+  Vector3 forward = {std::sin(yaw_rad), 0.0f, std::cos(yaw_rad)};
+
+  float arrow_len = 1.8f;
+  Vector3 end_pos = Vector3Add(pos, Vector3Scale(forward, arrow_len));
+
+  DrawCylinderEx(pos, end_pos, 0.04f, 0.04f, 8, YELLOW);
+
+  Vector3 tip_pos = Vector3Add(end_pos, Vector3Scale(forward, 0.35f));
+  DrawCylinderEx(end_pos, tip_pos, 0.12f, 0.0f, 8, RED);
+}
+
+void GameplayState::selectNextDebugNPC() {
+  const Vector3 player_pos = player->getPosition();
+  Enemy *closest_enemy = nullptr;
+  float min_dist_sq = 1000000.0f;
+
+  for (const auto &e : enemies) {
+    if (!e->isModelUnloaded() && !e->getStats().isDead()) {
+      float d_sq = Vector3DistanceSqr(player_pos, e->getPosition());
+      if (d_sq < min_dist_sq) {
+        min_dist_sq = d_sq;
+        closest_enemy = e.get();
+      }
+    }
+  }
+
+  if (closest_enemy == nullptr) {
+    selected_debug_npc = nullptr;
+    last_saved_pos_str = "No living NPCs found!";
+    saved_pos_toast_timer = 2.0f;
+    return;
+  }
+
+  if (selected_debug_npc != closest_enemy) {
+    recorded_waypoints.clear();
+  }
+  selected_debug_npc = closest_enemy;
+
+  Vector3 p = selected_debug_npc->getPosition();
+  float dist = std::sqrt(min_dist_sq);
+  last_saved_pos_str = TextFormat("Selected Closest %s (Dist: %.1fm)",
+                                  enemyTypeName(selected_debug_npc->getType()),
+                                  dist);
+  saved_pos_toast_timer = 2.5f;
+  TraceLog(LOG_INFO, "GameplayState: %s", last_saved_pos_str.c_str());
+}
+
+void GameplayState::recordPatrolWaypoint() {
+  if (selected_debug_npc == nullptr || selected_debug_npc->getStats().isDead()) {
+    last_saved_pos_str = "No NPC selected! Press 'K' first.";
+    saved_pos_toast_timer = 2.0f;
+    return;
+  }
+
+  const Vector3 p = player->getPosition();
+  recorded_waypoints.push_back(p);
+
+  std::ofstream out_file("recorded_patrol_paths.txt", std::ios::app);
+  if (out_file.is_open()) {
+    Vector3 spawn = selected_debug_npc->getSpawnPosition();
+    out_file << "{ \"npcType\": \"" << enemyTypeName(selected_debug_npc->getType())
+             << "\", \"npcSpawn\": { \"x\": " << spawn.x << ", \"y\": " << spawn.y << ", \"z\": " << spawn.z << " }"
+             << ", \"waypointIndex\": " << recorded_waypoints.size()
+             << ", \"waypoint\": { \"x\": " << p.x << ", \"y\": " << p.y << ", \"z\": " << p.z << " }"
+             << ", \"patrolMode\": \"2-Way (Ping-Pong)\" },\n";
+    out_file.close();
+  }
+
+  last_saved_pos_str = TextFormat("Waypoint #%d for %s (%.2f, %.2f, %.2f)",
+                                  static_cast<int>(recorded_waypoints.size()),
+                                  enemyTypeName(selected_debug_npc->getType()),
+                                  p.x, p.y, p.z);
+  saved_pos_toast_timer = 2.5f;
+  TraceLog(LOG_INFO, "GameplayState: %s", last_saved_pos_str.c_str());
+}
+
+void GameplayState::markNPCForDeletion() {
+  if (selected_debug_npc == nullptr || selected_debug_npc->getStats().isDead()) {
+    last_saved_pos_str = "No NPC selected to mark for deletion! Press 'K'.";
+    saved_pos_toast_timer = 2.0f;
+    return;
+  }
+
+  bool already_marked = false;
+  for (const Enemy *marked : marked_deletion_npcs) {
+    if (marked == selected_debug_npc) {
+      already_marked = true;
+      break;
+    }
+  }
+
+  if (!already_marked) {
+    marked_deletion_npcs.push_back(selected_debug_npc);
+  }
+
+  Vector3 spawn = selected_debug_npc->getSpawnPosition();
+  float yaw = selected_debug_npc->getSpawnYaw();
+
+  std::ofstream out_file("recorded_npc_deletions.txt", std::ios::app);
+  if (out_file.is_open()) {
+    out_file << "{ \"action\": \"DELETE\", \"type\": \"" << enemyTypeName(selected_debug_npc->getType())
+             << "\", \"x\": " << spawn.x << ", \"y\": " << spawn.y << ", \"z\": " << spawn.z
+             << ", \"yaw\": " << yaw << " },\n";
+    out_file.close();
+  }
+
+  last_saved_pos_str = TextFormat("Marked %s for deletion (Logged)",
+                                  enemyTypeName(selected_debug_npc->getType()));
+  saved_pos_toast_timer = 2.5f;
+  TraceLog(LOG_INFO, "GameplayState: %s", last_saved_pos_str.c_str());
+}
+
+void GameplayState::drawPatrolDebugPath() const {
+  // Highlight selected NPC with a glowing cyan ring under feet
+  if (selected_debug_npc != nullptr && !selected_debug_npc->getStats().isDead()) {
+    Vector3 foot_pos = selected_debug_npc->getPosition();
+    foot_pos.y += 0.2f;
+    float r = selected_debug_npc->getColliderRadius() + 0.35f;
+    DrawCylinderWires(foot_pos, r, r, 0.4f, 16, SKYBLUE);
+    DrawCircle3D(selected_debug_npc->getPosition(), r + 0.05f, {1, 0, 0}, 90.0f, SKYBLUE);
+  }
+
+  // Highlight marked for deletion NPCs with a red ring
+  for (const Enemy *marked : marked_deletion_npcs) {
+    if (marked != nullptr && !marked->getStats().isDead()) {
+      Vector3 foot_pos = marked->getPosition();
+      foot_pos.y += 0.2f;
+      float r = marked->getColliderRadius() + 0.35f;
+      DrawCylinderWires(foot_pos, r, r, 0.4f, 16, MAROON);
+      DrawCircle3D(marked->getPosition(), r + 0.05f, {1, 0, 0}, 90.0f, RED);
+    }
+  }
+
+  // Draw recorded waypoints and connecting lines
+  if (!recorded_waypoints.empty()) {
+    for (size_t i = 0; i < recorded_waypoints.size(); ++i) {
+      Vector3 wp = recorded_waypoints[i];
+      wp.y += 0.3f;
+      DrawSphere(wp, 0.25f, LIME);
+      DrawSphereWires(wp, 0.26f, 8, 8, DARKGREEN);
+
+      if (i > 0) {
+        Vector3 prev_wp = recorded_waypoints[i - 1];
+        prev_wp.y += 0.3f;
+        DrawCylinderEx(prev_wp, wp, 0.04f, 0.04f, 6, YELLOW);
+      }
+    }
+  }
+}
+
+void GameplayState::drawDebugHUD() const {
+  const Vector3 p = player->getPosition();
+  float yaw = player->getRotation().y;
+  while (yaw <= -180.0f) {
+    yaw += 360.0f;
+  }
+  while (yaw > 180.0f) {
+    yaw -= 360.0f;
+  }
+
+  int hud_w = 340;
+  int hud_h = 160;
+  DrawRectangle(10, 10, hud_w, hud_h, Fade(BLACK, 0.75f));
+  DrawRectangleLines(10, 10, hud_w, hud_h, DARKGRAY);
+
+  if (ghost_mode) {
+    DrawText("GHOST MODE: ON", 20, 18, 16, GREEN);
+  } else {
+    DrawText("GHOST MODE: OFF", 20, 18, 16, LIGHTGRAY);
+  }
+  DrawText("(Press 'I')", 180, 18, 14, GRAY);
+
+  std::string pos_text = TextFormat("Pos: (%.2f, %.2f, %.2f)", p.x, p.y, p.z);
+  DrawText(pos_text.c_str(), 20, 38, 15, WHITE);
+
+  std::string yaw_text = TextFormat("Yaw: %.1f deg", yaw);
+  DrawText(yaw_text.c_str(), 20, 56, 15, SKYBLUE);
+
+  // Selected NPC status
+  std::string npc_status = "None";
+  if (selected_debug_npc != nullptr && !selected_debug_npc->getStats().isDead()) {
+    npc_status = enemyTypeName(selected_debug_npc->getType());
+  }
+  std::string sel_text = TextFormat("[K] Selected NPC: %s", npc_status.c_str());
+  DrawText(sel_text.c_str(), 20, 76, 14, SKYBLUE);
+
+  // Patrol waypoints count
+  std::string wp_text = TextFormat("[O] Add Patrol Point (Count: %d)",
+                                   static_cast<int>(recorded_waypoints.size()));
+  DrawText(wp_text.c_str(), 20, 96, 14, LIME);
+
+  // Delete option
+  DrawText("[N] Mark Selected for Delete", 20, 116, 14, Color{255, 120, 120, 255});
+
+  // Save pos
+  DrawText("[P] Save Player Pos | [F4] Log", 20, 136, 13, GOLD);
+
+  if (saved_pos_toast_timer > 0.0f) {
+    std::string toast_msg = "[Log] " + last_saved_pos_str;
+    int toast_width = MeasureText(toast_msg.c_str(), 18);
+    int toast_x = 10;
+    int toast_y = 178;
+    DrawRectangle(toast_x, toast_y, toast_width + 20, 30, Fade(BLACK, 0.85f));
+    DrawRectangleLines(toast_x, toast_y, toast_width + 20, 30, GREEN);
+    DrawText(toast_msg.c_str(), toast_x + 10, toast_y + 6, 18, GREEN);
+  }
+}
+
+void GameplayState::drawEnemyOrientationArrows() const {
+  for (const auto &enemy_ptr : enemies) {
+    if (enemy_ptr->isModelUnloaded() || enemy_ptr->getStats().isDead()) {
+      continue;
+    }
+
+    Vector3 pos = enemy_ptr->getPosition();
+    pos.y += 1.0f;
+
+    float yaw_rad = enemy_ptr->getRotation().y * DEG2RAD;
+    Vector3 forward = {std::sin(yaw_rad), 0.0f, std::cos(yaw_rad)};
+
+    float arrow_len = 1.5f;
+    Vector3 end_pos = Vector3Add(pos, Vector3Scale(forward, arrow_len));
+
+    DrawCylinderEx(pos, end_pos, 0.035f, 0.035f, 8, ORANGE);
+
+    Vector3 tip_pos = Vector3Add(end_pos, Vector3Scale(forward, 0.35f));
+    DrawCylinderEx(end_pos, tip_pos, 0.10f, 0.0f, 8, RED);
+  }
+}
+
+void GameplayState::drawEnemyOverheadInfo() const {
+  const Camera3D &camera = camera_controller->getCamera();
+  Vector3 cam_forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
+
+  for (const auto &enemy_ptr : enemies) {
+    if (enemy_ptr->isModelUnloaded() || enemy_ptr->getStats().isDead()) {
+      continue;
+    }
+
+    const Vector3 pos = enemy_ptr->getPosition();
+    float yaw = enemy_ptr->getRotation().y;
+    while (yaw <= -180.0f) {
+      yaw += 360.0f;
+    }
+    while (yaw > 180.0f) {
+      yaw -= 360.0f;
+    }
+
+    Vector3 head_pos = {pos.x, pos.y + enemy_ptr->getColliderHeight() + 0.7f, pos.z};
+    Vector3 to_enemy = Vector3Subtract(head_pos, camera.position);
+
+    float dist_sq = Vector3LengthSqr(to_enemy);
+    if (dist_sq > 40.0f * 40.0f) {
+      continue;
+    }
+
+    if (Vector3DotProduct(cam_forward, to_enemy) <= 0.0f) {
+      continue;
+    }
+
+    Vector2 screen_pos = GetWorldToScreen(head_pos, camera);
+    if (screen_pos.x < 0 || screen_pos.x > GetScreenWidth() ||
+        screen_pos.y < 0 || screen_pos.y > GetScreenHeight()) {
+      continue;
+    }
+
+    bool is_selected = (enemy_ptr.get() == selected_debug_npc);
+    bool is_marked_delete = false;
+    for (const Enemy *marked : marked_deletion_npcs) {
+      if (marked == enemy_ptr.get()) {
+        is_marked_delete = true;
+        break;
+      }
+    }
+
+    std::string line_1 = TextFormat("%s (%.2f, %.2f, %.2f)",
+                                    enemyTypeName(enemy_ptr->getType()),
+                                    pos.x, pos.y, pos.z);
+    if (is_selected) {
+      line_1 = "[SELECTED] " + line_1;
+    }
+    if (is_marked_delete) {
+      line_1 = "[DELETE] " + line_1;
+    }
+
+    std::string line_2 = TextFormat("Yaw: %.1f deg", yaw);
+
+    int font_size = 12;
+    int w1 = MeasureText(line_1.c_str(), font_size);
+    int w2 = MeasureText(line_2.c_str(), font_size);
+    int box_w = std::max(w1, w2) + 12;
+    int box_h = 32;
+
+    int box_x = static_cast<int>(screen_pos.x - (box_w * 0.5f));
+    int box_y = static_cast<int>(screen_pos.y - box_h - 4);
+
+    DrawRectangle(box_x, box_y, box_w, box_h, Fade(BLACK, 0.7f));
+    if (is_marked_delete) {
+      DrawRectangleLines(box_x, box_y, box_w, box_h, RED);
+    } else if (is_selected) {
+      DrawRectangleLines(box_x, box_y, box_w, box_h, SKYBLUE);
+    } else {
+      DrawRectangleLines(box_x, box_y, box_w, box_h, DARKGRAY);
+    }
+
+    Color header_color = YELLOW;
+    if (is_marked_delete) {
+      header_color = Color{255, 100, 100, 255};
+    } else if (is_selected) {
+      header_color = SKYBLUE;
+    }
+
+    DrawText(line_1.c_str(), box_x + 6, box_y + 4, font_size, header_color);
+    DrawText(line_2.c_str(), box_x + 6, box_y + 18, font_size, SKYBLUE);
   }
 }

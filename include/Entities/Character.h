@@ -90,6 +90,9 @@ public:
   bool isGrounded() const { return is_grounded; }
   void setGrounded(bool grounded) { is_grounded = grounded; }
 
+  bool isGhost() const { return is_ghost; }
+  void setGhost(bool ghost) { is_ghost = ghost; }
+
   virtual bool isCrouching() const { return false; }
   virtual bool isExecuting() const { return false; }
   virtual bool isBeingExecuted() const { return false; }
@@ -139,6 +142,7 @@ protected:
   float vertical_velocity = 0.0f;
   Vector3 horizontal_velocity = {0.0f, 0.0f, 0.0f}; // x,z used; y unused
   bool is_grounded = true;
+  bool is_ghost = false;
 
 private:
   inline static unsigned int next_id = 1;

@@ -3,6 +3,7 @@
 #include <Entities/EnemyTypes.h>
 #include <optional>
 #include <raylib.h>
+#include <vector>
 
 /// Where something starts the level, and which way it is facing.
 struct SpawnPoint {
@@ -66,4 +67,7 @@ struct EnemySpawn {
     bool hasExplicitY = true;
 
     EnemyOverrides overrides{};
+
+    /// Authored patrol waypoints for this enemy (Spawn -> Points -> Spawn)
+    std::vector<Vector3> patrolPoints;
 };

@@ -23,6 +23,10 @@ void PhysicsManager::resolveCharacterCollisions(const std::vector<Character*>& c
                 continue;
             }
 
+            if (char_a->isGhost() || char_b->isGhost()) {
+                continue;
+            }
+
             Vector3 pos_a    = positions[i];
             Vector3 pos_b    = positions[j];
             float   radius_a = char_a->getColliderRadius();

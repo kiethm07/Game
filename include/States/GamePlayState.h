@@ -264,4 +264,21 @@ private:
   /// whole life of the state and are never erased, only killed.
   Character *deathblow_victim = nullptr;
   Character *locked_target = nullptr;
+
+  bool ghost_mode = false;
+  float saved_pos_toast_timer = 0.0f;
+  std::string last_saved_pos_str = "";
+
+  Enemy *selected_debug_npc = nullptr;
+  std::vector<Vector3> recorded_waypoints;
+  std::vector<const Enemy*> marked_deletion_npcs;
+
+  void selectNextDebugNPC();
+  void recordPatrolWaypoint();
+  void markNPCForDeletion();
+  void drawPatrolDebugPath() const;
+  void drawPlayerOrientationArrow() const;
+  void drawEnemyOrientationArrows() const;
+  void drawDebugHUD() const;
+  void drawEnemyOverheadInfo() const;
 };

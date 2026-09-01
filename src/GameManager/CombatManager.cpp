@@ -4,6 +4,7 @@
 #include <Util/CollisionMath.h>
 #include <cassert>
 #include <GameManager/SoundController.h>
+#include <GameManager/StealthManager.h>
 #include <Entities/Player.h>
 
 void CombatManager::clearHitsForAttacker(unsigned int attacker_id) {
@@ -163,6 +164,11 @@ void CombatManager::update(const std::vector<Character*>& characters, ParticleMa
                                     sound_controller->playSFX(AssetID::SFX_HIT);
                                 }
                             }
+                        }
+
+                        // Emit loud noise to nearby enemies when attack connects
+                        if (dynamic_cast<Player*>(attacker) != nullptr || dynamic_cast<Enemy*>(defender) != nullptr) {
+                            StealthManager::emitNoise(defender->getPosition(), 15.0f, characters, attacker);
                         }
 
                         //Only process one hit at a time for this specific hitbox

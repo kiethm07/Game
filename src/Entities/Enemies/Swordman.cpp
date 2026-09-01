@@ -592,6 +592,13 @@ void Swordman::setupBehaviorTree() {
   // ---------------------------------------------------------
   auto returnToPostAction = std::make_shared<Action>([this]() {
     if (!current_ctx) return NodeState::FAILURE;
+
+    // If this enemy has an authored patrol route, follow it
+    if (hasPatrolRoute()) {
+      in_direct_combat = false;
+      patrolAlongRoute(walk_speed * 0.5f);
+      return NodeState::SUCCESS;
+    }
     
     float dist_to_post = Vector2Distance({position.x, position.z}, {spawn_position.x, spawn_position.z});
 

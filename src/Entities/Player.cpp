@@ -455,7 +455,7 @@ std::vector<HitBox> Player::getActiveHitBoxes() const {
 
 DamageResult Player::takeDamage(float health_damage, float posture_damage,
                                 Character *attacker) {
-  if (isExecuting()) {
+  if (isGhost() || isExecuting()) {
     return DamageResult::IGNORED;
   }
 

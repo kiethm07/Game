@@ -22,12 +22,20 @@ Enemy::Enemy(const EnemySpawn &spawn, Faction faction) : Character(faction) {
     stealth_component.forceAwareness(*spawn.overrides.startAwareness);
   }
 
-  wander_radius = spawn.overrides.wanderRadius.value_or(0.0f);
-
-  // Staggered by id, the same trick Swordman's attack cooldown uses: a squad
-  // authored in one pass otherwise steps off on the same frame and loiters in
-  // formation, which reads as choreography rather than idling.
+  // Wandering disabled: NPCs hold their authored spawn post
+  wander_radius = 0.0f;
   wander_dwell_timer = (getId() % 5) * 0.7f;
+
+  // Initialize patrol route: Spawn -> Waypoints
+  patrol_route.clear();
+  patrol_route.push_back(spawn_position);
+  for (const Vector3 &wp : spawn.patrolPoints) {
+    patrol_route.push_back(wp);
+  }
+  current_patrol_target_idx = 1;
+  patrol_direction = 1;
+  patrol_look_timer = 0.0f;
+  patrol_base_yaw = spawn.at.yaw;
 }
 
 
@@ -79,10 +87,97 @@ bool Enemy::moveAlongPath(float speed) {
 /// How long one leg of a wander may take before it is abandoned. Generous:
 /// the longest honest leg is a full diameter at half walk speed, which for the
 /// biggest radius anyone should author is a little over five seconds.
+void Enemy::patrolAlongRoute(float speed) {
+  if (patrol_route.size() <= 1 || !current_ctx) {
+    return;
+  }
+
+  Vector3 target_pt = patrol_route[current_patrol_target_idx];
+  float dist_to_target = Vector2Distance({position.x, position.z}, {target_pt.x, target_pt.z});
+
+  // Check arrival at waypoint
+  if (dist_to_target <= 1.2f) {
+    // Stop moving and look around in place
+    this->setHorizontalVelocity({0.0f, 0.0f, 0.0f});
+
+    if (patrol_look_timer <= 0.0f) {
+      // Advance to next waypoint index
+      if (patrol_direction > 0) {
+        current_patrol_target_idx++;
+        if (current_patrol_target_idx >= static_cast<int>(patrol_route.size())) {
+          // Reached end of waypoints -> reverse towards spawn
+          current_patrol_target_idx = static_cast<int>(patrol_route.size()) - 2;
+          if (current_patrol_target_idx < 0) {
+            current_patrol_target_idx = 0;
+          }
+          patrol_direction = -1;
+        }
+      } else {
+        current_patrol_target_idx--;
+        if (current_patrol_target_idx < 0) {
+          // Reached spawn -> reverse towards waypoints
+          current_patrol_target_idx = 1;
+          patrol_direction = 1;
+        }
+      }
+
+      current_path.clear();
+      path_recalc_timer = 0.0f;
+      patrol_look_timer = 3.0f;
+      patrol_base_yaw = rotation.y;
+      return;
+    }
+
+    // Look around in place while waiting
+    patrol_look_timer -= current_ctx->dt;
+    float target_yaw = patrol_base_yaw;
+    if (patrol_look_timer > 1.8f) {
+      // Look 45 degrees left
+      target_yaw = patrol_base_yaw + 45.0f;
+    } else if (patrol_look_timer > 0.6f) {
+      // Look 45 degrees right
+      target_yaw = patrol_base_yaw - 45.0f;
+    } else {
+      // Turn to face next waypoint destination
+      Vector3 next_pt = patrol_route[current_patrol_target_idx];
+      Vector3 to_next = Vector3Subtract(next_pt, position);
+      if (to_next.x * to_next.x + to_next.z * to_next.z > 0.01f) {
+        target_yaw = std::atan2(to_next.x, to_next.z) * RAD2DEG;
+      }
+    }
+
+    float angle_diff = target_yaw - rotation.y;
+    while (angle_diff < -180.0f) angle_diff += 360.0f;
+    while (angle_diff > 180.0f) angle_diff -= 360.0f;
+
+    if (std::abs(angle_diff) > 1.0f) {
+      rotation.y += angle_diff * (4.0f * current_ctx->dt);
+      while (rotation.y < 0.0f) rotation.y += 360.0f;
+      while (rotation.y >= 360.0f) rotation.y -= 360.0f;
+    }
+    return;
+  }
+
+  // Moving towards target waypoint
+  patrol_look_timer = 3.0f;
+  patrol_base_yaw = rotation.y;
+
+  path_recalc_timer -= current_ctx->dt;
+  if (path_recalc_timer <= 0.0f) {
+    if (current_ctx->nav_query != nullptr) {
+      current_path = current_ctx->nav_query->findPath(position, target_pt);
+      truncatePathBySmoke(current_path);
+    }
+    path_recalc_timer = 1.0f;
+  }
+  moveAlongPath(speed);
+}
+
 static constexpr float kWanderLegTimeout = 8.0f;
 
 void Enemy::wanderAroundPost(float speed) {
-  if (wander_radius <= 0.0f || !current_ctx) return;
+  // Wandering disabled: hold post
+  return;
 
   if (wander_walking) {
     // The same field is the leg's deadline while walking and the pause when

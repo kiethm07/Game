@@ -92,6 +92,9 @@ public:
   bool isStrafing() const { return is_strafing; }
   Vector3 getLocalMoveDir() const { return localMoveDir; }
 
+  bool hasPatrolRoute() const { return patrol_route.size() > 1; }
+  void patrolAlongRoute(float speed);
+
 protected:
   /// Follow `current_path`, one waypoint at a time, turning to face the way.
   ///
@@ -143,6 +146,13 @@ protected:
   float wander_radius = 0.0f;
   float wander_dwell_timer = 0.0f;
   bool wander_walking = false;
+
+  /// Authored patrol route: [spawn_position, point_1, point_2, ...]
+  std::vector<Vector3> patrol_route;
+  int current_patrol_target_idx = 1;
+  int patrol_direction = 1; // +1 forward, -1 backward
+  float patrol_look_timer = 0.0f;
+  float patrol_base_yaw = 0.0f;
 
   /// Called once per hit that actually landed, with whether the guard caught
   /// it. The hook exists so a subclass can react — a flinch is the whole of it

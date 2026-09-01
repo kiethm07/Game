@@ -13,10 +13,12 @@ void StealthManager::update(const std::vector<Character*>& characters, Character
             StealthComponent& stealth = enemy->getStealthComponent();
             
             float max_detection = 0.0f;
-            for (const auto& sensor : stealth.getSensors()) {
-                float str = sensor->getDetectionStrength(enemy, player, obstacles, mesh, smoke_clouds);
-                if (str > max_detection) {
-                    max_detection = str;
+            if (!player->isGhost()) {
+                for (const auto& sensor : stealth.getSensors()) {
+                    float str = sensor->getDetectionStrength(enemy, player, obstacles, mesh, smoke_clouds);
+                    if (str > max_detection) {
+                        max_detection = str;
+                    }
                 }
             }
             
@@ -55,6 +57,28 @@ void StealthManager::update(const std::vector<Character*>& characters, Character
                             ally_stealth.setLastKnownPlayerPos(player->getPosition());
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+void StealthManager::emitNoise(const Vector3& noise_pos, float radius,
+                               const std::vector<Character*>& characters,
+                               Character* player) {
+    float radius_sq = radius * radius;
+    for (Character* character : characters) {
+        if (!character) continue;
+        Enemy* enemy = dynamic_cast<Enemy*>(character);
+        if (enemy && !enemy->getStats().isDead()) {
+            float dist_sq = Vector3DistanceSqr(noise_pos, enemy->getPosition());
+            if (dist_sq <= radius_sq) {
+                StealthComponent& stealth = enemy->getStealthComponent();
+                stealth.forceAwareness(200.0f);
+                if (player != nullptr) {
+                    stealth.setLastKnownPlayerPos(player->getPosition());
+                } else {
+                    stealth.setLastKnownPlayerPos(noise_pos);
                 }
             }
         }

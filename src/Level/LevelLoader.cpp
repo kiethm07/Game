@@ -156,6 +156,27 @@ bool parseSpawnEntry(const json &node, const std::string &source, size_t index,
             out.overrides.startAwareness =
                 node.at("startAwareness").get<float>();
         }
+
+        if (node.contains("patrol")) {
+            const json &patrol_node = node.at("patrol");
+            if (patrol_node.is_array()) {
+                for (const auto &p_node : patrol_node) {
+                    Vector3 wp{0.0f, 0.0f, 0.0f};
+                    if (p_node.contains("x") && p_node.contains("z")) {
+                        wp.x = p_node.at("x").get<float>();
+                        wp.z = p_node.at("z").get<float>();
+                        if (p_node.contains("y")) {
+                            wp.y = p_node.at("y").get<float>();
+                        } else {
+                            wp.y = 0.0f;
+                        }
+                    } else if (p_node.is_array() && p_node.size() >= 3) {
+                        wp = toVector3(p_node);
+                    }
+                    out.patrolPoints.push_back(wp);
+                }
+            }
+        }
         return true;
     } catch (const json::exception &err) {
         TraceLog(LOG_WARNING, "LevelLoader: %s entry %d is malformed (%s). "
