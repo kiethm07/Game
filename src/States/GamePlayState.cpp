@@ -156,7 +156,13 @@ GameplayState::GameplayState(const InputManager &input_manager, AssetManager &as
   asset_manager.loadMusic(AssetID::BGM_COMBAT, assets::path("audio/incombatbgm.mp3"));
   asset_manager.loadMusic(AssetID::BGM_EXPLORE, assets::path("audio/outcombatbgm.mp3"));
 
-  player->setPosition(level.playerSpawn.position);
+  Vector3 spawn_pos = level.playerSpawn.position;
+  float spawn_ground = spawn_pos.y;
+  if (SpawnGround::highestUnder(collision_mesh, level.obstacles, level.bounds,
+                                spawn_pos.x, spawn_pos.z, spawn_ground)) {
+    spawn_pos.y = spawn_ground;
+  }
+  player->setPosition(spawn_pos);
   player->setRotation({0.0f, level.playerSpawn.yaw, 0.0f});
 
   // What the previous phase handed over. addMoney rather than a setter because

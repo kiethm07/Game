@@ -100,7 +100,7 @@ private:
   /// The SoundSensor's radius, and the gait switch below. One constant because
   /// they are the same circle: the blue ring the sensor debug draws is exactly
   /// the line this enemy starts running outside of, so moving one moves both.
-  static constexpr float HEARING_RADIUS = 6.0f;
+  static constexpr float HEARING_RADIUS = 8.0f;
 
   /// Where an approach changes gait: run outside this, walk inside it. 0
   /// disables the switch and approaches always run, which is what the mini

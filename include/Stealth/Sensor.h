@@ -155,7 +155,7 @@ public:
         // the falloff should say "sooner when closer", not "never when far".
         // Point blank is untouched; the floor is lifted ~7x, leaving a 6x
         // spread across the whole cone.
-        float strength = 5.75f - 4.05f * std::log10(1.0f + normalized_dist * 9.0f);
+        float strength = 7.2f - 4.2f * std::log10(1.0f + normalized_dist * 9.0f);
         
         // Scale by angle logarithmically: 1.4x directly in front, dropping to
         // 0.8x at the edge -- flattened alongside the distance curve above, and
@@ -167,7 +167,7 @@ public:
         strength *= angle_factor;
 
         if (target->isCrouching()) {
-            strength *= 0.4f; // Harder to see when crouching
+            strength *= 0.2f; // Harder to see when crouching
         }
 
         return strength;
@@ -228,8 +228,8 @@ public:
         float dist = std::sqrt(dist_sq);
         float normalized_dist = dist / radius;
         
-        // Logarithmic scale for distance (5.0x at point blank down to 0.25x at max radius)
-        float dist_strength = 5.0f - 4.75f * std::log10(1.0f + normalized_dist * 9.0f);
+        // Logarithmic scale for distance (6.5x at point blank down to 1.5x at max radius)
+        float dist_strength = 6.5f - 5.0f * std::log10(1.0f + normalized_dist * 9.0f);
         
         float strength = speed_factor * dist_strength;
         if (target->isCrouching()) {

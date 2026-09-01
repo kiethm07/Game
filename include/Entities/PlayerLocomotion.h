@@ -135,9 +135,9 @@ private:
   /// readable part, and releases the player on the way back up.
   static constexpr float LAND_LOCK_DURATION = 0.35f;
 
-  /// How fast a crouching player moves. Slow enough to read as deliberate,
-  /// which is what a stance held for stealth has to be.
-  static constexpr float CROUCH_SPEED_SCALE = 0.5f;
+  /// How fast a crouching player moves when walking and running.
+  static constexpr float CROUCH_WALK_SCALE = 0.25f;
+  static constexpr float CROUCH_RUN_SCALE = 0.55f;
 
   /// How fast a guarding player travels, as a fraction of full speed. A raised
   /// guard is a commitment to defence: it should cost mobility, but not so much
@@ -150,5 +150,5 @@ private:
   /// time-scales whichever cycle it shows to whatever speed actually comes out
   /// of here, so this stays a number to tune by feel rather than one the
   /// clips constrain.
-  static constexpr float WALK_SPEED_SCALE = 0.25f;
+  static constexpr float WALK_SPEED_SCALE = 0.32f;
 };

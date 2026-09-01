@@ -92,10 +92,11 @@ ActionGate PlayerLocomotion::gate(const CombatComponent &combat, bool grounded,
     g.canAttack = false;
     g.canGuard = false;
     g.canJump = false;
-    // The slower of the stance and the gait, not the stance outright: a crouch
-    // is a ceiling on speed, and one that overwrote the walk would have
-    // crouching *accelerate* a player who was not sprinting.
-    g.moveSpeedScale = std::fmin(g.moveSpeedScale, CROUCH_SPEED_SCALE);
+    if (sprinting) {
+      g.moveSpeedScale = CROUCH_RUN_SCALE;
+    } else {
+      g.moveSpeedScale = CROUCH_WALK_SCALE;
+    }
   }
 
   // Same rule again, so a crouched block takes the slowest of the three rather

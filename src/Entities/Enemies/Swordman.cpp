@@ -141,7 +141,7 @@ Swordman::Swordman(const EnemySpawn &spawn, AssetID asset)
     run_speed = 5.0f;
   }
   stealth_component.addSensor(std::make_shared<VisionSensor>(
-      o.visionRadius.value_or(20.0f), o.visionConeDegrees.value_or(70.0f)));
+      o.visionRadius.value_or(20.0f), o.visionConeDegrees.value_or(90.0f)));
   stealth_component.addSensor(std::make_shared<SoundSensor>(HEARING_RADIUS));
   stealth_component.addSensor(std::make_shared<ProximitySensor>(1.2f));
   stealth_component.addSensor(std::make_shared<CombatSenseSensor>(10.0f));
