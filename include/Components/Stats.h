@@ -40,6 +40,7 @@ public:
     }
     bool isPostureBroken() const { return current_posture >= max_posture; }
     void resetPosture() { current_posture = 0.0f; }
+    void resetHealth() { current_health = max_health; }
     float getTimeSinceLastDamage() const { return time_since_last_damage; }
 
     bool getIsInvincible() const { return is_invincible; }

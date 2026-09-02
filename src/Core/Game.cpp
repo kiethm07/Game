@@ -1,6 +1,7 @@
 #include <Core/Game.h>
 #include <States/LoadingState.h>
 #include <States/EndGameState.h>
+#include <States/PauseState.h>
 
 Game::Game()
     : sound_controller(asset_manager), attack_registry(AttackRegistry::instance()) {}
@@ -36,8 +37,19 @@ void Game::update() {
             // every state's exit(), freeing GPU handles before CloseWindow().
             quit_requested = true;
         }
-        if (action == StateAction::ChangeToMenu) {
+        if (action == StateAction::PushPause) {
+            pushState(std::make_unique<PauseState>(sound_controller, asset_manager, campaign));
+        }
+        if (action == StateAction::PopPause) {
             popState();
+            if (!states.empty()) {
+                states.back()->enter();
+            }
+        }
+        if (action == StateAction::ChangeToMenu) {
+            while (!states.empty()) {
+                popState();
+            }
             // Leaving a phase for the menu abandons the run: the cursor goes
             // back to the first phase and the carry is dropped. After
             // popState(), so that a carry written on the way out cannot
@@ -69,7 +81,9 @@ void Game::update() {
             // No carry snapshot. This is not a seam, it is the same phase
             // again, and the fresh Player comes up at full health -- which is
             // what you want when the thing you are iterating on is the fight.
-            popState();
+            while (!states.empty()) {
+                popState();
+            }
             pushState(std::make_unique<GameplayState>(
                 input_manager, asset_manager, sound_controller, campaign));
         }
@@ -97,6 +111,9 @@ void Game::update() {
 
 void Game::draw() {
     if (!states.empty()) {
+        if (states.size() >= 2) {
+            states[states.size() - 2]->draw();
+        }
         states.back()->draw();
     }
 

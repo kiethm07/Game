@@ -316,22 +316,24 @@ void GameplayState::enter() {
   // passes through either of the others.
   DisableCursor();
 
-  // White in the middle falling off to transparent. White rather than red
-  // because the draw tints it -- one texture then serves both the hot core and
-  // the halo, at different sizes and colours.
-  Image glow = GenImageGradientRadial(POSTURE_CUE_TEX_PX, POSTURE_CUE_TEX_PX,
-                                      0.0f, WHITE, BLANK);
-  posture_cue = LoadTextureFromImage(glow);
-  UnloadImage(glow);
+  if (posture_cue.id == 0) {
+    // White in the middle falling off to transparent. White rather than red
+    // because the draw tints it -- one texture then serves both the hot core and
+    // the halo, at different sizes and colours.
+    Image glow = GenImageGradientRadial(POSTURE_CUE_TEX_PX, POSTURE_CUE_TEX_PX,
+                                        0.0f, WHITE, BLANK);
+    posture_cue = LoadTextureFromImage(glow);
+    UnloadImage(glow);
 
-  if (posture_cue.id != 0) {
-    // Drawn at a size that changes with distance, so it is always resampled.
-    SetTextureFilter(posture_cue, TEXTURE_FILTER_BILINEAR);
-  } else {
-    TraceLog(LOG_WARNING,
-             "GameplayState: could not generate the deathblow marker texture; "
-             "posture-broken enemies will show no marker. The deathblow itself "
-             "still works.");
+    if (posture_cue.id != 0) {
+      // Drawn at a size that changes with distance, so it is always resampled.
+      SetTextureFilter(posture_cue, TEXTURE_FILTER_BILINEAR);
+    } else {
+      TraceLog(LOG_WARNING,
+               "GameplayState: could not generate the deathblow marker texture; "
+               "posture-broken enemies will show no marker. The deathblow itself "
+               "still works.");
+    }
   }
 
   sound_controller.playMusic(AssetID::BGM_EXPLORE);
@@ -596,6 +598,10 @@ StateAction GameplayState::update(float dt) {
   // corpse behind a menu the player is reading.
   if (defeat_shown)
     return updateDefeatScreen();
+
+  if (IsKeyPressed(KEY_ESCAPE)) {
+    return StateAction::PushPause;
+  }
 
   // 1. Tick entities through the shared polymorphic update path. Each reads
   // input/AI internally and shifts its own position safely.
@@ -889,6 +895,8 @@ StateAction GameplayState::update(float dt) {
         renderer->setCheckpoints(checkpoints);
         checkpoint_timer = CHECKPOINT_HOLD;
         pending_checkpoint = (int)i;
+        player->restAtCampfire();
+        sound_controller.playSFX(AssetID::SFX_HEAL);
         TraceLog(LOG_INFO,
                  "GameplayState: campfire lit — leaving phase %d/%d in %.1fs",
                  (int)campaign.index() + 1, (int)campaign.count(),
