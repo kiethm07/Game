@@ -170,11 +170,20 @@ void MainMenuState::buildButtons() {
   // here would break that promise the day a fourth row lands, and break it
   // silently -- the phase would exist, load fine, and simply be unreachable.
   buttons.clear();
-  buttons.reserve(campaign.count());
+  buttons.reserve(campaign.count() + 1);
   for (size_t i = 0; i < campaign.count(); ++i) {
-    buttons.push_back(MenuButton{
-        Rectangle{x, screen_h * kStackTop + i * pitch, w, h}, i});
+    MenuButton btn;
+    btn.bounds = Rectangle{x, screen_h * kStackTop + i * pitch, w, h};
+    btn.phase = i;
+    btn.is_settings = false;
+    buttons.push_back(btn);
   }
+
+  MenuButton setting_btn;
+  setting_btn.bounds = Rectangle{x, screen_h * kStackTop + campaign.count() * pitch, w, h};
+  setting_btn.phase = 0;
+  setting_btn.is_settings = true;
+  buttons.push_back(setting_btn);
 }
 
 StateAction MainMenuState::update(float dt) {
@@ -191,6 +200,10 @@ StateAction MainMenuState::update(float dt) {
   }
 
   if (hovered >= 0 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    if (buttons[hovered].is_settings) {
+      return StateAction::PushSetting;
+    }
+
     const size_t phase = buttons[hovered].phase;
     if (!campaign.startAt(phase)) {
       // Only reachable if `buttons` and kCampaignPhases have gone out of step,
@@ -273,7 +286,12 @@ void MainMenuState::draw() {
     }
 
     // Left-aligned rather than centred inside the button
-    DrawText(TextFormat("CHAPTER %s", roman(button.phase + 1)),
+    const char *label_text = TextFormat("CHAPTER %s", roman(button.phase + 1));
+    if (button.is_settings) {
+      label_text = "SETTINGS";
+    }
+
+    DrawText(label_text,
              static_cast<int>(button.bounds.x) + 20,
              static_cast<int>(button.bounds.y +
                               (button.bounds.height - label_size) * 0.5f),
@@ -282,7 +300,7 @@ void MainMenuState::draw() {
 
   const int hint_size = static_cast<int>(screen_h * 0.0234f); // 18 px at 768
   DrawText("Click a chapter to begin        ESC to quit", title_x,
-           static_cast<int>(screen_h * 0.90f), hint_size, Fade(kInk, 0.6f));
+           static_cast<int>(screen_h * 0.94f), hint_size, Fade(kInk, 0.6f));
 }
 
 void MainMenuState::exit() { unloadBackground(); }

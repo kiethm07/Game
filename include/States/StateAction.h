@@ -21,5 +21,7 @@ enum class StateAction{
     RequestReloadPhase,
     RequestQuit,
     PushPause,
-    PopPause
+    PopPause,
+    PushSetting,
+    PopSetting
 };

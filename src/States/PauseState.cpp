@@ -38,7 +38,7 @@ void PauseState::buildButtons() {
   const float bgap = screen_h * BUTTON_GAP;
   const float bx = (screen_w - bw) * 0.5f;
 
-  const float total_h = 4.0f * bh + 3.0f * bgap;
+  const float total_h = 5.0f * bh + 4.0f * bgap;
   const float start_y = (screen_h - total_h) * 0.55f;
 
   buttons.clear();
@@ -49,20 +49,26 @@ void PauseState::buildButtons() {
   resume_btn.action = StateAction::PopPause;
   buttons.push_back(resume_btn);
 
+  PauseButton setting_btn;
+  setting_btn.bounds = Rectangle{bx, start_y + (bh + bgap), bw, bh};
+  setting_btn.label = "SETTINGS";
+  setting_btn.action = StateAction::PushSetting;
+  buttons.push_back(setting_btn);
+
   PauseButton retry_btn;
-  retry_btn.bounds = Rectangle{bx, start_y + (bh + bgap), bw, bh};
+  retry_btn.bounds = Rectangle{bx, start_y + 2.0f * (bh + bgap), bw, bh};
   retry_btn.label = "RETRY CHAPTER";
   retry_btn.action = StateAction::RequestReloadPhase;
   buttons.push_back(retry_btn);
 
   PauseButton menu_btn;
-  menu_btn.bounds = Rectangle{bx, start_y + 2.0f * (bh + bgap), bw, bh};
+  menu_btn.bounds = Rectangle{bx, start_y + 3.0f * (bh + bgap), bw, bh};
   menu_btn.label = "RETURN TO MENU";
   menu_btn.action = StateAction::ChangeToMenu;
   buttons.push_back(menu_btn);
 
   PauseButton quit_btn;
-  quit_btn.bounds = Rectangle{bx, start_y + 3.0f * (bh + bgap), bw, bh};
+  quit_btn.bounds = Rectangle{bx, start_y + 4.0f * (bh + bgap), bw, bh};
   quit_btn.label = "QUIT GAME";
   quit_btn.action = StateAction::RequestQuit;
   buttons.push_back(quit_btn);

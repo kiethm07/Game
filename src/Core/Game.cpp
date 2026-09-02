@@ -2,6 +2,7 @@
 #include <States/LoadingState.h>
 #include <States/EndGameState.h>
 #include <States/PauseState.h>
+#include <States/SettingState.h>
 
 Game::Game()
     : sound_controller(asset_manager), attack_registry(AttackRegistry::instance()) {}
@@ -41,6 +42,15 @@ void Game::update() {
             pushState(std::make_unique<PauseState>(sound_controller, asset_manager, campaign));
         }
         if (action == StateAction::PopPause) {
+            popState();
+            if (!states.empty()) {
+                states.back()->enter();
+            }
+        }
+        if (action == StateAction::PushSetting) {
+            pushState(std::make_unique<SettingState>(sound_controller, asset_manager, campaign));
+        }
+        if (action == StateAction::PopSetting) {
             popState();
             if (!states.empty()) {
                 states.back()->enter();
@@ -111,8 +121,11 @@ void Game::update() {
 
 void Game::draw() {
     if (!states.empty()) {
-        if (states.size() >= 2) {
+        if (states.size() >= 3) {
+            states[states.size() - 3]->draw();
             states[states.size() - 2]->draw();
+        } else if (states.size() == 2) {
+            states[0]->draw();
         }
         states.back()->draw();
     }
