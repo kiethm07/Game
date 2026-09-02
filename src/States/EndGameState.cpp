@@ -85,14 +85,24 @@ void EndGameState::buildButtons() {
 
   const float bw = screen_w * BUTTON_WIDTH;
   const float bh = screen_h * BUTTON_HEIGHT;
-  const float bx = (screen_w - bw) * 0.5f;
+  const float gap = screen_w * 0.03f;
+  const float total_w = 2.0f * bw + gap;
+  const float start_x = (screen_w - total_w) * 0.5f;
   const float by = screen_h * 0.88f;
 
   buttons.clear();
+
   EndButton return_btn;
-  return_btn.bounds = Rectangle{bx, by, bw, bh};
+  return_btn.bounds = Rectangle{start_x, by, bw, bh};
   return_btn.label = "RETURN TO MENU";
+  return_btn.action = StateAction::ChangeToMenu;
   buttons.push_back(return_btn);
+
+  EndButton quit_btn;
+  quit_btn.bounds = Rectangle{start_x + bw + gap, by, bw, bh};
+  quit_btn.label = "QUIT GAME";
+  quit_btn.action = StateAction::RequestQuit;
+  buttons.push_back(quit_btn);
 
   hovered = -1;
 }
@@ -114,8 +124,10 @@ StateAction EndGameState::update(float dt) {
   }
 
   if (hovered >= 0 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-    campaign.markCompleted();
-    return StateAction::ChangeToMenu;
+    if (buttons[hovered].action == StateAction::ChangeToMenu) {
+      campaign.markCompleted();
+    }
+    return buttons[hovered].action;
   }
 
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
@@ -124,7 +136,7 @@ StateAction EndGameState::update(float dt) {
   }
 
   if (IsKeyPressed(KEY_ESCAPE)) {
-    campaign.resetCompleted();
+    campaign.markCompleted();
     return StateAction::ChangeToMenu;
   }
 
