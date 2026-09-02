@@ -67,6 +67,10 @@ target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE raylib Recast Detour nlohmann_json::nlohmann_json)
 
+if (WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    target_link_options(${PROJECT_NAME} PRIVATE -static -static-libgcc -static-libstdc++)
+endif()
+
 # RecastNavigation compiles itself with -fno-rtti, so it never emits typeinfo
 # for rcContext. NavMeshBuilder.cpp derives BuildContext from it; under the
 # Itanium ABI (Clang/GCC) typeinfo for a polymorphic class lives only in the TU
