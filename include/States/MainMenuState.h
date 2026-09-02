@@ -47,9 +47,11 @@ private:
   /// Carries the phase as an *index*, never as the `const char *` name out of
   /// kCampaignPhases. Identity goes through the index so nothing here can ever
   /// depend on two pointers into that table comparing equal.
-  struct MenuButton {
-    Rectangle bounds;
-    size_t phase;
+  class MenuButton {
+  public:
+    Rectangle bounds{};
+    size_t phase = 0;
+    bool is_settings = false;
   };
 
   /// Lay the stack out from campaign.count(). Called in enter() rather than the

@@ -19,5 +19,9 @@ enum class StateAction{
     ChangeToGameplay,
     RequestNextPhase,
     RequestReloadPhase,
-    RequestQuit
+    RequestQuit,
+    PushPause,
+    PopPause,
+    PushSetting,
+    PopSetting
 };

@@ -28,6 +28,7 @@ private:
   public:
     Rectangle bounds{};
     const char *label = nullptr;
+    StateAction action = StateAction::KeepCurrent;
   };
 
   void buildButtons();

@@ -98,6 +98,19 @@ public:
       inventory[i]->add(counts[i] - inventory[i]->getCount());
     }
   }
+
+  void refillAllItems() {
+    for (auto &item : inventory) {
+      item->refill();
+    }
+  }
+
+  void restAtCampfire() {
+    stats.resetHealth();
+    stats.resetPosture();
+    refillAllItems();
+  }
+
   int getActiveItemIndex() const { return active_item_index; }
   float getItemUseTimer() const { return item_use_timer; }
   

@@ -14,6 +14,7 @@ public:
     void stopSFX(AssetID id);
     bool isSFXPlaying(AssetID id) const;
     void setSFXVolume(float volume);
+    float getSFXVolume() const { return sfx_volume; }
 
     // Music
     void playMusic(AssetID id);
@@ -22,6 +23,7 @@ public:
     void resumeMusic();
     void updateMusic();
     void setMusicVolume(float volume);
+    float getMusicVolume() const { return music_volume; }
     void toggleMusicMute();
     void setMusicMuted(bool muted);
     bool isMusicMuted() const;

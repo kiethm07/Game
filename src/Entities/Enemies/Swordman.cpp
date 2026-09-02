@@ -213,25 +213,26 @@ void Swordman::update(const UpdateContext &ctx) {
             combat_component.interrupt();
             sword_trail.clear();
             setHorizontalVelocity({0.0f, 0.0f, 0.0f});
-            if (!animator.isFlinching()) {
-                animator.queueReaction(false);
-            }
-        }
-
-        bool was_posture_broken = (combat_component.getCurrentState() == CombatState::PostureBroken);
-        
-        combat_component.update(dt);
-        
-        if (combat_component.getCurrentState() == CombatState::PostureBroken) {
-            sword_trail.clear();
+            in_direct_combat = false;
             if (!animator.isFlinching()) {
                 animator.queueReaction(false);
             }
         } else {
-            if (was_posture_broken) {
-                stats.resetPosture();
+            bool was_posture_broken = (combat_component.getCurrentState() == CombatState::PostureBroken);
+            
+            combat_component.update(dt);
+            
+            if (combat_component.getCurrentState() == CombatState::PostureBroken) {
+                sword_trail.clear();
+                if (!animator.isFlinching()) {
+                    animator.queueReaction(false);
+                }
+            } else {
+                if (was_posture_broken) {
+                    stats.resetPosture();
+                }
+                ai_component.update();
             }
-            ai_component.update();
         }
     }
   }
